@@ -1,0 +1,14 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Inter:wght@400;500;600;700&display=swap');
+
+html, body {
+  font-family: 'Inter', sans-serif;
+  background: #F4F2EA;
+  color: #16171B;
+}
+
+input:disabled, textarea:disabled, select:disabled { opacity: .6; }
+::selection { background: #FF5A36; color: #fff; }
