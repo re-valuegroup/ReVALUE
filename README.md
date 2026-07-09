@@ -78,10 +78,12 @@ app/
   page.js               メイン画面の入口
   layout.js             全体レイアウト
   globals.css           グローバルスタイル
+  icon.png              ファビコン（ロゴマーク）
   api/
-    caption/route.js    AIキャプション生成
-    script/route.js     AI台本提案（動画単位）
-    proposal/route.js   AI企画提案（クライアント単位）
+    caption/route.js         AIキャプション生成
+    trend/route.js           バズっているショート動画のURL検索
+    proposal/route.js        AI企画提案（クライアント単位）
+    admin/impersonate/route.js  統括管理者による他アカウントへの切り替え
 components/
   App.js                アプリ本体（全画面のロジック・UI）
 lib/

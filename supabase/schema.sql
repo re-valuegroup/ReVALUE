@@ -1,5 +1,7 @@
--- ReVALUE Studio Manager — Supabase schema
+-- ReVALUE Studio Manager — Supabase schema（最新版）
 -- Supabaseダッシュボードの「SQL Editor」でこのファイルの内容をそのまま実行してください。
+-- すでに古いバージョンのテーブルを作成済みの場合は、先に schema.sql の内容を確認のうえ、
+-- 該当テーブルを drop table してから実行するか、下部の「移行用ALTER文」を個別に実行してください。
 
 create extension if not exists pgcrypto;
 
@@ -64,6 +66,8 @@ create table if not exists clients (
   plan text,
   monthly_count int default 4,
   contract_end_date date,
+  post_days int[] default '{}',
+  setup_tasks jsonb default '{"profile":"pending","highlight":"pending","line":"pending","lp":"pending"}',
   notes text,
   created_at timestamptz default now()
 );
@@ -74,7 +78,9 @@ create table if not exists reels (
   client_id uuid references clients(id) on delete cascade,
   year_month text not null,
   assigned_staff_id uuid references profiles(id) on delete set null,
-  editor_primary_id uuid references profiles(id) on delete set null,
+  cut_editor_id uuid references profiles(id) on delete set null,
+  telop_editor_id uuid references profiles(id) on delete set null,
+  sfx_editor_id uuid references profiles(id) on delete set null,
   editor_secondary_id uuid references profiles(id) on delete set null,
   checklist jsonb default '{"c1":false,"c2":false,"c3":false,"c4":false,"c5":false,"c6":false,"c7":false,"c8":false,"memo":""}',
   check_submitted boolean default false,
@@ -86,9 +92,13 @@ create table if not exists reels (
   transcript text,
   memo text,
   caption text,
+  hashtag1 text,
+  hashtag2 text,
+  hashtag3 text,
   caption_history jsonb default '[]',
-  script_proposals jsonb default '[]',
+  trend_searches jsonb default '[]',
   completed_stages int default 0,
+  stage_version int default 2,
   posted_date date,
   views7day int,
   edit_start_date date,
@@ -103,8 +113,9 @@ create table if not exists finance (
   contract_start date,
   contract_end date,
   monthly_fee numeric,
-  billing_date date,
-  payment_status text default '未請求',
+  contract_fee numeric,
+  billing_dates jsonb default '{}',
+  paid_months text[] default '{}',
   notes text
 );
 
@@ -122,7 +133,7 @@ create table if not exists board_posts (
 create table if not exists calendar_events (
   id uuid primary key default gen_random_uuid(),
   staff_id uuid references profiles(id) on delete set null,
-  reel_id uuid references reels(id) on delete cascade,
+  reel_ids uuid[] default '{}',
   type text not null check (type in ('shoot', 'edit')),
   start_date date not null,
   end_date date not null,
@@ -147,3 +158,24 @@ create policy "calendar_events_all_authenticated" on calendar_events for all usi
 create policy "finance_admin_only" on finance for all
   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)))
   with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
+
+-- ============ 移行用ALTER文（すでに旧バージョンのテーブルがある場合のみ、個別に実行してください） ============
+-- alter table clients add column if not exists post_days int[] default '{}';
+-- alter table clients add column if not exists setup_tasks jsonb default '{"profile":"pending","highlight":"pending","line":"pending","lp":"pending"}';
+-- alter table reels add column if not exists cut_editor_id uuid references profiles(id) on delete set null;
+-- alter table reels add column if not exists telop_editor_id uuid references profiles(id) on delete set null;
+-- alter table reels add column if not exists sfx_editor_id uuid references profiles(id) on delete set null;
+-- alter table reels drop column if exists editor_primary_id;
+-- alter table reels add column if not exists hashtag1 text;
+-- alter table reels add column if not exists hashtag2 text;
+-- alter table reels add column if not exists hashtag3 text;
+-- alter table reels add column if not exists trend_searches jsonb default '[]';
+-- alter table reels drop column if exists script_proposals;
+-- alter table reels add column if not exists stage_version int default 2;
+-- alter table finance add column if not exists contract_fee numeric;
+-- alter table finance add column if not exists billing_dates jsonb default '{}';
+-- alter table finance add column if not exists paid_months text[] default '{}';
+-- alter table finance drop column if exists billing_date;
+-- alter table finance drop column if exists payment_status;
+-- alter table calendar_events add column if not exists reel_ids uuid[] default '{}';
+-- alter table calendar_events drop column if exists reel_id;

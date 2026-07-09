@@ -4,22 +4,21 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import {
   LayoutDashboard, Users, Video, CheckSquare, BarChart3, Wallet, UserCog,
   Plus, X, Pencil, Trash2, Instagram, ExternalLink, Sparkles, ChevronRight,
-  ChevronLeft, Menu, LogOut, Eye, EyeOff, Calendar, TrendingUp, FileText,
+  ChevronLeft, Menu, Eye, EyeOff, Calendar, TrendingUp, FileText,
   Link2, Loader2, Camera, Scissors, MessageSquare, Send, Clock,
   CircleCheck, Circle, ArrowLeft, Building2, User, MapPin, Info, Copy,
   ClipboardList, MessageCircle, Megaphone, UserCheck, Image as ImageIcon,
-  KeyRound, DollarSign
+  DollarSign, LogOut
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { fetchAll, upsertRow, deleteRow, bulkUpsert } from "@/lib/db";
 
 const STAGES = [
-  { key: "shoot", label: "撮影", icon: Camera },
+  { key: "shoot", label: "撮影完了", icon: Camera },
   { key: "edit_request", label: "編集指示", icon: MessageSquare },
-  { key: "editing", label: "編集", icon: Scissors },
-  { key: "revision", label: "修正チェック", icon: CheckSquare },
-  { key: "caption", label: "キャプション", icon: FileText },
-  { key: "posted", label: "投稿", icon: Send },
+  { key: "editing", label: "編集中", icon: Scissors },
+  { key: "edit_done", label: "編集完了", icon: CheckSquare },
+  { key: "posted", label: "投稿完了", icon: Send },
 ];
 
 const ROLES = [
@@ -30,6 +29,11 @@ const ROLES = [
 ];
 const SELECTABLE_ROLES = ROLES.filter(r => r.key !== "admin");
 const EDIT_WORKLOAD_OPTIONS = [1, 1.5, 2, 2.5, 3];
+const EDIT_ROLE_FIELDS = [
+  { key: "cutEditorId", label: "①カット" },
+  { key: "telopEditorId", label: "②テロップ" },
+  { key: "sfxEditorId", label: "③効果音" },
+];
 
 const CONTRACT_TYPES = ["正社員", "業務委託", "アルバイト", "その他"];
 const WORK_STATUSES = ["稼働中", "休止中", "退職"];
@@ -40,16 +44,44 @@ const roleLabels = (roles) => (roles && roles.length ? roles.map(roleLabel).join
 
 function emptyUser() {
   return {
-    id: uid(), name: "", roles: ["shooter"],
+    id: uid("user"), name: "", roles: ["shooter"],
     email: "", phone: "", joinDate: "", contractType: "業務委託",
     skills: "", availability: "", bankAccount: "",
     workStatus: "稼働中", notes: "", createdAt: new Date().toISOString(),
   };
 }
 
-function uid() {
+// 過去バージョン（role が単一文字列だったころ）のデータを roles 配列に変換する
+// 旧・6段階パイプライン（撮影/編集指示/編集/修正チェック/キャプション/投稿）から
+// 新・5段階パイプライン（撮影完了/編集指示/編集中/編集完了/投稿完了）へ、進捗値を一度だけ変換する
+function normalizeReel(r) {
+  if (!r) return r;
+  if (r.stageVersion === 2) return r;
+  const raw = r.completedStages || 0;
+  const migrated = raw <= 4 ? raw : raw - 1;
+  return { ...r, completedStages: migrated, stageVersion: 2 };
+}
+
+// 動画1本の編集予定日を、カレンダー上の「その動画専用の編集イベント」と同期する
+// （カレンダー側で複数動画をまとめて登録したイベントとは別に、1動画=1イベントで自動管理する）
+function syncReelEditCalendar(setCalendarEvents, reelId, startDate, endDate, staffId) {
+  if (!setCalendarEvents) return;
+  setCalendarEvents(prev => {
+    const existing = prev.find(e => e.type === "edit" && e.reelIds && e.reelIds.length === 1 && e.reelIds[0] === reelId);
+    if (!startDate) {
+      return existing ? prev.filter(e => e.id !== existing.id) : prev;
+    }
+    const end = endDate || startDate;
+    if (existing) {
+      return prev.map(e => e.id === existing.id ? { ...e, startDate, endDate: end, staffId: staffId || e.staffId } : e);
+    }
+    return [...prev, { id: uid("event"), type: "edit", reelIds: [reelId], staffId: staffId || "", startDate, endDate: end, note: "", createdAt: new Date().toISOString() }];
+  });
+}
+
+function uid(prefix) {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
-  return "id-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  return prefix + "_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
 function currentYearMonth() {
@@ -70,19 +102,29 @@ async function callApi(path, payload) {
     body: JSON.stringify(payload),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "AI応答の取得に失敗しました");
+  if (!res.ok || data.error) throw new Error(data.error || "AI応答の取得に失敗しました");
   return data.text;
 }
 
 const emptyClient = () => ({
-  id: uid(),
+  id: uid("client"),
   companyName: "", ceoName: "", address: "", website: "",
   instagram: { url: "", id: "", password: "" },
   tiktok: { url: "", id: "", password: "" },
   business: "", appeal: "", plan: "", monthlyCount: 4,
-  contractEndDate: "",
+  contractEndDate: "", postDays: [],
+  setupTasks: { profile: "pending", highlight: "pending", line: "pending", lp: "pending" },
   notes: "", createdAt: new Date().toISOString(),
 });
+
+const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+const SETUP_TASK_FIELDS = [
+  { key: "profile", label: "インスタプロフィール作成" },
+  { key: "highlight", label: "ハイライト作成" },
+  { key: "line", label: "公式LINE作成" },
+  { key: "lp", label: "LP作成" },
+];
+const getSetupTasks = (c) => ({ profile: "pending", highlight: "pending", line: "pending", lp: "pending", ...(c.setupTasks || {}) });
 
 const CHECKLIST_ITEMS = [
   { key: "c1", label: "カットの間が空きすぎず、詰まりすぎずテンポがある" },
@@ -99,13 +141,14 @@ const emptyChecklist = () => ({ c1: false, c2: false, c3: false, c4: false, c5: 
 const emptyReel = (clientId, ym) => ({
   id: uid("reel"), clientId, yearMonth: ym,
   assignedStaffId: "",
-  editorPrimaryId: "", editorSecondaryId: "",
+  cutEditorId: "", telopEditorId: "", sfxEditorId: "", editorSecondaryId: "",
   editStartDate: "", editEndDate: "", editWorkload: "",
   checklist: emptyChecklist(), checkSubmitted: false, checkSubmittedAt: null,
   theme: "", script: "", editInstructions: "", driveUrl: "",
   transcript: "", memo: "", caption: "",
-  captionHistory: [], scriptProposals: [],
-  completedStages: 0, postedDate: "", views7day: "",
+  hashtag1: "", hashtag2: "", hashtag3: "",
+  captionHistory: [], trendSearches: [],
+  completedStages: 0, stageVersion: 2, postedDate: "", views7day: "",
   createdAt: new Date().toISOString(),
 });
 
@@ -119,9 +162,47 @@ function duplicateReel(reel, clientId, ym) {
 }
 
 const emptyFinance = (clientId) => ({
-  clientId, contractStart: "", contractEnd: "", monthlyFee: "",
-  billingDate: "", paymentStatus: "未請求", notes: "",
+  clientId, contractStart: "", contractEnd: "", monthlyFee: "", contractFee: "",
+  billingDates: {}, paidMonths: [], notes: "",
 });
+
+// 4月始まり・3月終わりの会計年度の12ヶ月分（YYYY-MM）を返す
+function getFiscalYearMonths(baseDate = new Date()) {
+  const y = baseDate.getFullYear();
+  const startYear = baseDate.getMonth() >= 3 ? y : y - 1;
+  const months = [];
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(startYear, 3 + i, 1);
+    months.push(d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"));
+  }
+  return months;
+}
+
+// 契約開始日〜契約終了日の月一覧（YYYY-MM）。契約期間が未設定の場合は会計年度（4月〜翌3月）を返す
+function getContractMonths(f) {
+  if (!f?.contractStart || !f?.contractEnd) return getFiscalYearMonths();
+  const start = new Date(f.contractStart);
+  const end = new Date(f.contractEnd);
+  if (isNaN(start) || isNaN(end) || end < start) return getFiscalYearMonths();
+  const months = [];
+  let d = new Date(start.getFullYear(), start.getMonth(), 1);
+  const endD = new Date(end.getFullYear(), end.getMonth(), 1);
+  while (d <= endD && months.length < 240) {
+    months.push(d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"));
+    d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+  }
+  return months;
+}
+
+// 月額料金が未入力で契約料金が入力されている場合は、契約料金を12ヶ月で割った金額を使う
+function effectiveMonthlyFee(f) {
+  const monthly = parseFloat(f?.monthlyFee);
+  if (monthly > 0) return monthly;
+  const contractFee = parseFloat(f?.contractFee);
+  if (contractFee > 0) return contractFee / 12;
+  return 0;
+}
+
 
 function Badge({ children, tone = "gray" }) {
   const tones = {
@@ -283,7 +364,7 @@ function LoginScreen({ onAuthed }) {
 
           <Field label="メールアドレス"><TextInput type="email" name="email" autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" /></Field>
           <Field label="パスワード">
-            <PasswordField name="password" autoComplete={mode === "login" ? "current-password" : "new-password"} value={password} onChange={e => setPassword(e.target.value)} placeholder="統括管理者から共有されたパスワード" />
+            <PasswordField name="password" autoComplete={mode === "login" ? "current-password" : "new-password"} value={password} onChange={e => setPassword(e.target.value)} placeholder="8文字以上" />
           </Field>
 
           {error && <p className="text-xs mb-2" style={{ color: "#A32D2D" }}>{error}</p>}
@@ -304,11 +385,11 @@ function LoginScreen({ onAuthed }) {
       </div>
     </div>
   );
-
 }
 
-function ClientForm({ client, onSave, onCancel }) {
+function ClientForm({ client, finance, onSave, onCancel }) {
   const [c, setC] = useState(client);
+  const [f, setF] = useState(finance || emptyFinance(client.id));
   const set = (path, val) => {
     setC(prev => {
       const next = { ...prev };
@@ -319,6 +400,7 @@ function ClientForm({ client, onSave, onCancel }) {
       return next;
     });
   };
+  const setFin = (key, val) => setF(prev => ({ ...prev, [key]: val }));
   return (
     <div className="rounded-2xl p-5 border" style={{ borderColor: "#DEDACD", background: "#fff" }}>
       <div className="grid md:grid-cols-2 gap-x-6">
@@ -331,6 +413,20 @@ function ClientForm({ client, onSave, onCancel }) {
         <Field label="事業内容"><TextArea rows={2} value={c.business} onChange={e => set("business", e.target.value)} placeholder="美容室経営 / ヘアサロン" /></Field>
         <Field label="アピールポイント"><TextArea rows={2} value={c.appeal} onChange={e => set("appeal", e.target.value)} placeholder="低価格、地域No.1の技術力など" /></Field>
         <Field label="月の動画制作本数"><TextInput type="number" value={c.monthlyCount} onChange={e => set("monthlyCount", e.target.value)} /></Field>
+        <Field label="投稿曜日">
+          <div className="flex gap-1">
+            {WEEKDAYS.map((w, i) => {
+              const checked = (c.postDays || []).includes(i);
+              return (
+                <button key={i} type="button" onClick={() => set("postDays", checked ? (c.postDays || []).filter(d => d !== i) : [...(c.postDays || []), i])}
+                  className="w-8 h-8 rounded-lg text-xs font-semibold border"
+                  style={{ borderColor: checked ? "#16171B" : "#DEDACD", background: checked ? "#16171B" : "#fff", color: checked ? "#fff" : "#5F5E5A" }}>
+                  {w}
+                </button>
+              );
+            })}
+          </div>
+        </Field>
         <Field label="備考メモ"><TextArea rows={2} value={c.notes} onChange={e => set("notes", e.target.value)} /></Field>
       </div>
 
@@ -349,31 +445,73 @@ function ClientForm({ client, onSave, onCancel }) {
         </div>
       </div>
 
+      <div className="mt-2 pt-4 border-t" style={{ borderColor: "#EFEDE4" }}>
+        <p className="text-xs font-bold mb-2 flex items-center gap-1" style={{ color: "#16171B" }}><Wallet size={13} /> 契約・料金情報（経理管理と連動）</p>
+        <div className="grid md:grid-cols-4 gap-x-4">
+          <Field label="契約開始日"><TextInput type="date" value={f.contractStart} onChange={e => setFin("contractStart", e.target.value)} /></Field>
+          <Field label="契約終了日"><TextInput type="date" value={f.contractEnd} onChange={e => setFin("contractEnd", e.target.value)} /></Field>
+          <Field label="月額料金"><TextInput type="number" value={f.monthlyFee} onChange={e => setFin("monthlyFee", e.target.value)} placeholder="円" /></Field>
+          <Field label="契約料金"><TextInput type="number" value={f.contractFee} onChange={e => setFin("contractFee", e.target.value)} placeholder="円" /></Field>
+        </div>
+        <p className="text-[11px]" style={{ color: "#A9A79C" }}>請求日・入金ステータスの管理は「経理管理」ページから行えます。</p>
+      </div>
+
+      <div className="mt-2 pt-4 border-t" style={{ borderColor: "#EFEDE4" }}>
+        <p className="text-xs font-bold mb-2" style={{ color: "#16171B" }}>初期設定タスク</p>
+        <div className="grid md:grid-cols-2 gap-3">
+          {SETUP_TASK_FIELDS.map(f2 => {
+            const tasks = getSetupTasks(c);
+            const val = tasks[f2.key];
+            return (
+              <div key={f2.key} className="flex items-center justify-between rounded-lg px-3 py-2" style={{ background: "#FAF8F3" }}>
+                <span className="text-xs font-semibold">{f2.label}</span>
+                <div className="flex gap-1">
+                  {[{ v: "pending", label: "未完了" }, { v: "done", label: "✅完了" }, { v: "unnecessary", label: "不要" }].map(opt => (
+                    <button key={opt.v} type="button" onClick={() => set("setupTasks", { ...tasks, [f2.key]: opt.v })}
+                      className="text-[11px] font-semibold px-2 py-1 rounded-md border"
+                      style={{ borderColor: val === opt.v ? "#16171B" : "#DEDACD", background: val === opt.v ? "#16171B" : "#fff", color: val === opt.v ? "#fff" : "#5F5E5A" }}>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="flex justify-end gap-2 mt-4">
         <button onClick={onCancel} className="text-sm font-semibold px-4 py-2 rounded-lg border" style={{ borderColor: "#DEDACD" }}>キャンセル</button>
-        <button onClick={() => onSave(c)} disabled={!c.companyName.trim()} className="text-sm font-semibold px-4 py-2 rounded-lg text-white disabled:opacity-40" style={{ background: "#16171B" }}>保存する</button>
+        <button onClick={() => onSave(c, f)} disabled={!c.companyName.trim()} className="text-sm font-semibold px-4 py-2 rounded-lg text-white disabled:opacity-40" style={{ background: "#16171B" }}>保存する</button>
       </div>
     </div>
   );
 }
 
-function ClientsPage({ clients, setClients, currentUser, onOpenClient }) {
+function ClientsPage({ clients, setClients, finance, setFinance, currentUser, onOpenClient }) {
   const [editing, setEditing] = useState(null);
-  const canEdit = currentUser.roles.includes("admin");
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const canEdit = (currentUser.roles || []).includes("admin");
 
-  const save = (c) => {
+  const save = (c, f) => {
     setClients(prev => {
       const exists = prev.some(x => x.id === c.id);
       return exists ? prev.map(x => x.id === c.id ? c : x) : [...prev, c];
     });
+    if (f) {
+      setFinance(prev => {
+        const exists = prev.some(x => x.clientId === c.id);
+        return exists ? prev.map(x => x.clientId === c.id ? f : x) : [...prev, f];
+      });
+    }
     setEditing(null);
   };
   const remove = (id) => {
-    if (!confirm("このクライアントを削除しますか？")) return;
     setClients(prev => prev.filter(x => x.id !== id));
+    setConfirmDeleteId(null);
   };
 
-  if (editing) return <ClientForm client={editing} onSave={save} onCancel={() => setEditing(null)} />;
+  if (editing) return <ClientForm client={editing} finance={finance.find(x => x.clientId === editing.id)} onSave={save} onCancel={() => setEditing(null)} />;
 
   return (
     <div>
@@ -399,9 +537,18 @@ function ClientsPage({ clients, setClients, currentUser, onOpenClient }) {
                 <p className="text-xs mt-0.5" style={{ color: "#8B897F" }}>{c.ceoName}</p>
               </div>
               {canEdit && (
-                <div className="flex gap-1" onClick={e => e.stopPropagation()}>
-                  <button onClick={() => setEditing(c)} className="p-1.5 rounded-lg hover:bg-black/5"><Pencil size={14} /></button>
-                  <button onClick={() => remove(c.id)} className="p-1.5 rounded-lg hover:bg-black/5"><Trash2 size={14} /></button>
+                <div className="flex gap-1 items-center" onClick={e => e.stopPropagation()}>
+                  {confirmDeleteId === c.id ? (
+                    <>
+                      <button onClick={() => remove(c.id)} className="text-[11px] font-semibold px-2 py-1 rounded text-white" style={{ background: "#A32D2D" }}>本当に削除</button>
+                      <button onClick={() => setConfirmDeleteId(null)} className="p-1.5 rounded-lg hover:bg-black/5"><X size={14} /></button>
+                    </>
+                  ) : (
+                    <>
+                      <button onClick={() => setEditing(c)} className="p-1.5 rounded-lg hover:bg-black/5"><Pencil size={14} /></button>
+                      <button onClick={() => setConfirmDeleteId(c.id)} className="p-1.5 rounded-lg hover:bg-black/5"><Trash2 size={14} /></button>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -417,15 +564,15 @@ function ClientsPage({ clients, setClients, currentUser, onOpenClient }) {
   );
 }
 
-function ClientDetail({ client, clients, setClients, reels, currentUser, onBack, onGoReels }) {
+function ClientDetail({ client, clients, setClients, finance, setFinance, reels, currentUser, onBack, onGoReels }) {
   const [editing, setEditing] = useState(false);
-  const canEdit = currentUser.roles.includes("admin");
+  const canEdit = (currentUser.roles || []).includes("admin");
   const [proposal, setProposal] = useState("");
   const [loadingProposal, setLoadingProposal] = useState(false);
   const [proposalError, setProposalError] = useState("");
 
   const clientReels = reels.filter(r => r.clientId === client.id);
-  const postedCount = clientReels.filter(r => r.completedStages >= 6).length;
+  const postedCount = clientReels.filter(r => r.completedStages >= 5).length;
 
   const generateProposal = async () => {
     setLoadingProposal(true);
@@ -447,7 +594,16 @@ function ClientDetail({ client, clients, setClients, reels, currentUser, onBack,
   };
 
   if (editing) {
-    return <ClientForm client={client} onCancel={() => setEditing(false)} onSave={(c) => { setClients(prev => prev.map(x => x.id === c.id ? c : x)); setEditing(false); }} />;
+    return <ClientForm client={client} finance={finance.find(x => x.clientId === client.id)} onCancel={() => setEditing(false)} onSave={(c, f) => {
+      setClients(prev => prev.map(x => x.id === c.id ? c : x));
+      if (f) {
+        setFinance(prev => {
+          const exists = prev.some(x => x.clientId === c.id);
+          return exists ? prev.map(x => x.clientId === c.id ? f : x) : [...prev, f];
+        });
+      }
+      setEditing(false);
+    }} />;
   }
 
   return (
@@ -483,10 +639,43 @@ function ClientDetail({ client, clients, setClients, reels, currentUser, onBack,
             <p className="text-sm">{client.contractEndDate || "―"}</p>
           </div>
           <div>
+            <p className="text-xs font-semibold mb-1" style={{ color: "#8B897F" }}>投稿曜日</p>
+            <p className="text-sm">{(client.postDays || []).length > 0 ? client.postDays.slice().sort().map(i => WEEKDAYS[i]).join("・") : "―"}</p>
+          </div>
+          <div>
             <p className="text-xs font-semibold mb-1" style={{ color: "#8B897F" }}>備考</p>
             <p className="text-sm">{client.notes || "―"}</p>
           </div>
         </div>
+
+        <div className="mt-4 pt-4 border-t" style={{ borderColor: "#EFEDE4" }}>
+          <p className="text-xs font-semibold mb-2" style={{ color: "#8B897F" }}>初期設定タスク</p>
+          <div className="flex flex-wrap gap-1.5">
+            {SETUP_TASK_FIELDS.map(f => {
+              const val = getSetupTasks(client)[f.key];
+              const tone = val === "done" ? "teal" : val === "unnecessary" ? "gray" : "amber";
+              const text = val === "done" ? `✅ ${f.label}` : val === "unnecessary" ? `${f.label}（不要）` : `${f.label}（未完了）`;
+              return <Badge key={f.key} tone={tone}>{text}</Badge>;
+            })}
+          </div>
+        </div>
+
+        {canEdit && (
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: "#EFEDE4" }}>
+            <p className="text-xs font-semibold mb-2 flex items-center gap-1" style={{ color: "#8B897F" }}><Wallet size={12} /> 契約・料金情報（統括管理者専用・経理管理と連動）</p>
+            {(() => {
+              const cf = finance.find(x => x.clientId === client.id) || emptyFinance(client.id);
+              return (
+                <div className="grid md:grid-cols-4 gap-4">
+                  <div><p className="text-xs" style={{ color: "#8B897F" }}>契約開始日</p><p className="text-sm">{cf.contractStart || "―"}</p></div>
+                  <div><p className="text-xs" style={{ color: "#8B897F" }}>契約終了日</p><p className="text-sm">{cf.contractEnd || "―"}</p></div>
+                  <div><p className="text-xs" style={{ color: "#8B897F" }}>月額料金</p><p className="text-sm">{cf.monthlyFee ? `¥${parseFloat(cf.monthlyFee).toLocaleString()}` : "―"}</p></div>
+                  <div><p className="text-xs" style={{ color: "#8B897F" }}>契約料金</p><p className="text-sm">{cf.contractFee ? `¥${parseFloat(cf.contractFee).toLocaleString()}` : "―"}</p></div>
+                </div>
+              );
+            })()}
+          </div>
+        )}
 
         <div className="grid md:grid-cols-2 gap-4 mt-4 pt-4 border-t" style={{ borderColor: "#EFEDE4" }}>
           {[{ label: "Instagram", data: client.instagram, tone: "coral" }, { label: "TikTok", data: client.tiktok, tone: "gray" }].map(sns => (
@@ -509,7 +698,7 @@ function ClientDetail({ client, clients, setClients, reels, currentUser, onBack,
         </div>
       </div>
 
-      {(currentUser.roles.includes("shooter") || currentUser.roles.includes("admin")) && (
+      {((currentUser.roles || []).includes("shooter") || (currentUser.roles || []).includes("admin")) && (
         <div className="rounded-2xl p-5 border" style={{ borderColor: "#DEDACD", background: "#fff" }}>
           <div className="flex items-center justify-between mb-2">
             <p className="font-bold flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><Sparkles size={16} color="#D6248A" /> AI企画提案（トレンドリサーチ）</p>
@@ -532,40 +721,40 @@ function timeAgo(ts) {
   return d.toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onChange, onDelete, onDuplicate, canEdit, currentUser }) {
+function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onChange, onDelete, onDuplicate, canEdit, currentUser, showClient }) {
   const [expanded, setExpanded] = useState(false);
   const [genLoading, setGenLoading] = useState(false);
   const [genError, setGenError] = useState("");
   const [showHistory, setShowHistory] = useState(false);
-  const [scriptLoading, setScriptLoading] = useState(false);
-  const [scriptError, setScriptError] = useState("");
-  const [showScriptProposals, setShowScriptProposals] = useState(false);
+  const [trendLoading, setTrendLoading] = useState(false);
+  const [trendError, setTrendError] = useState("");
+  const [showTrendHistory, setShowTrendHistory] = useState(false);
+  const [genre, setGenre] = useState("");
+  const [trendTheme, setTrendTheme] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const editors = users.filter(u => u.roles.includes("editor"));
-  const shooters = users.filter(u => u.roles.includes("shooter"));
+  const editors = users.filter(u => (u.roles || []).includes("editor"));
+  const shooters = users.filter(u => (u.roles || []).includes("shooter"));
   const isAdmin = currentUser?.roles?.includes("admin");
 
   const syncEditCalendar = (updated) => {
-    if (!setCalendarEvents) return;
-    setCalendarEvents(prev => {
-      const existing = prev.find(e => e.reelId === updated.id && e.type === "edit");
-      if (!updated.editStartDate) {
-        return existing ? prev.filter(e => e.id !== existing.id) : prev;
-      }
-      const endDate = updated.editEndDate || updated.editStartDate;
-      if (existing) {
-        return prev.map(e => e.id === existing.id ? { ...e, startDate: updated.editStartDate, endDate, staffId: updated.editorPrimaryId || e.staffId } : e);
-      }
-      return [...prev, { id: uid(), type: "edit", reelId: updated.id, staffId: updated.editorPrimaryId || "", startDate: updated.editStartDate, endDate, note: "", createdAt: new Date().toISOString() }];
-    });
+    syncReelEditCalendar(setCalendarEvents, updated.id, updated.editStartDate, updated.editEndDate);
   };
 
   const update = (patch) => {
     const updated = { ...reel, ...patch };
     onChange(updated);
-    if ("editStartDate" in patch || "editEndDate" in patch || "editorPrimaryId" in patch) {
+    if ("editStartDate" in patch || "editEndDate" in patch) {
       syncEditCalendar(updated);
     }
+  };
+
+  const buildHashtagSuffix = () => {
+    const tags = [reel.hashtag1, reel.hashtag2, reel.hashtag3]
+      .map(t => (t || "").trim())
+      .filter(Boolean)
+      .map(t => t.startsWith("#") ? t : "#" + t);
+    return tags.join("\n");
   };
 
   const genCaption = async () => {
@@ -579,8 +768,10 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
         transcript: reel.transcript,
         memo: reel.memo,
       });
-      const clean = text.trim();
-      const historyEntry = { id: uid(), text: clean, createdAt: Date.now() };
+      let clean = text.trim();
+      const suffix = buildHashtagSuffix();
+      if (suffix) clean = clean + "\n\n" + suffix;
+      const historyEntry = { id: uid("cap"), text: clean, createdAt: Date.now() };
       update({ caption: clean, captionHistory: [historyEntry, ...(reel.captionHistory || [])] });
     } catch (e) {
       setGenError("キャプション生成に失敗しました。時間をおいて再度お試しください。");
@@ -589,31 +780,53 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
     }
   };
 
+  const applyHashtagsToCaption = () => {
+    const suffix = buildHashtagSuffix();
+    if (!suffix) return;
+    const lines = (reel.caption || "").split("\n");
+    while (lines.length && lines[lines.length - 1].trim() === "") lines.pop();
+    const isSingleHashtag = (line) => {
+      const t = line.trim();
+      return t.length > 0 && t.startsWith("#") && !t.slice(1).includes("#") && t.split(/\s+/).length === 1;
+    };
+    while (lines.length && isSingleHashtag(lines[lines.length - 1])) lines.pop();
+    while (lines.length && lines[lines.length - 1].trim() === "") lines.pop();
+    const newCaption = [...lines, "", suffix].join("\n");
+    update({ caption: newCaption });
+  };
+
+  const [copied, setCopied] = useState(false);
+  const copyCaption = async () => {
+    try {
+      await navigator.clipboard.writeText(reel.caption || "");
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (e) {
+      setGenError("コピーに失敗しました。手動で選択してコピーしてください。");
+    }
+  };
+
   const applyHistoryCaption = (text) => update({ caption: text });
   const deleteHistoryCaption = (id) => update({ captionHistory: (reel.captionHistory || []).filter(h => h.id !== id) });
 
-  const genScript = async () => {
-    setScriptLoading(true);
-    setScriptError("");
+  const genTrendSearch = async () => {
+    setTrendLoading(true);
+    setTrendError("");
     try {
-      const text = await callApi("/api/script", {
-        clientName: client?.companyName,
-        clientBusiness: client?.business,
-        clientAppeal: client?.appeal,
-        clientPlan: client?.plan,
-        theme: reel.theme,
+      const text = await callApi("/api/trend", {
+        genre,
+        theme: trendTheme || reel.theme,
       });
       const clean = text.trim();
-      const entry = { id: uid(), text: clean, createdAt: Date.now() };
-      update({ scriptProposals: [entry, ...(reel.scriptProposals || [])] });
-      setShowScriptProposals(true);
+      const entry = { id: uid("trend"), genre, theme: trendTheme, text: clean, createdAt: Date.now() };
+      update({ trendSearches: [entry, ...(reel.trendSearches || [])] });
+      setShowTrendHistory(true);
     } catch (e) {
-      setScriptError("台本提案の生成に失敗しました。時間をおいて再度お試しください。");
+      setTrendError("検索に失敗しました。時間をおいて再度お試しください。");
     } finally {
-      setScriptLoading(false);
+      setTrendLoading(false);
     }
   };
-  const applyScriptProposal = (text) => update({ script: text });
 
   const toggleCheck = (key) => update({ checklist: { ...(reel.checklist || emptyChecklist()), [key]: !((reel.checklist || {})[key]) } });
   const setCheckMemo = (memo) => update({ checklist: { ...(reel.checklist || emptyChecklist()), memo } });
@@ -628,12 +841,13 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
       <div className="p-4 cursor-pointer" onClick={() => setExpanded(e => !e)}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
+            {showClient && <p className="text-[11px] font-semibold truncate" style={{ color: "#D6248A" }}>{client?.companyName || "クライアント不明"} ・ {monthLabel(reel.yearMonth)}</p>}
             <p className="font-bold truncate">{reel.theme || "（テーマ未設定）"}</p>
             <p className="text-xs mt-0.5 truncate" style={{ color: "#8B897F" }}>{reel.editInstructions || "編集指示未入力"}</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {reel.assignedStaffId && <Badge tone="gray">{users.find(u => u.id === reel.assignedStaffId)?.name || "担当者"}</Badge>}
-            {reel.completedStages >= 6 && <Badge tone="teal">投稿済み</Badge>}
+            {reel.completedStages >= 5 && <Badge tone="teal">投稿済み</Badge>}
             {onDuplicate && canEdit && (
               <button title="この動画を複製" onClick={(e) => { e.stopPropagation(); onDuplicate(reel); }} className="p-1 rounded-lg hover:bg-black/5"><Copy size={14} /></button>
             )}
@@ -660,8 +874,21 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
               </div>
             </Field>
             <Field label="編集指示"><TextArea rows={2} value={reel.editInstructions} onChange={e => update({ editInstructions: e.target.value })} disabled={!canEdit} /></Field>
-            <Field label="第一段階：メイン編集者">
-              <select value={reel.editorPrimaryId || ""} onChange={e => update({ editorPrimaryId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
+            <Field label="台本（任意）"><TextArea rows={2} value={reel.script} onChange={e => update({ script: e.target.value })} disabled={!canEdit} /></Field>
+            <Field label="①カット担当">
+              <select value={reel.cutEditorId || ""} onChange={e => update({ cutEditorId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
+                <option value="">未割り当て</option>
+                {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </Field>
+            <Field label="②テロップ担当">
+              <select value={reel.telopEditorId || ""} onChange={e => update({ telopEditorId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
+                <option value="">未割り当て</option>
+                {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </Field>
+            <Field label="③効果音担当">
+              <select value={reel.sfxEditorId || ""} onChange={e => update({ sfxEditorId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
                 <option value="">未割り当て</option>
                 {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
@@ -688,7 +915,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
 
           <div className="rounded-xl p-3 my-2" style={{ background: "#FAF8F3" }}>
             <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-bold flex items-center gap-1.5"><ClipboardList size={13} color="#0E90B8" /> 修正チェック（第二段階）</p>
+              <p className="text-xs font-bold flex items-center gap-1.5"><ClipboardList size={13} color="#0E90B8" /> ④修正チェック</p>
               {reel.checkSubmitted && <Badge tone="teal">提出済み ・ {timeAgo(reel.checkSubmittedAt)}</Badge>}
             </div>
             <Field label="チェック担当者">
@@ -717,28 +944,28 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
           </div>
 
           <div className="rounded-xl p-3 my-2" style={{ background: "#FAF8F3" }}>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-bold flex items-center gap-1.5"><Sparkles size={13} color="#D6248A" /> AI台本提案（トレンドリサーチ）</p>
-              {canEdit && (
-                <button onClick={genScript} disabled={scriptLoading} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 disabled:opacity-50" style={{ background: "#D6248A" }}>
-                  {scriptLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {scriptLoading ? "リサーチ中..." : "台本を提案してもらう"}
-                </button>
-              )}
+            <p className="text-xs font-bold mb-2 flex items-center gap-1.5"><Sparkles size={13} color="#D6248A" /> バズっているショート動画を探す</p>
+            <div className="grid md:grid-cols-2 gap-x-4">
+              <Field label="ジャンル"><TextInput value={genre} onChange={e => setGenre(e.target.value)} placeholder="例：美容室、飲食店、不動産" disabled={!canEdit} /></Field>
+              <Field label="テーマ"><TextInput value={trendTheme} onChange={e => setTrendTheme(e.target.value)} placeholder="例：ビフォーアフター、Q&A" disabled={!canEdit} /></Field>
             </div>
-            {scriptError && <p className="text-xs mb-1" style={{ color: "#A32D2D" }}>{scriptError}</p>}
-            <Field label="台本"><TextArea rows={3} value={reel.script} onChange={e => update({ script: e.target.value })} disabled={!canEdit} /></Field>
-            {(reel.scriptProposals || []).length > 0 && (
-              <button onClick={() => setShowScriptProposals(s => !s)} className="text-xs font-semibold" style={{ color: "#5F5E5A" }}>
-                過去の提案を見る（{reel.scriptProposals.length}件）{showScriptProposals ? " ▲" : " ▼"}
+            {canEdit && (
+              <button onClick={genTrendSearch} disabled={trendLoading} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 disabled:opacity-50" style={{ background: "#D6248A" }}>
+                {trendLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {trendLoading ? "検索中..." : "バズ動画を3つ探す"}
               </button>
             )}
-            {showScriptProposals && (
+            {trendError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{trendError}</p>}
+            {(reel.trendSearches || []).length > 0 && (
+              <button onClick={() => setShowTrendHistory(s => !s)} className="text-xs font-semibold mt-2" style={{ color: "#5F5E5A" }}>
+                検索結果を見る（{reel.trendSearches.length}件）{showTrendHistory ? " ▲" : " ▼"}
+              </button>
+            )}
+            {showTrendHistory && (
               <div className="space-y-2 mt-2">
-                {(reel.scriptProposals || []).map(p => (
+                {(reel.trendSearches || []).map(p => (
                   <div key={p.id} className="rounded-lg p-2.5" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-[11px]" style={{ color: "#8B897F" }}>{timeAgo(p.createdAt)}</span>
-                      {canEdit && <button onClick={() => applyScriptProposal(p.text)} className="text-[11px] font-semibold" style={{ color: "#D6248A" }}>台本欄に反映</button>}
+                      <span className="text-[11px]" style={{ color: "#8B897F" }}>{p.genre || "ジャンル未指定"} ・ {p.theme || "テーマ未指定"} ・ {timeAgo(p.createdAt)}</span>
                     </div>
                     <p className="text-xs whitespace-pre-wrap" style={{ lineHeight: 1.6, color: "#5F5E5A" }}>{p.text}</p>
                   </div>
@@ -753,13 +980,34 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
               <Field label="動画概要メモ"><TextArea rows={3} value={reel.memo} onChange={e => update({ memo: e.target.value })} placeholder="動画の要点・伝えたいことのメモ" disabled={!canEdit} /></Field>
               <Field label="動画の文字起こし（任意）"><TextArea rows={3} value={reel.transcript} onChange={e => update({ transcript: e.target.value })} placeholder="完成した動画の文字起こしを貼り付け（なくても生成可）" disabled={!canEdit} /></Field>
             </div>
-            {canEdit && (
-              <button onClick={genCaption} disabled={genLoading} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 disabled:opacity-50" style={{ background: "#D6248A" }}>
-                {genLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {genLoading ? "生成中..." : (reel.caption ? "AIで再生成" : "AIでキャプションを生成")}
-              </button>
-            )}
+            <Field label="指定ハッシュタグ（必ずキャプション末尾に追加されます）">
+              <div className="grid grid-cols-3 gap-2">
+                <TextInput value={reel.hashtag1} onChange={e => update({ hashtag1: e.target.value })} placeholder="#タグ1" disabled={!canEdit} />
+                <TextInput value={reel.hashtag2} onChange={e => update({ hashtag2: e.target.value })} placeholder="#タグ2" disabled={!canEdit} />
+                <TextInput value={reel.hashtag3} onChange={e => update({ hashtag3: e.target.value })} placeholder="#タグ3" disabled={!canEdit} />
+              </div>
+            </Field>
+            <div className="flex items-center gap-2">
+              {canEdit && (
+                <button onClick={genCaption} disabled={genLoading} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 disabled:opacity-50" style={{ background: "#D6248A" }}>
+                  {genLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {genLoading ? "生成中..." : (reel.caption ? "AIで再生成" : "AIでキャプションを生成")}
+                </button>
+              )}
+              {canEdit && reel.caption && (
+                <button onClick={applyHashtagsToCaption} className="text-xs font-semibold px-3 py-1.5 rounded-lg border" style={{ borderColor: "#DEDACD", color: "#5F5E5A" }}>
+                  指定ハッシュタグを末尾に反映
+                </button>
+              )}
+            </div>
             {genError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{genError}</p>}
-            <Field label="キャプション"><TextArea rows={4} value={reel.caption} onChange={e => update({ caption: e.target.value })} disabled={!canEdit} /></Field>
+            <Field label="キャプション">
+              <TextArea rows={4} value={reel.caption} onChange={e => update({ caption: e.target.value })} disabled={!canEdit} />
+              {reel.caption && (
+                <button onClick={copyCaption} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 mt-1.5" style={{ background: copied ? "#0E90B8" : "#16171B" }}>
+                  {copied ? <CircleCheck size={12} /> : <Copy size={12} />} {copied ? "コピーしました" : "キャプションをコピー"}
+                </button>
+              )}
+            </Field>
             {(reel.captionHistory || []).length > 0 && (
               <button onClick={() => setShowHistory(s => !s)} className="text-xs font-semibold" style={{ color: "#5F5E5A" }}>
                 生成履歴を見る（{reel.captionHistory.length}件）{showHistory ? " ▲" : " ▼"}
@@ -789,9 +1037,16 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
           </div>
 
           {canEdit && (
-            <button onClick={() => confirm("この動画を削除しますか？") && onDelete(reel.id)} className="text-xs font-semibold flex items-center gap-1 mt-1" style={{ color: "#A32D2D" }}>
-              <Trash2 size={13} /> この動画を削除
-            </button>
+            confirmDelete ? (
+              <div className="flex items-center gap-2 mt-1">
+                <button onClick={() => onDelete(reel.id)} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#A32D2D" }}>本当に削除する</button>
+                <button onClick={() => setConfirmDelete(false)} className="text-xs font-semibold" style={{ color: "#8B897F" }}>キャンセル</button>
+              </div>
+            ) : (
+              <button onClick={() => setConfirmDelete(true)} className="text-xs font-semibold flex items-center gap-1 mt-1" style={{ color: "#A32D2D" }}>
+                <Trash2 size={13} /> この動画を削除
+              </button>
+            )
           )}
         </div>
       )}
@@ -841,7 +1096,7 @@ function NewReelModal({ client, ym, users, existingReels, onCreate, onClose }) {
         <Field label="担当撮影者（任意）">
           <select value={form.assignedStaffId} onChange={e => setForm(f => ({ ...f, assignedStaffId: e.target.value }))} className={inputCls} style={inputStyle}>
             <option value="">未割り当て</option>
-            {users.filter(u => u.roles.includes("shooter")).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+            {users.filter(u => (u.roles || []).includes("shooter")).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
         </Field>
 
@@ -858,16 +1113,22 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
   const [clientId, setClientId] = useState(focusClientId || clients[0]?.id || "");
   const [ym, setYm] = useState(currentYearMonth());
   const [staffFilter, setStaffFilter] = useState("");
+  const [showAllMonths, setShowAllMonths] = useState(false);
   const canEdit = true;
   const client = clients.find(c => c.id === clientId);
+  const allClientsMode = clientId === "__all__";
 
   useEffect(() => { if (focusClientId) setClientId(focusClientId); }, [focusClientId]);
 
   const [showNew, setShowNew] = useState(false);
-  const list = reels.filter(r => r.clientId === clientId && r.yearMonth === ym && (!staffFilter || r.assignedStaffId === staffFilter));
+  const list = reels
+    .filter(r => allClientsMode || r.clientId === clientId)
+    .filter(r => showAllMonths || r.yearMonth === ym)
+    .filter(r => !staffFilter || r.assignedStaffId === staffFilter)
+    .sort((a, b) => b.yearMonth.localeCompare(a.yearMonth));
 
   const addReel = () => {
-    if (!clientId) return;
+    if (!clientId || allClientsMode) return;
     setShowNew(true);
   };
   const createReel = (r) => { setReels(prev => [...prev, r]); setShowNew(false); };
@@ -888,33 +1149,40 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <select value={clientId} onChange={e => setClientId(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 220 }}>
           <option value="">クライアントを選択</option>
+          <option value="__all__">すべてのクライアントを表示</option>
           {clients.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
         </select>
-        <div className="flex items-center gap-1 rounded-lg border px-1" style={{ borderColor: "#DEDACD" }}>
-          <button onClick={() => shiftMonth(-1)} className="p-1.5"><ChevronLeft size={15} /></button>
+        <div className="flex items-center gap-1 rounded-lg border px-1" style={{ borderColor: "#DEDACD", opacity: showAllMonths ? 0.4 : 1 }}>
+          <button onClick={() => shiftMonth(-1)} className="p-1.5" disabled={showAllMonths}><ChevronLeft size={15} /></button>
           <span className="text-sm font-semibold px-1 w-24 text-center">{monthLabel(ym)}</span>
-          <button onClick={() => shiftMonth(1)} className="p-1.5"><ChevronRight size={15} /></button>
+          <button onClick={() => shiftMonth(1)} className="p-1.5" disabled={showAllMonths}><ChevronRight size={15} /></button>
         </div>
+        <button onClick={() => setShowAllMonths(s => !s)} className="text-sm font-semibold px-3 py-2 rounded-lg border" style={{ borderColor: showAllMonths ? "#D6248A" : "#DEDACD", background: showAllMonths ? "#FBE4F1" : "#fff", color: showAllMonths ? "#D6248A" : "#5F5E5A" }}>
+          全ての動画
+        </button>
         <select value={staffFilter} onChange={e => setStaffFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 180 }}>
           <option value="">担当撮影者（全員）</option>
-          {users.filter(u => u.roles.includes("shooter")).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+          {users.filter(u => (u.roles || []).includes("shooter")).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
-        {clientId && (
+        {clientId && !allClientsMode && (
           <button onClick={addReel} className="flex items-center gap-1 text-sm font-semibold px-3 py-2 rounded-lg text-white ml-auto" style={{ background: "#D6248A" }}>
             <Plus size={15} /> 動画を追加
           </button>
         )}
       </div>
 
-      {client && (
+      {client && !allClientsMode && !showAllMonths && (
         <p className="text-xs mb-3" style={{ color: "#8B897F" }}>{client.companyName} ・ {monthLabel(ym)} の制作予定 {client.monthlyCount || 0}本 ／ 登録済み {list.length}本</p>
+      )}
+      {allClientsMode && (
+        <p className="text-xs mb-3" style={{ color: "#8B897F" }}>すべてのクライアント{showAllMonths ? "・全期間" : "・" + monthLabel(ym)} ／ 該当 {list.length}本</p>
       )}
 
       {!clientId && <div className="text-center py-16 rounded-2xl border border-dashed" style={{ borderColor: "#DEDACD", color: "#8B897F" }}>クライアントを選択してください。</div>}
-      {clientId && list.length === 0 && <div className="text-center py-16 rounded-2xl border border-dashed" style={{ borderColor: "#DEDACD", color: "#8B897F" }}>この月の動画はまだありません。「動画を追加」から作成できます。</div>}
+      {clientId && list.length === 0 && <div className="text-center py-16 rounded-2xl border border-dashed" style={{ borderColor: "#DEDACD", color: "#8B897F" }}>該当する動画はまだありません。{!allClientsMode && "「動画を追加」から作成できます。"}</div>}
 
       <div className="space-y-3">
-        {list.map(r => <ReelCard key={r.id} reel={r} client={client} users={users} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} currentUser={currentUser} onChange={updateReel} onDelete={deleteReel} onDuplicate={duplicateReelInPlace} canEdit={true} />)}
+        {list.map(r => <ReelCard key={r.id} reel={r} client={clients.find(c => c.id === r.clientId)} users={users} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} currentUser={currentUser} onChange={updateReel} onDelete={deleteReel} onDuplicate={duplicateReelInPlace} canEdit={true} showClient={allClientsMode || showAllMonths} />)}
       </div>
 
       {showNew && client && (
@@ -937,13 +1205,17 @@ const EVENT_TYPES = [
 ];
 
 function emptyCalendarEvent() {
-  return { id: uid(), staffId: "", reelId: "", type: "shoot", startDate: "", endDate: "", note: "", createdAt: new Date().toISOString() };
+  return { id: uid("event"), staffId: "", reelIds: [], type: "shoot", startDate: "", endDate: "", note: "", createdAt: new Date().toISOString() };
 }
 
 function CalendarWidget({ events, setEvents, users, reels, setReels, clients }) {
   const [month, setMonth] = useState(currentYearMonth());
   const [form, setForm] = useState(emptyCalendarEvent());
   const [showForm, setShowForm] = useState(false);
+  const [selectedStaffId, setSelectedStaffId] = useState(null);
+  const [editingEventId, setEditingEventId] = useState(null);
+  const [editForm, setEditForm] = useState(null);
+  const [confirmDeleteEventId, setConfirmDeleteEventId] = useState(null);
 
   const [y, m] = month.split("-").map(Number);
   const firstDay = new Date(y, m - 1, 1);
@@ -961,18 +1233,25 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients }) 
     return events.filter(e => e.startDate && e.endDate && e.startDate <= ds && e.endDate >= ds);
   };
 
-  const editableReels = reels.filter(r => r.completedStages < 6);
+  const editableReels = reels.filter(r => r.completedStages < 5);
+  const toggleReelId = (list, id) => list.includes(id) ? list.filter(x => x !== id) : [...list, id];
+
+  const applyDatesToReels = (reelIds, startDate, endDate) => {
+    if (!reelIds || reelIds.length === 0 || !setReels) return;
+    setReels(prev => prev.map(r => reelIds.includes(r.id) ? { ...r, editStartDate: startDate, editEndDate: endDate } : r));
+  };
+  const clearDatesFromReels = (reelIds) => {
+    if (!reelIds || reelIds.length === 0 || !setReels) return;
+    setReels(prev => prev.map(r => reelIds.includes(r.id) ? { ...r, editStartDate: "", editEndDate: "" } : r));
+  };
 
   const addEvent = () => {
     if (!form.staffId || !form.startDate) return;
     const endDate = (form.type === "edit" ? form.endDate : "") || form.startDate;
-    const newEvent = { ...form, id: uid(), endDate };
+    const newEvent = { ...form, id: uid("event"), endDate };
     setEvents(prev => [...prev, newEvent]);
-    // 編集稼働の予定に動画が紐付けられていたら、動画制作管理側にも反映する
-    if (form.type === "edit" && form.reelId && setReels) {
-      setReels(prev => prev.map(r => r.id === form.reelId
-        ? { ...r, editStartDate: form.startDate, editEndDate: endDate, editorPrimaryId: form.staffId || r.editorPrimaryId }
-        : r));
+    if (form.type === "edit" && form.reelIds.length > 0) {
+      applyDatesToReels(form.reelIds, form.startDate, endDate);
     }
     setForm(emptyCalendarEvent());
     setShowForm(false);
@@ -980,9 +1259,29 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients }) 
   const removeEvent = (id) => {
     const ev = events.find(e => e.id === id);
     setEvents(prev => prev.filter(e => e.id !== id));
-    if (ev?.type === "edit" && ev.reelId && setReels) {
-      setReels(prev => prev.map(r => r.id === ev.reelId ? { ...r, editStartDate: "", editEndDate: "" } : r));
+    if (ev?.type === "edit" && ev.reelIds?.length) {
+      clearDatesFromReels(ev.reelIds);
     }
+  };
+
+  const startEditEvent = (ev) => {
+    setEditingEventId(ev.id);
+    setEditForm({ ...ev, reelIds: ev.reelIds || [] });
+  };
+  const cancelEditEvent = () => { setEditingEventId(null); setEditForm(null); };
+  const saveEditEvent = () => {
+    if (!editForm.staffId || !editForm.startDate) return;
+    const endDate = (editForm.type === "edit" ? editForm.endDate : "") || editForm.startDate;
+    const prevEvent = events.find(e => e.id === editForm.id);
+    // 対象動画から外れたものの日付をクリア
+    const removedReelIds = (prevEvent?.reelIds || []).filter(id => !editForm.reelIds.includes(id));
+    if (removedReelIds.length) clearDatesFromReels(removedReelIds);
+    setEvents(prev => prev.map(e => e.id === editForm.id ? { ...editForm, endDate } : e));
+    if (editForm.type === "edit" && editForm.reelIds.length > 0) {
+      applyDatesToReels(editForm.reelIds, editForm.startDate, endDate);
+    }
+    setEditingEventId(null);
+    setEditForm(null);
   };
 
   const cells = [];
@@ -990,35 +1289,53 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients }) 
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
   const todayStr = new Date().toISOString().slice(0, 10);
 
+  const selectedStaff = selectedStaffId ? users.find(u => u.id === selectedStaffId) : null;
+  const staffSchedule = selectedStaffId
+    ? events.filter(e => e.staffId === selectedStaffId).sort((a, b) => (a.startDate || "").localeCompare(b.startDate || ""))
+    : [];
+
+  const reelLabel = (r) => {
+    const c = clients.find(x => x.id === r.clientId);
+    return `${c?.companyName || ""} ・ ${r.theme || "テーマ未設定"}`;
+  };
+
   return (
     <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <p className="font-bold flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><Calendar size={16} color="#D6248A" /> 月間カレンダー（撮影日・編集稼働期間）</p>
-        <button onClick={() => setShowForm(s => !s)} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1" style={{ background: "#D6248A" }}><Plus size={13} />予定を登録</button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <select value={selectedStaffId || ""} onChange={e => setSelectedStaffId(e.target.value || null)} className={inputCls} style={{ ...inputStyle, width: 200 }}>
+            <option value="">スタッフの予定を確認・編集</option>
+            {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+          <button onClick={() => setShowForm(s => !s)} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1" style={{ background: "#D6248A" }}><Plus size={13} />予定を登録</button>
+        </div>
       </div>
 
       {showForm && (
         <div className="rounded-xl p-3 mb-3 grid md:grid-cols-6 gap-2 items-end" style={{ background: "#FAF8F3" }}>
           <Field label="種別">
-            <select value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value, staffId: "", reelId: "" }))} className={inputCls} style={inputStyle}>
+            <select value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value, staffId: "", reelIds: [] }))} className={inputCls} style={inputStyle}>
               {EVENT_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
             </select>
           </Field>
           <Field label="担当者">
             <select value={form.staffId} onChange={e => setForm(f => ({ ...f, staffId: e.target.value }))} className={inputCls} style={inputStyle}>
               <option value="">選択してください</option>
-              {users.filter(u => form.type === "shoot" ? u.roles.includes("shooter") : u.roles.includes("editor")).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              {users.filter(u => form.type === "shoot" ? (u.roles || []).includes("shooter") : (u.roles || []).includes("editor")).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
             </select>
           </Field>
           {form.type === "edit" && (
-            <Field label="対象動画（任意）">
-              <select value={form.reelId} onChange={e => setForm(f => ({ ...f, reelId: e.target.value }))} className={inputCls} style={inputStyle}>
-                <option value="">選択しない</option>
-                {editableReels.map(r => {
-                  const c = clients.find(x => x.id === r.clientId);
-                  return <option key={r.id} value={r.id}>{c?.companyName} ・ {r.theme || "テーマ未設定"}</option>;
-                })}
-              </select>
+            <Field label="対象動画（複数選択可・任意）">
+              <div className="max-h-28 overflow-y-auto rounded-lg border p-1.5 space-y-1" style={{ borderColor: "#DEDACD", background: "#fff" }}>
+                {editableReels.length === 0 && <p className="text-[11px]" style={{ color: "#A9A79C" }}>対象動画がありません</p>}
+                {editableReels.map(r => (
+                  <label key={r.id} className="flex items-center gap-1.5 text-[11px] cursor-pointer">
+                    <input type="checkbox" checked={form.reelIds.includes(r.id)} onChange={() => setForm(f => ({ ...f, reelIds: toggleReelId(f.reelIds, r.id) }))} />
+                    <span className="truncate">{reelLabel(r)}</span>
+                  </label>
+                ))}
+              </div>
             </Field>
           )}
           <Field label={form.type === "shoot" ? "撮影日" : "開始日"}>
@@ -1033,6 +1350,80 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients }) 
             <TextInput value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="クライアント名など" />
           </Field>
           <button onClick={addEvent} disabled={!form.staffId || !form.startDate} className="text-xs font-semibold px-3 py-2 rounded-lg text-white disabled:opacity-40 h-fit" style={{ background: "#16171B" }}>登録する</button>
+        </div>
+      )}
+
+      {selectedStaff && (
+        <div className="rounded-xl p-3 mb-3" style={{ background: "#FDE7F2" }}>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-bold" style={{ color: "#96185E" }}>{selectedStaff.name}さんのスケジュール一覧（過去分も編集・削除できます）</p>
+            <button onClick={() => { setSelectedStaffId(null); cancelEditEvent(); }} className="text-xs" style={{ color: "#96185E" }}><X size={14} /></button>
+          </div>
+          {staffSchedule.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>予定はありません。</p>}
+          <div className="space-y-1.5">
+            {staffSchedule.map(ev => {
+              const type = EVENT_TYPES.find(t => t.key === ev.type);
+              const linkedReels = (ev.reelIds || []).map(id => reels.find(r => r.id === id)).filter(Boolean);
+              const isPast = ev.endDate && ev.endDate < todayStr;
+              const isEditing = editingEventId === ev.id;
+
+              if (isEditing) {
+                return (
+                  <div key={ev.id} className="rounded-lg p-2.5 space-y-1.5" style={{ background: "#fff", border: "1px solid #D6248A" }}>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <TextInput type="date" value={editForm.startDate} onChange={e => setEditForm(f => ({ ...f, startDate: e.target.value }))} />
+                      <TextInput type="date" value={editForm.endDate} onChange={e => setEditForm(f => ({ ...f, endDate: e.target.value }))} disabled={editForm.type === "shoot"} />
+                    </div>
+                    <select value={editForm.staffId} onChange={e => setEditForm(f => ({ ...f, staffId: e.target.value }))} className={inputCls} style={{ ...inputStyle, fontSize: 11 }}>
+                      {users.filter(u => editForm.type === "shoot" ? (u.roles || []).includes("shooter") : (u.roles || []).includes("editor")).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    </select>
+                    {editForm.type === "edit" && (
+                      <div className="max-h-24 overflow-y-auto rounded-lg border p-1.5 space-y-1" style={{ borderColor: "#DEDACD" }}>
+                        {editableReels.map(r => (
+                          <label key={r.id} className="flex items-center gap-1.5 text-[11px] cursor-pointer">
+                            <input type="checkbox" checked={editForm.reelIds.includes(r.id)} onChange={() => setEditForm(f => ({ ...f, reelIds: toggleReelId(f.reelIds, r.id) }))} />
+                            <span className="truncate">{reelLabel(r)}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                    <TextInput value={editForm.note} onChange={e => setEditForm(f => ({ ...f, note: e.target.value }))} placeholder="メモ" style={{ fontSize: 11 }} />
+                    <div className="flex items-center gap-2 justify-end">
+                      <button onClick={cancelEditEvent} className="text-[11px] font-semibold px-2.5 py-1 rounded-lg border" style={{ borderColor: "#DEDACD" }}>キャンセル</button>
+                      <button onClick={saveEditEvent} className="text-[11px] font-semibold px-2.5 py-1 rounded-lg text-white" style={{ background: "#D6248A" }}>保存する</button>
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div key={ev.id} className="flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5" style={{ background: "#fff", opacity: isPast ? 0.55 : 1 }}>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold flex items-center gap-1.5">
+                      <span className="rounded px-1.5 py-0.5 text-white" style={{ background: type?.color, fontSize: 10 }}>{type?.label}</span>
+                      {ev.startDate}{ev.endDate && ev.endDate !== ev.startDate ? ` 〜 ${ev.endDate}` : ""}
+                    </p>
+                    <p className="text-[11px] truncate" style={{ color: "#8B897F" }}>
+                      {linkedReels.length > 0
+                        ? linkedReels.map(r => r.theme || "動画").join("・")
+                        : (ev.note || "メモなし")}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button onClick={() => startEditEvent(ev)} className="text-[11px] font-semibold" style={{ color: "#5F5E5A" }}>編集</button>
+                    {confirmDeleteEventId === ev.id ? (
+                      <>
+                        <button onClick={() => { removeEvent(ev.id); setConfirmDeleteEventId(null); }} className="text-[11px] font-semibold px-2 py-0.5 rounded text-white" style={{ background: "#A32D2D" }}>本当に削除</button>
+                        <button onClick={() => setConfirmDeleteEventId(null)} className="text-[11px]" style={{ color: "#8B897F" }}>キャンセル</button>
+                      </>
+                    ) : (
+                      <button onClick={() => setConfirmDeleteEventId(ev.id)} className="text-[11px]" style={{ color: "#A32D2D" }}>削除</button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -1056,12 +1447,13 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients }) 
                 {dayEvents.slice(0, 3).map(ev => {
                   const staff = users.find(u => u.id === ev.staffId);
                   const type = EVENT_TYPES.find(t => t.key === ev.type);
-                  const linkedReel = ev.reelId ? reels.find(r => r.id === ev.reelId) : null;
-                  const linkedClient = linkedReel ? clients.find(c => c.id === linkedReel.clientId) : null;
-                  const label = linkedReel ? (linkedReel.theme || "動画") : (staff?.name || "?");
-                  const tooltip = `${type?.label} ・ ${staff?.name || ""}${linkedReel ? " ・ " + (linkedClient?.companyName || "") + " " + (linkedReel.theme || "") : ""}${ev.note ? " ・ " + ev.note : ""}（クリックで削除）`;
+                  const linkedReels = (ev.reelIds || []).map(id => reels.find(r => r.id === id)).filter(Boolean);
+                  const label = linkedReels.length > 0
+                    ? (linkedReels[0].theme || "動画") + (linkedReels.length > 1 ? ` 他${linkedReels.length - 1}件` : "")
+                    : (staff?.name || "?");
+                  const tooltip = `${type?.label} ・ ${staff?.name || ""}${linkedReels.length ? " ・ " + linkedReels.map(r => r.theme || "動画").join("、") : ""}${ev.note ? " ・ " + ev.note : ""}（クリックでスケジュール一覧を表示）`;
                   return (
-                    <div key={ev.id} onClick={() => confirm("この予定を削除しますか？") && removeEvent(ev.id)} title={tooltip} className="text-[9px] px-1 py-0.5 rounded truncate cursor-pointer" style={{ background: type?.color, color: "#fff" }}>
+                    <div key={ev.id} onClick={() => setSelectedStaffId(ev.staffId)} title={tooltip} className="text-[9px] px-1 py-0.5 rounded truncate cursor-pointer" style={{ background: type?.color, color: "#fff" }}>
                       {type?.label}：{label}
                     </div>
                   );
@@ -1078,11 +1470,10 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients }) 
 function DashboardPage({ clients, reels, setReels, users, currentUser, finance, boardPosts, setBoardPosts, calendarEvents, setCalendarEvents, onGoReels }) {
   const ym = currentYearMonth();
   const totalReels = reels.length;
-  const posted = reels.filter(r => r.completedStages >= 6).length;
+  const posted = reels.filter(r => r.completedStages >= 5).length;
   const inProgress = totalReels - posted;
-  const overdue = reels.filter(r => r.completedStages < 6 && r.yearMonth < ym);
-  const stageCounts = STAGES.map((s, i) => reels.filter(r => r.completedStages === i).length);
-  const editors = users.filter(u => u.roles.includes("editor"));
+  const overdue = reels.filter(r => r.completedStages < 5 && r.yearMonth < ym);
+  const editors = users.filter(u => (u.roles || []).includes("editor"));
 
   const stats = [
     { label: "登録クライアント", value: clients.length, icon: Building2, tone: "gray" },
@@ -1091,28 +1482,43 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
     { label: "制作中", value: inProgress, icon: Clock, tone: "amber" },
   ];
 
-  // 直近で投稿すべきクライアント
-  const priorityClients = clients.map(c => {
+  // クライアントの投稿状況（全クライアント）
+  const clientPostStatus = clients.map(c => {
     const monthly = parseInt(c.monthlyCount) || 0;
-    const postedThisMonth = reels.filter(r => r.clientId === c.id && r.yearMonth === ym && r.completedStages >= 6).length;
-    if (postedThisMonth >= monthly) return null;
-    const clientReels = reels.filter(r => r.clientId === c.id && r.yearMonth === ym && r.completedStages < 6);
+    const postedThisMonth = reels.filter(r => r.clientId === c.id && r.yearMonth === ym && r.completedStages >= 5).length;
+    const onTrack = monthly === 0 || postedThisMonth >= monthly;
+    const clientReels = reels.filter(r => r.clientId === c.id && r.yearMonth === ym && r.completedStages < 5);
     const best = clientReels.sort((a, b) => b.completedStages - a.completedStages)[0];
-    return { client: c, monthly, postedThisMonth, reel: best || null };
-  }).filter(Boolean);
+    return { client: c, monthly, postedThisMonth, onTrack, reel: best || null };
+  }).sort((a, b) => (a.onTrack === b.onTrack ? 0 : a.onTrack ? 1 : -1));
 
-  // 編集指示が記入され、メイン編集者が未割当の動画
-  const pickupList = reels.filter(r => r.completedStages >= 2 && !r.editorPrimaryId && r.editInstructions);
+  // 編集指示が記入され、カット・テロップ・効果音のいずれかが未割当の動画
+  const pickupList = reels.filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions
+    && (!r.cutEditorId || !r.telopEditorId || !r.sfxEditorId));
   const [pickupChoice, setPickupChoice] = useState({});
-  const assignPrimary = (reelId) => {
-    const editorId = pickupChoice[reelId];
-    if (!editorId) return;
-    setReels(prev => prev.map(r => r.id === reelId ? { ...r, editorPrimaryId: editorId } : r));
-    setPickupChoice(prev => ({ ...prev, [reelId]: "" }));
+  const getPickup = (reelId) => pickupChoice[reelId] || { editorId: "", roles: [], date: "" };
+  const setPickup = (reelId, patch) => setPickupChoice(prev => ({ ...prev, [reelId]: { ...getPickup(reelId), ...patch } }));
+  const togglePickupRole = (reelId, roleKey) => {
+    const cur = getPickup(reelId);
+    const roles = cur.roles.includes(roleKey) ? cur.roles.filter(r => r !== roleKey) : [...cur.roles, roleKey];
+    setPickup(reelId, { roles });
+  };
+  const confirmPickup = (reelId) => {
+    const choice = getPickup(reelId);
+    if (!choice.editorId || choice.roles.length === 0) return;
+    setReels(prev => prev.map(r => {
+      if (r.id !== reelId) return r;
+      const patch = { ...r };
+      choice.roles.forEach(roleKey => { patch[roleKey] = choice.editorId; });
+      if (choice.date) { patch.editStartDate = choice.date; patch.editEndDate = choice.date; }
+      return patch;
+    }));
+    if (choice.date) syncReelEditCalendar(setCalendarEvents, reelId, choice.date, choice.date, choice.editorId);
+    setPickupChoice(prev => ({ ...prev, [reelId]: { editorId: "", roles: [], date: "" } }));
   };
 
-  // 一括でチェック担当者を指定
-  const needsChecker = reels.filter(r => r.editorPrimaryId && !r.editorSecondaryId && r.completedStages < 6);
+  // 一括でチェック担当者を指定（カット・テロップ・効果音がすべて完了した動画）
+  const needsChecker = reels.filter(r => r.cutEditorId && r.telopEditorId && r.sfxEditorId && !r.editorSecondaryId && r.completedStages < 5);
   const [selectedForBulk, setSelectedForBulk] = useState([]);
   const [bulkChecker, setBulkChecker] = useState("");
   const toggleBulk = (id) => setSelectedForBulk(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -1133,7 +1539,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
   const postBoard = () => {
     if (!boardText.trim()) return;
     const author = users.find(u => u.id === boardAuthorId) || currentUser;
-    setBoardPosts(prev => [{ id: uid(), authorId: author.id, authorName: author.name, theme: boardTheme.trim(), content: boardText.trim(), createdAt: new Date().toISOString() }, ...prev]);
+    setBoardPosts(prev => [{ id: uid("post"), authorId: author.id, authorName: author.name, theme: boardTheme.trim(), content: boardText.trim(), createdAt: new Date().toISOString() }, ...prev]);
     setBoardTheme("");
     setBoardText("");
   };
@@ -1143,6 +1549,26 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
     <div>
       <h2 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700 }} className="mb-1">ダッシュボード</h2>
       <p className="text-sm mb-4" style={{ color: "#8B897F" }}>{currentUser.name}さん（{roleLabels(currentUser.roles)}） こんにちは。</p>
+
+      <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
+        <p className="font-bold mb-3" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>全体の進行状況</p>
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          {STAGES.map((s, i) => {
+            const doneCount = reels.filter(r => r.completedStages > i).length;
+            const notDoneCount = totalReels - doneCount;
+            return (
+              <div key={s.key} className="text-center">
+                <div className="mx-auto rounded-full flex items-center justify-center mb-1" style={{ width: 40, height: 40, background: "#FAF8F3" }}>
+                  <s.icon size={17} color="#5F5E5A" />
+                </div>
+                <p className="text-lg font-bold">{doneCount}<span className="text-xs font-normal" style={{ color: "#8B897F" }}> 完了</span></p>
+                <p className="text-xs font-semibold" style={{ color: "#A32D2D" }}>{notDoneCount} 未完了</p>
+                <p className="text-[11px] mt-0.5" style={{ color: "#8B897F" }}>{s.label}</p>
+              </div>
+            );
+          })}
+        </div>
+      </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         {stats.map(s => (
@@ -1156,60 +1582,34 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
 
       <CalendarWidget events={calendarEvents} setEvents={setCalendarEvents} users={users} reels={reels} setReels={setReels} clients={clients} />
 
-      <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
-        <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><Calendar size={16} color="#D6248A" /> 直近で投稿すべきクライアント</p>
-        {priorityClients.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>今月の投稿予定はすべて達成しています。</p>}
-        <div className="space-y-2">
-          {priorityClients.map(({ client, monthly, postedThisMonth, reel }) => (
-            <div key={client.id} className="rounded-xl p-3 flex items-center justify-between gap-3 flex-wrap" style={{ background: "#FAF8F3" }}>
-              <div className="min-w-0">
-                <p className="font-semibold text-sm">{client.companyName}</p>
-                <p className="text-xs" style={{ color: "#8B897F" }}>今月 {postedThisMonth}/{monthly} 本投稿済み</p>
-                {reel && (
-                  <div className="mt-1">
-                    {reel.completedStages >= 5 ? (
-                      <span className="text-xs" style={{ color: "#0E90B8" }}>完成済み・投稿待ち：{reel.theme || "（テーマ未設定）"}</span>
-                    ) : (
-                      <span className="text-xs" style={{ color: "#854F0B" }}>制作中：{reel.theme || "（テーマ未設定）"} ・ 次工程 {STAGES[reel.completedStages]?.label}</span>
-                    )}
-                  </div>
-                )}
-                {!reel && <span className="text-xs" style={{ color: "#A32D2D" }}>この月の動画がまだ登録されていません</span>}
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {reel ? (
-                  <>
-                    {reel.completedStages >= 5 && (
-                      <button onClick={() => setReels(prev => prev.map(r => r.id === reel.id ? { ...r, completedStages: 6, postedDate: r.postedDate || new Date().toISOString().slice(0, 10) } : r))} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#0E90B8" }}>投稿完了にする</button>
-                    )}
-                    <button onClick={() => onGoReels(client.id)} className="text-xs font-semibold px-3 py-1.5 rounded-lg border" style={{ borderColor: "#DEDACD" }}>詳細を開く</button>
-                  </>
-                ) : (
-                  <button onClick={() => onGoReels(client.id)} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#D6248A" }}>動画を登録する</button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {(currentUser.roles.includes("editor") || currentUser.roles.includes("admin")) && (
+      {((currentUser.roles || []).includes("editor") || (currentUser.roles || []).includes("admin")) && (
         <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
           <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><MessageSquare size={16} color="#D6248A" /> 編集指示一覧（担当編集者募集中）</p>
           {pickupList.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>担当者待ちの編集指示はありません。</p>}
           <div className="space-y-2">
             {pickupList.map(r => {
               const c = clients.find(x => x.id === r.clientId);
+              const openRoles = EDIT_ROLE_FIELDS.filter(f => !r[f.key]);
+              const choice = getPickup(r.id);
               return (
                 <div key={r.id} className="rounded-xl p-3" style={{ background: "#FAF8F3" }}>
                   <p className="font-semibold text-sm">{c?.companyName} ・ {r.theme || "（テーマ未設定）"}</p>
                   <p className="text-xs mt-1" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>
-                  <div className="flex items-center gap-2 mt-2">
-                    <select value={pickupChoice[r.id] || ""} onChange={e => setPickupChoice(prev => ({ ...prev, [r.id]: e.target.value }))} className={inputCls} style={{ ...inputStyle, width: 200 }}>
+                  <div className="flex items-center gap-2 mt-2 flex-wrap">
+                    <select value={choice.editorId} onChange={e => setPickup(r.id, { editorId: e.target.value })} className={inputCls} style={{ ...inputStyle, width: 160 }}>
                       <option value="">動画編集者を選択</option>
                       {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                     </select>
-                    <button onClick={() => assignPrimary(r.id)} disabled={!pickupChoice[r.id]} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>この動画を担当する</button>
+                    {openRoles.map(f => (
+                      <label key={f.key} className="flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg border cursor-pointer" style={{ borderColor: choice.roles.includes(f.key) ? "#D6248A" : "#DEDACD", background: choice.roles.includes(f.key) ? "#FBE4F1" : "#fff" }}>
+                        <input type="checkbox" checked={choice.roles.includes(f.key)} onChange={() => togglePickupRole(r.id, f.key)} />
+                        {f.label}
+                      </label>
+                    ))}
+                    <TextInput type="date" value={choice.date} onChange={e => setPickup(r.id, { date: e.target.value })} title="編集する日（カレンダーに反映されます）" style={{ width: 150 }} />
+                    <button onClick={() => confirmPickup(r.id)} disabled={!choice.editorId || choice.roles.length === 0} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>
+                      担当する
+                    </button>
                   </div>
                 </div>
               );
@@ -1218,16 +1618,17 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
         </div>
       )}
 
-      {currentUser.roles.includes("admin") && needsChecker.length > 0 && (
+      {(currentUser.roles || []).includes("admin") && needsChecker.length > 0 && (
         <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
-          <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><UserCheck size={16} color="#D6248A" /> 第二段階チェック担当の一括指定</p>
+          <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><UserCheck size={16} color="#D6248A" /> 修正チェック担当の指定</p>
           <div className="space-y-1.5 mb-3">
             {needsChecker.map(r => {
               const c = clients.find(x => x.id === r.clientId);
+              const names = EDIT_ROLE_FIELDS.map(f => users.find(u => u.id === r[f.key])?.name).filter(Boolean).join("・");
               return (
                 <label key={r.id} className="flex items-center gap-2 text-sm px-2 py-1.5 rounded-lg hover:bg-black/5 cursor-pointer">
                   <input type="checkbox" checked={selectedForBulk.includes(r.id)} onChange={() => toggleBulk(r.id)} />
-                  <span>{c?.companyName} ・ {r.theme || "（テーマ未設定）"} <span style={{ color: "#8B897F" }}>（メイン: {users.find(u => u.id === r.editorPrimaryId)?.name}）</span></span>
+                  <span>{c?.companyName} ・ {r.theme || "（テーマ未設定）"} <span style={{ color: "#8B897F" }}>（編集: {names}）</span></span>
                 </label>
               );
             })}
@@ -1242,9 +1643,9 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
         </div>
       )}
 
-      {currentUser.roles.includes("admin") && submittedChecks.length > 0 && (
+      {(currentUser.roles || []).includes("admin") && submittedChecks.length > 0 && (
         <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
-          <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><ClipboardList size={16} color="#0E90B8" /> 第二段階チェック提出一覧</p>
+          <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><ClipboardList size={16} color="#0E90B8" /> 修正チェック提出一覧</p>
           <div className="space-y-2">
             {submittedChecks.slice(0, 8).map(r => {
               const c = clients.find(x => x.id === r.clientId);
@@ -1266,15 +1667,39 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
       )}
 
       <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
-        <p className="font-bold mb-3" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>全体の進行状況</p>
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          {STAGES.map((s, i) => (
-            <div key={s.key} className="text-center">
-              <div className="mx-auto rounded-full flex items-center justify-center mb-1" style={{ width: 40, height: 40, background: "#FAF8F3" }}>
-                <s.icon size={17} color="#5F5E5A" />
+        <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><Calendar size={16} color="#D6248A" /> クライアントの投稿状況</p>
+        {clientPostStatus.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>クライアントがまだ登録されていません。</p>}
+        <div className="space-y-2">
+          {clientPostStatus.map(({ client, monthly, postedThisMonth, onTrack, reel }) => (
+            <div key={client.id} className="rounded-xl p-3 flex items-center justify-between gap-3 flex-wrap" style={{ background: onTrack ? "#FAF8F3" : "#FCEBEB", border: onTrack ? "1px solid transparent" : "1px solid #F0A5A5" }}>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="font-semibold text-sm">{client.companyName}</p>
+                  <Badge tone={onTrack ? "teal" : "red"}>今月 {postedThisMonth}/{monthly} 本投稿済み</Badge>
+                </div>
+                {reel && (
+                  <div className="mt-1">
+                    {reel.completedStages >= 4 ? (
+                      <span className="text-xs" style={{ color: "#0E90B8" }}>完成済み・投稿待ち：{reel.theme || "（テーマ未設定）"}</span>
+                    ) : (
+                      <span className="text-xs" style={{ color: "#854F0B" }}>制作中：{reel.theme || "（テーマ未設定）"} ・ 次工程 {STAGES[reel.completedStages]?.label}</span>
+                    )}
+                  </div>
+                )}
+                {!reel && !onTrack && <span className="text-xs" style={{ color: "#A32D2D" }}>この月の動画がまだ登録されていません</span>}
               </div>
-              <p className="text-lg font-bold">{stageCounts[i]}</p>
-              <p className="text-[11px]" style={{ color: "#8B897F" }}>{s.label}</p>
+              <div className="flex items-center gap-2 shrink-0">
+                {reel ? (
+                  <>
+                    {reel.completedStages >= 4 && (
+                      <button onClick={() => setReels(prev => prev.map(r => r.id === reel.id ? { ...r, completedStages: 5, postedDate: r.postedDate || new Date().toISOString().slice(0, 10) } : r))} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#0E90B8" }}>投稿完了にする</button>
+                    )}
+                    <button onClick={() => onGoReels(client.id)} className="text-xs font-semibold px-3 py-1.5 rounded-lg border" style={{ borderColor: "#DEDACD" }}>詳細を開く</button>
+                  </>
+                ) : (
+                  <button onClick={() => onGoReels(client.id)} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#D6248A" }}>動画を登録する</button>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -1305,7 +1730,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-[11px]" style={{ color: "#8B897F" }}>{timeAgo(p.createdAt)}</span>
-                  {(p.authorId === currentUser.id || currentUser.roles.includes("admin")) && (
+                  {(p.authorId === currentUser.id || (currentUser.roles || []).includes("admin")) && (
                     <button onClick={() => deleteBoard(p.id)} className="text-[11px]" style={{ color: "#A32D2D" }}>削除</button>
                   )}
                 </div>
@@ -1333,15 +1758,12 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
         </div>
       )}
 
-      {currentUser.roles.includes("admin") && finance.length > 0 && (
+      {(currentUser.roles || []).includes("admin") && finance.length > 0 && (
         <div className="rounded-2xl p-5" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
-          <p className="font-bold mb-2 text-sm">入金状況サマリー</p>
+          <p className="font-bold mb-2 text-sm">今月の入金状況サマリー</p>
           <div className="flex gap-2 flex-wrap">
-            {["未請求", "請求済み", "入金済み", "延滞"].map(st => (
-              <Badge key={st} tone={st === "入金済み" ? "teal" : st === "延滞" ? "red" : st === "請求済み" ? "amber" : "gray"}>
-                {st} {finance.filter(f => f.paymentStatus === st).length}
-              </Badge>
-            ))}
+            <Badge tone="teal">入金済み {clients.filter(c => (finance.find(f => f.clientId === c.id)?.paidMonths || []).includes(ym)).length}</Badge>
+            <Badge tone="red">未入金 {clients.filter(c => !(finance.find(f => f.clientId === c.id)?.paidMonths || []).includes(ym)).length}</Badge>
           </div>
         </div>
       )}
@@ -1349,31 +1771,36 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
   );
 }
 
-function TasksPage({ clients, reels, users, onGoReels }) {
+function TasksPage({ clients, reels, users, onGoReels, onGoClient }) {
   const ym = currentYearMonth();
-  const editors = users.filter(u => u.roles.includes("editor"));
+  const editors = users.filter(u => (u.roles || []).includes("editor"));
   const [editorFilter, setEditorFilter] = useState("");
 
-  // 投稿すべきクライアント一覧（今月の投稿本数が未達のクライアント）
   const postClients = clients.map(c => {
     const monthly = parseInt(c.monthlyCount) || 0;
-    const postedThisMonth = reels.filter(r => r.clientId === c.id && r.yearMonth === ym && r.completedStages >= 6).length;
+    const postedThisMonth = reels.filter(r => r.clientId === c.id && r.yearMonth === ym && r.completedStages >= 5).length;
     if (postedThisMonth >= monthly) return null;
-    const ready = reels.filter(r => r.clientId === c.id && r.yearMonth === ym && r.completedStages === 5)[0];
+    const ready = reels.filter(r => r.clientId === c.id && r.yearMonth === ym && r.completedStages === 4)[0];
     return { client: c, monthly, postedThisMonth, ready };
   }).filter(Boolean);
 
-  // 動画編集すべき一覧（編集指示済み〜チェック待ちの動画）
   const editItems = reels.filter(r => r.completedStages === 2 || r.completedStages === 3)
     .sort((a, b) => a.yearMonth.localeCompare(b.yearMonth));
 
-  // 撮影すべき一覧（まだ撮影が終わっていない動画）
   const shootItems = reels.filter(r => r.completedStages === 0)
     .sort((a, b) => a.yearMonth.localeCompare(b.yearMonth));
 
-  // 選択した編集者が現在進めている案件（メイン編集・第二段階チェックいずれかで担当している、未完了の動画すべて）
+  // 初期設定タスク（インスタプロフィール・ハイライト・公式LINE・LP）が未完了のクライアント
+  const setupClients = clients.map(c => {
+    const tasks = getSetupTasks(c);
+    const pending = SETUP_TASK_FIELDS.filter(f => tasks[f.key] === "pending");
+    if (pending.length === 0) return null;
+    return { client: c, pending };
+  }).filter(Boolean);
+
+  // 選択した編集者が現在進めている案件（カット・テロップ・効果音・修正チェックいずれかで担当している、未完了の動画すべて）
   const editorCases = editorFilter
-    ? reels.filter(r => r.completedStages < 6 && (r.editorPrimaryId === editorFilter || r.editorSecondaryId === editorFilter))
+    ? reels.filter(r => r.completedStages < 5 && (r.cutEditorId === editorFilter || r.telopEditorId === editorFilter || r.sfxEditorId === editorFilter || r.editorSecondaryId === editorFilter))
       .sort((a, b) => a.yearMonth.localeCompare(b.yearMonth))
     : [];
   const selectedEditor = editors.find(u => u.id === editorFilter);
@@ -1411,9 +1838,12 @@ function TasksPage({ clients, reels, users, onGoReels }) {
           <div className="grid md:grid-cols-2 gap-2">
             {editorCases.map(r => {
               const c = clients.find(x => x.id === r.clientId);
-              const role = r.editorPrimaryId === editorFilter && r.editorSecondaryId === editorFilter
-                ? "メイン編集＋第二段階チェック"
-                : r.editorPrimaryId === editorFilter ? "メイン編集" : "第二段階チェック";
+              const roleNames = [];
+              if (r.cutEditorId === editorFilter) roleNames.push("①カット");
+              if (r.telopEditorId === editorFilter) roleNames.push("②テロップ");
+              if (r.sfxEditorId === editorFilter) roleNames.push("③効果音");
+              if (r.editorSecondaryId === editorFilter) roleNames.push("④修正チェック");
+              const role = roleNames.join("＋");
               return (
                 <button key={r.id} onClick={() => onGoReels(r.clientId)} className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-black/5" style={{ background: "#FAF8F3" }}>
                   <p className="font-semibold">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
@@ -1428,7 +1858,7 @@ function TasksPage({ clients, reels, users, onGoReels }) {
         </div>
       )}
 
-      <div className="grid md:grid-cols-3 gap-3">
+      <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-3">
         <TaskCard title="投稿すべきクライアント一覧" icon={Send} tone="#D6248A" count={postClients.length}>
           {postClients.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>今月の投稿予定はすべて達成しています。</p>}
           {postClients.map(({ client, monthly, postedThisMonth, ready }) => (
@@ -1444,13 +1874,14 @@ function TasksPage({ clients, reels, users, onGoReels }) {
           {editItems.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>編集待ちの動画はありません。</p>}
           {editItems.map(r => {
             const c = clients.find(x => x.id === r.clientId);
-            const editor = users.find(u => u.id === (r.completedStages === 2 ? r.editorPrimaryId : r.editorSecondaryId));
+            const openRoles = r.completedStages === 2 ? EDIT_ROLE_FIELDS.filter(f => !r[f.key]).map(f => f.label) : [];
+            const checker = users.find(u => u.id === r.editorSecondaryId);
             return (
               <button key={r.id} onClick={() => onGoReels(r.clientId)} className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-black/5" style={{ background: "#FAF8F3" }}>
                 <p className="font-semibold">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
                 <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                  <Badge tone="amber">{r.completedStages === 2 ? "メイン編集待ち" : "第二段階チェック待ち"}</Badge>
-                  <span style={{ color: "#8B897F" }}>{monthLabel(r.yearMonth)}{editor ? ` ・ 担当: ${editor.name}` : ""}</span>
+                  <Badge tone="amber">{r.completedStages === 2 ? `${openRoles.join("・")}待ち` : "④修正チェック待ち"}</Badge>
+                  <span style={{ color: "#8B897F" }}>{monthLabel(r.yearMonth)}{r.completedStages === 3 && checker ? ` ・ 担当: ${checker.name}` : ""}</span>
                 </div>
               </button>
             );
@@ -1470,6 +1901,18 @@ function TasksPage({ clients, reels, users, onGoReels }) {
             );
           })}
         </TaskCard>
+
+        <TaskCard title="初期設定 未完了一覧" icon={CircleCheck} tone="#6B3FA0" count={setupClients.length}>
+          {setupClients.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>初期設定タスクはすべて完了しています。</p>}
+          {setupClients.map(({ client, pending }) => (
+            <button key={client.id} onClick={() => onGoClient && onGoClient(client.id)} className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-black/5" style={{ background: "#FAF8F3" }}>
+              <p className="font-semibold">{client.companyName}</p>
+              <div className="flex flex-wrap gap-1 mt-1">
+                {pending.map(f => <Badge key={f.key} tone="amber">{f.label}</Badge>)}
+              </div>
+            </button>
+          ))}
+        </TaskCard>
       </div>
     </div>
   );
@@ -1477,49 +1920,12 @@ function TasksPage({ clients, reels, users, onGoReels }) {
 
 function AnalyticsPage({ clients, reels, users }) {
   const [clientId, setClientId] = useState(clients[0]?.id || "");
-  const posted = reels.filter(r => r.clientId === clientId && r.completedStages >= 6);
+  const posted = reels.filter(r => r.clientId === clientId && r.completedStages >= 5);
   const months = [...new Set(posted.map(r => r.yearMonth))].sort().reverse();
-
-  const editors = users.filter(u => u.roles.includes("editor"));
-  const editedReels = reels.filter(r => r.completedStages >= 3 && r.editorPrimaryId);
 
   return (
     <div>
       <h2 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700 }} className="mb-4">分析資料</h2>
-
-      {editors.length > 0 && (
-        <div className="rounded-2xl p-5 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
-          <p className="font-bold mb-3 flex items-center gap-1.5"><Scissors size={16} color="#0E90B8" /> 編集者別 月間編集完了本数・報酬</p>
-          {editedReels.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>編集完了した動画がまだありません。</p>}
-          <div className="space-y-3">
-            {editors.map(ed => {
-              const mine = editedReels.filter(r => r.editorPrimaryId === ed.id);
-              if (mine.length === 0) return null;
-              const byMonth = {};
-              mine.forEach(r => {
-                if (!byMonth[r.yearMonth]) byMonth[r.yearMonth] = { count: 0, reward: 0 };
-                byMonth[r.yearMonth].count += 1;
-                byMonth[r.yearMonth].reward += (parseFloat(r.editWorkload) || 0) * 1000;
-              });
-              const monthKeys = Object.keys(byMonth).sort().reverse();
-              return (
-                <div key={ed.id} className="rounded-xl p-3" style={{ background: "#FAF8F3" }}>
-                  <p className="text-sm font-semibold mb-2">{ed.name}</p>
-                  <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-2">
-                    {monthKeys.map(m => (
-                      <div key={m} className="rounded-lg p-2" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
-                        <p className="text-xs font-semibold">{monthLabel(m)}</p>
-                        <p className="text-xs" style={{ color: "#8B897F" }}>編集完了 {byMonth[m].count}本</p>
-                        <p className="text-xs" style={{ color: "#8B897F" }}>報酬合計 ¥{byMonth[m].reward.toLocaleString()}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       <select value={clientId} onChange={e => setClientId(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 220 }}>
         <option value="">クライアントを選択</option>
@@ -1554,7 +1960,7 @@ function AnalyticsPage({ clients, reels, users }) {
   );
 }
 
-function FinancePage({ clients, finance, setFinance }) {
+function FinancePage({ clients, finance, setFinance, reels, users }) {
   const upsert = (clientId, patch) => {
     setFinance(prev => {
       const exists = prev.some(f => f.clientId === clientId);
@@ -1562,7 +1968,27 @@ function FinancePage({ clients, finance, setFinance }) {
       return [...prev, { ...emptyFinance(clientId), ...patch }];
     });
   };
-  const statusTone = { "未請求": "gray", "請求済み": "amber", "入金済み": "teal", "延滞": "red" };
+  const resetFinance = (clientId) => {
+    setFinance(prev => prev.filter(f => f.clientId !== clientId));
+  };
+
+  const [selectedId, setSelectedId] = useState(null);
+  const [confirmResetId, setConfirmResetId] = useState(null);
+
+  const editors = users.filter(u => (u.roles || []).includes("editor"));
+  const editedReels = reels.filter(r => r.completedStages >= 4 && (r.cutEditorId || r.telopEditorId || r.sfxEditorId));
+
+  const totalMonthlyRevenue = clients.reduce((sum, c) => {
+    const f = finance.find(x => x.clientId === c.id);
+    return sum + effectiveMonthlyFee(f);
+  }, 0);
+
+  const togglePaidMonth = (clientId, ym) => {
+    const f = finance.find(x => x.clientId === clientId) || emptyFinance(clientId);
+    const paid = f.paidMonths || [];
+    const next = paid.includes(ym) ? paid.filter(m => m !== ym) : [...paid, ym];
+    upsert(clientId, { paidMonths: next });
+  };
 
   return (
     <div>
@@ -1571,32 +1997,144 @@ function FinancePage({ clients, finance, setFinance }) {
         <h2 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700 }}>経理管理（統括管理者専用）</h2>
       </div>
       <p className="text-xs mb-4" style={{ color: "#8B897F" }}>契約・請求・入金状況を管理します。この情報は統括管理者のみが閲覧できます。</p>
-      <div className="space-y-3">
-        {clients.map(c => {
-          const f = finance.find(x => x.clientId === c.id) || emptyFinance(c.id);
-          return (
-            <div key={c.id} className="rounded-2xl p-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
-              <div className="flex items-center justify-between mb-3">
-                <p className="font-bold">{c.companyName}</p>
-                <Badge tone={statusTone[f.paymentStatus] || "gray"}>{f.paymentStatus}</Badge>
+
+      {editors.length > 0 && (
+        <div className="rounded-2xl p-5 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
+          <p className="font-bold mb-3 flex items-center gap-1.5"><Scissors size={16} color="#0E90B8" /> 編集者別 月間編集完了本数・報酬</p>
+          <p className="text-[11px] mb-2" style={{ color: "#A9A79C" }}>カット・テロップ・効果音のいずれかを担当した動画をカウントします（1本の動画で複数の工程を担当した場合、それぞれの工程で1本としてカウントされます）</p>
+          {editedReels.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>編集完了した動画がまだありません。</p>}
+          <div className="space-y-3">
+            {editors.map(ed => {
+              const mine = editedReels.filter(r => r.cutEditorId === ed.id || r.telopEditorId === ed.id || r.sfxEditorId === ed.id);
+              if (mine.length === 0) return null;
+              const byMonth = {};
+              mine.forEach(r => {
+                if (!byMonth[r.yearMonth]) byMonth[r.yearMonth] = { count: 0, reward: 0 };
+                byMonth[r.yearMonth].count += 1;
+                byMonth[r.yearMonth].reward += (parseFloat(r.editWorkload) || 0) * 1000;
+              });
+              const monthKeys = Object.keys(byMonth).sort().reverse();
+              return (
+                <div key={ed.id} className="rounded-xl p-3" style={{ background: "#FAF8F3" }}>
+                  <p className="text-sm font-semibold mb-2">{ed.name}</p>
+                  <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-2">
+                    {monthKeys.map(m => (
+                      <div key={m} className="rounded-lg p-2" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
+                        <p className="text-xs font-semibold">{monthLabel(m)}</p>
+                        <p className="text-xs" style={{ color: "#8B897F" }}>編集完了 {byMonth[m].count}本</p>
+                        <p className="text-xs" style={{ color: "#8B897F" }}>報酬合計 ¥{byMonth[m].reward.toLocaleString()}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-2xl p-5 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
+        <div className="flex items-center justify-between mb-3">
+          <p className="font-bold">クライアント一覧</p>
+          <Badge tone="teal">月の合計売上見込み ¥{totalMonthlyRevenue.toLocaleString()}</Badge>
+        </div>
+        {clients.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>クライアントを登録すると経理情報を管理できます。</p>}
+        <div className="space-y-2">
+          {clients.map(c => {
+            const f = finance.find(x => x.clientId === c.id) || emptyFinance(c.id);
+            const isSelected = selectedId === c.id;
+            const contractMonths = getContractMonths(f);
+            const paidCount = (f.paidMonths || []).filter(m => contractMonths.includes(m)).length;
+            const fee = effectiveMonthlyFee(f);
+            return (
+              <div key={c.id} className="rounded-xl overflow-hidden" style={{ border: "1px solid #EFEDE4" }}>
+                <button onClick={() => setSelectedId(isSelected ? null : c.id)} className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-black/5" style={{ background: "#FAF8F3" }}>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-semibold text-sm truncate">{c.companyName}</span>
+                    <Badge tone="gray">入金 {paidCount}/{contractMonths.length}ヶ月</Badge>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-sm font-semibold">¥{fee.toLocaleString()}/月{!f.monthlyFee && f.contractFee ? "（契約料金より算出）" : ""}</span>
+                    <ChevronRight size={16} style={{ transform: isSelected ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+                  </div>
+                </button>
+
+                {isSelected && (
+                  <div className="p-4" style={{ background: "#fff" }}>
+                    <div className="grid md:grid-cols-4 gap-3">
+                      <Field label="契約開始日"><TextInput type="date" value={f.contractStart} onChange={e => upsert(c.id, { contractStart: e.target.value })} /></Field>
+                      <Field label="契約終了日"><TextInput type="date" value={f.contractEnd} onChange={e => upsert(c.id, { contractEnd: e.target.value })} /></Field>
+                      <Field label="月額料金"><TextInput type="number" value={f.monthlyFee} onChange={e => upsert(c.id, { monthlyFee: e.target.value })} placeholder="円" /></Field>
+                      <Field label="契約料金"><TextInput type="number" value={f.contractFee} onChange={e => upsert(c.id, { contractFee: e.target.value })} placeholder="円" /></Field>
+                    </div>
+                    {!f.monthlyFee && f.contractFee && (
+                      <p className="text-[11px] mb-2" style={{ color: "#A9A79C" }}>月額料金が未入力のため、契約料金÷12ヶ月（¥{Math.round(parseFloat(f.contractFee) / 12).toLocaleString()}/月）を売上見込みに使用しています。</p>
+                    )}
+
+                    <div className="rounded-xl p-3 mt-2" style={{ background: "#FAF8F3" }}>
+                      <p className="text-xs font-semibold mb-2" style={{ color: "#5F5E5A" }}>月次請求・入金管理</p>
+
+                      <p className="text-xs font-semibold mb-1" style={{ color: "#5F5E5A" }}>請求日（月ごと）</p>
+                      <div className="grid grid-cols-6 md:grid-cols-12 gap-1 mb-3">
+                        {getContractMonths(f).map(ym => {
+                          const [yy, mm] = ym.split("-");
+                          const val = (f.billingDates || {})[ym] || "";
+                          return (
+                            <div key={ym} className="flex flex-col items-center gap-1">
+                              <span className="text-[10px] font-semibold" style={{ color: "#8B897F" }}>{yy.slice(2)}/{parseInt(mm)}月</span>
+                              <input
+                                type="date"
+                                value={val}
+                                onChange={e => upsert(c.id, { billingDates: { ...(f.billingDates || {}), [ym]: e.target.value } })}
+                                className="text-[10px] rounded-lg border px-1 py-1.5 w-full text-center"
+                                style={{ borderColor: "#DEDACD", background: "#fff" }}
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <p className="text-xs font-semibold mt-2 mb-1" style={{ color: "#5F5E5A" }}>
+                        入金ステータス（{f.contractStart && f.contractEnd ? `契約期間：${f.contractStart}〜${f.contractEnd}` : `${getContractMonths(f)[0].split("-")[0]}年度：4月〜翌3月（契約期間未設定のため）`}）
+                      </p>
+                      <div className="grid grid-cols-6 md:grid-cols-12 gap-1">
+                        {getContractMonths(f).map(ym => {
+                          const [yy, mm] = ym.split("-");
+                          const paid = (f.paidMonths || []).includes(ym);
+                          return (
+                            <button key={ym} onClick={() => togglePaidMonth(c.id, ym)}
+                              className="flex flex-col items-center gap-1 rounded-lg py-2 border"
+                              style={{ borderColor: paid ? "#0E90B8" : "#DEDACD", background: paid ? "#E1F4FA" : "#fff" }}>
+                              <span className="text-[10px] font-semibold" style={{ color: "#5F5E5A" }}>{yy.slice(2)}/{parseInt(mm)}月</span>
+                              {paid ? <CircleCheck size={14} color="#0E90B8" /> : <Circle size={14} color="#DEDACD" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <Field label="備考"><TextArea rows={1} value={f.notes} onChange={e => upsert(c.id, { notes: e.target.value })} /></Field>
+
+                    <div className="flex justify-end mt-2">
+                      {confirmResetId === c.id ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs" style={{ color: "#A32D2D" }}>この経理情報をリセットしますか？</span>
+                          <button onClick={() => { resetFinance(c.id); setConfirmResetId(null); }} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#A32D2D" }}>リセットする</button>
+                          <button onClick={() => setConfirmResetId(null)} className="text-xs font-semibold" style={{ color: "#8B897F" }}>キャンセル</button>
+                        </div>
+                      ) : (
+                        <button onClick={() => setConfirmResetId(c.id)} className="text-xs font-semibold flex items-center gap-1" style={{ color: "#A32D2D" }}>
+                          <Trash2 size={13} /> この経理情報をリセット
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
-              <div className="grid md:grid-cols-5 gap-3">
-                <Field label="契約開始日"><TextInput type="date" value={f.contractStart} onChange={e => upsert(c.id, { contractStart: e.target.value })} /></Field>
-                <Field label="契約終了日"><TextInput type="date" value={f.contractEnd} onChange={e => upsert(c.id, { contractEnd: e.target.value })} /></Field>
-                <Field label="月額料金"><TextInput type="number" value={f.monthlyFee} onChange={e => upsert(c.id, { monthlyFee: e.target.value })} placeholder="円" /></Field>
-                <Field label="請求日"><TextInput type="date" value={f.billingDate} onChange={e => upsert(c.id, { billingDate: e.target.value })} /></Field>
-                <Field label="入金ステータス">
-                  <select value={f.paymentStatus} onChange={e => upsert(c.id, { paymentStatus: e.target.value })} className={inputCls} style={inputStyle}>
-                    {["未請求", "請求済み", "入金済み", "延滞"].map(s => <option key={s}>{s}</option>)}
-                  </select>
-                </Field>
-              </div>
-              <Field label="備考"><TextArea rows={1} value={f.notes} onChange={e => upsert(c.id, { notes: e.target.value })} /></Field>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
-      {clients.length === 0 && <div className="text-center py-16 rounded-2xl border border-dashed" style={{ borderColor: "#DEDACD", color: "#8B897F" }}>クライアントを登録すると経理情報を管理できます。</div>}
     </div>
   );
 }
@@ -1611,22 +2149,22 @@ function StaffForm({ user, onSave, onCancel }) {
 
       <Field label="役割（複数選択可）">
         <div className="grid grid-cols-3 gap-2">
-          {(u.roles.includes("admin") ? ROLES : SELECTABLE_ROLES).map(r => (
-            <button key={r.key} type="button" onClick={() => set("roles", u.roles.includes(r.key) ? u.roles.filter(x => x !== r.key) : [...u.roles, r.key])}
+          {((u.roles || []).includes("admin") ? ROLES : SELECTABLE_ROLES).map(r => (
+            <button key={r.key} type="button" onClick={() => set("roles", (u.roles || []).includes(r.key) ? (u.roles || []).filter(x => x !== r.key) : [...(u.roles || []), r.key])}
               className="flex flex-col items-center gap-1.5 py-3 rounded-xl border"
-              style={{ borderColor: u.roles.includes(r.key) ? "#16171B" : "#DEDACD", background: u.roles.includes(r.key) ? "#16171B" : "#fff" }}>
-              <r.icon size={18} color={u.roles.includes(r.key) ? "#fff" : "#5F5E5A"} />
-              <span className="text-xs font-semibold" style={{ color: u.roles.includes(r.key) ? "#fff" : "#5F5E5A" }}>{r.label}</span>
+              style={{ borderColor: (u.roles || []).includes(r.key) ? "#16171B" : "#DEDACD", background: (u.roles || []).includes(r.key) ? "#16171B" : "#fff" }}>
+              <r.icon size={18} color={(u.roles || []).includes(r.key) ? "#fff" : "#5F5E5A"} />
+              <span className="text-xs font-semibold" style={{ color: (u.roles || []).includes(r.key) ? "#fff" : "#5F5E5A" }}>{r.label}</span>
             </button>
           ))}
         </div>
-        {u.roles.includes("admin") && <p className="text-[11px] mt-1" style={{ color: "#A9A79C" }}>統括管理者は屋宜様のみです。役割を変更すると統括管理権限が失われます。</p>}
+        {(u.roles || []).includes("admin") && <p className="text-[11px] mt-1" style={{ color: "#A9A79C" }}>統括管理者は屋宜様のみです。役割を変更すると統括管理権限が失われます。</p>}
       </Field>
 
       <div className="grid md:grid-cols-2 gap-x-6 mt-3">
         <Field label="名前（必須）"><TextInput value={u.name} onChange={e => set("name", e.target.value)} placeholder="山田 太郎" /></Field>
         <Field label="メールアドレス"><TextInput type="email" value={u.email} onChange={e => set("email", e.target.value)} placeholder="taro@example.com" /></Field>
-        <p className="text-[11px] -mt-2 mb-3" style={{ color: "#A9A79C" }}>本人がこのメールアドレスでサインアップすると、このプロフィールに自動的に紐付きます。</p>
+        <p className="text-[11px] -mt-2 mb-3 md:col-span-2" style={{ color: "#A9A79C" }}>本人がこのメールアドレスでサインアップすると、このプロフィールに自動的に紐付きます。</p>
         <Field label="電話番号"><TextInput value={u.phone} onChange={e => set("phone", e.target.value)} placeholder="090-0000-0000" /></Field>
         <Field label="入社日"><TextInput type="date" value={u.joinDate} onChange={e => set("joinDate", e.target.value)} /></Field>
 
@@ -1671,6 +2209,7 @@ function StaffForm({ user, onSave, onCancel }) {
 function UsersPage({ users, setUsers, currentUser }) {
   const [editing, setEditing] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   const save = (u) => {
     setUsers(prev => {
@@ -1681,8 +2220,8 @@ function UsersPage({ users, setUsers, currentUser }) {
   };
   const remove = (id) => {
     if (id === currentUser.id) return;
-    if (!confirm("このメンバーを削除しますか？")) return;
     setUsers(prev => prev.filter(u => u.id !== id));
+    setConfirmDeleteId(null);
   };
 
   if (editing) return <StaffForm user={editing} onSave={save} onCancel={() => setEditing(null)} />;
@@ -1733,7 +2272,14 @@ function UsersPage({ users, setUsers, currentUser }) {
                   <div className="flex items-center gap-2 mt-3">
                     <button onClick={() => setEditing(u)} className="text-xs font-semibold px-3 py-1.5 rounded-lg border flex items-center gap-1" style={{ borderColor: "#DEDACD" }}><Pencil size={13} />編集する</button>
                     {u.id !== currentUser.id && (
-                      <button onClick={() => remove(u.id)} className="text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1" style={{ color: "#A32D2D" }}><Trash2 size={13} />削除する</button>
+                      confirmDeleteId === u.id ? (
+                        <>
+                          <button onClick={() => remove(u.id)} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#A32D2D" }}>本当に削除する</button>
+                          <button onClick={() => setConfirmDeleteId(null)} className="text-xs font-semibold" style={{ color: "#8B897F" }}>キャンセル</button>
+                        </>
+                      ) : (
+                        <button onClick={() => setConfirmDeleteId(u.id)} className="text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1" style={{ color: "#A32D2D" }}><Trash2 size={13} />削除する</button>
+                      )
                     )}
                   </div>
                 </div>
@@ -1746,7 +2292,53 @@ function UsersPage({ users, setUsers, currentUser }) {
   );
 }
 
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  componentDidCatch(error, info) {
+    console.error("ReVALUE Studio Manager crashed:", error, info);
+  }
+  render() {
+    if (this.state.error) {
+      const msg = (this.state.error && this.state.error.message) ? this.state.error.message : String(this.state.error);
+      return (
+        <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#16171B", padding: 24 }}>
+          <div style={{ maxWidth: 480, width: "100%", background: "#FAF8F3", borderRadius: 16, padding: 24 }}>
+            <p style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>画面の表示中にエラーが発生しました</p>
+            <p style={{ fontSize: 13, color: "#5F5E5A", marginBottom: 12, lineHeight: 1.6 }}>
+              下のエラー内容をClaudeに伝えていただくと、原因を特定して修正できます。まずは「最初からやり直す」でリセットをお試しください。
+            </p>
+            <div style={{ fontSize: 11, color: "#A32D2D", background: "#FCEBEB", borderRadius: 8, padding: 10, marginBottom: 12, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+              {msg}
+            </div>
+            <button
+              onClick={() => { this.setState({ error: null }); }}
+              style={{ background: "#D6248A", color: "#fff", padding: "8px 16px", borderRadius: 8, fontWeight: 600, fontSize: 13, border: "none", cursor: "pointer" }}
+            >
+              最初からやり直す
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
+  return (
+    <ErrorBoundary>
+      <AppInner />
+    </ErrorBoundary>
+  );
+}
+
+function AppInner() {
   const [authChecked, setAuthChecked] = useState(false);
   const [session, setSession] = useState(null);
   const [dataLoaded, setDataLoaded] = useState(false);
@@ -1782,15 +2374,16 @@ export default function App() {
       const [u, c, r, f, b, ev] = await Promise.all([
         fetchAll("profiles"), fetchAll("clients"), fetchAll("reels"), fetchAll("finance", "client_id"), fetchAll("board_posts"), fetchAll("calendar_events"),
       ]);
+      const normalizedReels = r.map(normalizeReel);
       setUsers(u);
       setClients(c);
-      setReels(r);
+      setReels(normalizedReels);
       setFinance(f);
       setBoardPosts(b);
       setCalendarEvents(ev);
       prevIds.current = {
         clients: new Set(c.map(x => x.id)),
-        reels: new Set(r.map(x => x.id)),
+        reels: new Set(normalizedReels.map(x => x.id)),
         users: new Set(u.map(x => x.id)),
         finance: new Set(f.map(x => x.clientId)),
         boardPosts: new Set(b.map(x => x.id)),
@@ -1841,6 +2434,7 @@ export default function App() {
   useEffect(() => { syncCalendarEvents(calendarEvents); }, [calendarEvents]);
 
   const goReels = (clientId) => { setReelsFocusClient(clientId); setPage("reels"); };
+  const goClientDetail = (clientId) => { setOpenClientId(clientId); setPage("clients"); };
   const logout = async () => { await supabase.auth.signOut(); setPage("dashboard"); };
 
   const [impersonating, setImpersonating] = useState(false);
@@ -1850,11 +2444,11 @@ export default function App() {
     setImpersonating(true);
     setImpersonateError("");
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session: sess } } = await supabase.auth.getSession();
       const res = await fetch("/api/admin/impersonate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targetUserId, accessToken: session?.access_token }),
+        body: JSON.stringify({ targetUserId, accessToken: sess?.access_token }),
       });
       const data = await res.json();
       if (data.error) { setImpersonateError(data.error); setImpersonating(false); return; }
@@ -1877,7 +2471,7 @@ export default function App() {
       { key: "finance", label: "経理管理", icon: Wallet, roles: ["admin"] },
       { key: "users", label: "メンバー管理", icon: UserCog, roles: ["admin"] },
     ];
-    return base.filter(i => !currentUser || i.roles.some(r => currentUser.roles.includes(r)));
+    return base.filter(i => !currentUser || i.roles.some(r => (currentUser.roles || []).includes(r)));
   }, [currentUser]);
 
   if (!authChecked) {
@@ -1911,16 +2505,16 @@ export default function App() {
 
   const renderPage = () => {
     if (page === "clients" && openClient) {
-      return <ClientDetail client={openClient} clients={clients} setClients={setClients} reels={reels} currentUser={currentUser} onBack={() => setOpenClientId(null)} onGoReels={goReels} />;
+      return <ClientDetail client={openClient} clients={clients} setClients={setClients} finance={finance} setFinance={setFinance} reels={reels} currentUser={currentUser} onBack={() => setOpenClientId(null)} onGoReels={goReels} />;
     }
     switch (page) {
       case "dashboard": return <DashboardPage clients={clients} reels={reels} setReels={setReels} users={users} currentUser={currentUser} finance={finance} boardPosts={boardPosts} setBoardPosts={setBoardPosts} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} onGoReels={goReels} />;
-      case "clients": return <ClientsPage clients={clients} setClients={setClients} currentUser={currentUser} onOpenClient={setOpenClientId} />;
+      case "clients": return <ClientsPage clients={clients} setClients={setClients} finance={finance} setFinance={setFinance} currentUser={currentUser} onOpenClient={setOpenClientId} />;
       case "reels": return <ReelsPage clients={clients} reels={reels} setReels={setReels} users={users} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} currentUser={currentUser} focusClientId={reelsFocusClient} />;
-      case "tasks": return <TasksPage clients={clients} reels={reels} users={users} onGoReels={goReels} />;
+      case "tasks": return <TasksPage clients={clients} reels={reels} users={users} onGoReels={goReels} onGoClient={goClientDetail} />;
       case "analytics": return <AnalyticsPage clients={clients} reels={reels} users={users} />;
-      case "finance": return currentUser.roles.includes("admin") ? <FinancePage clients={clients} finance={finance} setFinance={setFinance} /> : null;
-      case "users": return currentUser.roles.includes("admin") ? <UsersPage users={users} setUsers={setUsers} currentUser={currentUser} /> : null;
+      case "finance": return (currentUser.roles || []).includes("admin") ? <FinancePage clients={clients} finance={finance} setFinance={setFinance} reels={reels} users={users} /> : null;
+      case "users": return (currentUser.roles || []).includes("admin") ? <UsersPage users={users} setUsers={setUsers} currentUser={currentUser} /> : null;
       default: return null;
     }
   };
@@ -1991,6 +2585,11 @@ export default function App() {
             <div style={{ width: 20 }} />
           </div>
           <div className="p-4 md:p-8 max-w-6xl mx-auto">
+            {page !== "dashboard" && (
+              <button onClick={() => { setPage("dashboard"); setOpenClientId(null); }} className="flex items-center gap-1 text-sm font-semibold mb-4" style={{ color: "#8B897F" }}>
+                <ArrowLeft size={15} /> ダッシュボードに戻る
+              </button>
+            )}
             {renderPage()}
           </div>
         </main>
