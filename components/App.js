@@ -313,11 +313,15 @@ function LoginScreen({ onAuthed }) {
       } else {
         if (!name.trim()) throw new Error("名前を入力してください");
         if (roles.length === 0) throw new Error("役割を1つ以上選択してください");
-        const { error: err } = await supabase.auth.signUp({
-          email, password,
-          options: { data: { name: name.trim(), roles } },
-        });
+        // 日本語などの名前をサインアップのメタデータに直接含めると、
+        // 一部のブラウザ環境で内部的なエラーが起きるため、
+        // まずメールアドレス・パスワードだけでサインアップし、
+        // 作成されたプロフィールの名前・役割はあとから更新する
+        const { data, error: err } = await supabase.auth.signUp({ email, password });
         if (err) throw err;
+        if (data?.user) {
+          await supabase.from("profiles").update({ name: name.trim(), roles }).eq("auth_user_id", data.user.id);
+        }
       }
       onAuthed && onAuthed();
     } catch (e) {
