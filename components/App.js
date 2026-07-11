@@ -725,6 +725,72 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
   const [dirty, setDirty] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
 
+  const [recording, setRecording] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState("");
+  const [voiceLoading, setVoiceLoading] = useState(false);
+  const [voiceError, setVoiceError] = useState("");
+  const [voiceFilledFields, setVoiceFilledFields] = useState(null);
+  const recognitionRef = useRef(null);
+  const voiceSupported = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
+
+  const startRecording = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setVoiceError("お使いのブラウザは音声入力に対応していません（Chromeでのご利用を推奨します）。");
+      return;
+    }
+    setVoiceError("");
+    setVoiceFilledFields(null);
+    setVoiceTranscript("");
+    const recognition = new SpeechRecognition();
+    recognition.lang = "ja-JP";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.onresult = (event) => {
+      let finalText = "";
+      for (let i = 0; i < event.results.length; i++) {
+        finalText += event.results[i][0].transcript;
+      }
+      setVoiceTranscript(finalText);
+    };
+    recognition.onerror = () => {
+      setVoiceError("音声の認識中にエラーが発生しました。もう一度お試しください。");
+      setRecording(false);
+    };
+    recognition.onend = () => {
+      setRecording(false);
+    };
+    recognitionRef.current = recognition;
+    recognition.start();
+    setRecording(true);
+  };
+
+  const stopRecording = () => {
+    recognitionRef.current?.stop();
+    setRecording(false);
+  };
+
+  const applyVoiceInput = async () => {
+    if (!voiceTranscript.trim()) return;
+    setVoiceLoading(true);
+    setVoiceError("");
+    try {
+      const res = await fetch("/api/voice-fill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript: voiceTranscript }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || "振り分けに失敗しました");
+      set(data.fields);
+      setVoiceFilledFields(Object.keys(data.fields || {}));
+    } catch (e) {
+      setVoiceError("振り分けに失敗しました：" + (e.message || "不明なエラー"));
+    } finally {
+      setVoiceLoading(false);
+    }
+  };
+
   useEffect(() => { setDraft(reel); setDirty(false); }, [reel.id]);
 
   const editors = users.filter(u => (u.roles || []).includes("editor"));
@@ -848,6 +914,39 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
 
       {expanded && (
         <div className="px-4 pb-4 pt-1 border-t" style={{ borderColor: "#EFEDE4" }} onClick={e => e.stopPropagation()}>
+          {canEdit && (
+            <div className="rounded-xl p-3 my-2" style={{ background: "#FBE4F1" }}>
+              <p className="text-xs font-bold mb-1 flex items-center gap-1.5" style={{ color: "#96185E" }}><Sparkles size={13} /> 音声で入力する</p>
+              <p className="text-[11px] mb-2" style={{ color: "#96185E" }}>マイクに向かって話すと、内容をAIが読み取り「テーマ」「編集指示」「台本」「動画概要メモ」に自動で振り分けます（対応ブラウザ：Chrome推奨）。</p>
+              <div className="flex items-center gap-2 flex-wrap">
+                {!recording ? (
+                  <button onClick={startRecording} disabled={!voiceSupported} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 disabled:opacity-50" style={{ background: "#D6248A" }}>
+                    🎙️ 録音を開始
+                  </button>
+                ) : (
+                  <button onClick={stopRecording} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 animate-pulse" style={{ background: "#A32D2D" }}>
+                    ⏹ 録音を停止（話し終えたら押してください）
+                  </button>
+                )}
+                {voiceTranscript && !recording && (
+                  <button onClick={applyVoiceInput} disabled={voiceLoading} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 disabled:opacity-50" style={{ background: "#16171B" }}>
+                    {voiceLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {voiceLoading ? "振り分け中..." : "内容を各項目に反映"}
+                  </button>
+                )}
+              </div>
+              {!voiceSupported && <p className="text-[11px] mt-1" style={{ color: "#A32D2D" }}>お使いのブラウザは音声入力に対応していません。Chromeでのご利用をお試しください。</p>}
+              {voiceTranscript && (
+                <div className="mt-2 p-2 rounded-lg text-xs" style={{ background: "#fff", color: "#5F5E5A", lineHeight: 1.6 }}>
+                  {voiceTranscript}
+                </div>
+              )}
+              {voiceError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{voiceError}</p>}
+              {voiceFilledFields && (
+                <p className="text-[11px] mt-1" style={{ color: "#96185E" }}>反映しました（{voiceFilledFields.join("・")}）。内容を確認し、「保存する」を押してください。</p>
+              )}
+            </div>
+          )}
+
           <div className="grid md:grid-cols-2 gap-x-4">
             <Field label="テーマ"><TextInput value={draft.theme} onChange={e => set({ theme: e.target.value })} disabled={!canEdit} /></Field>
             <Field label="担当撮影者">
