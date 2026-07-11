@@ -285,7 +285,7 @@ function Pipeline({ completedStages, onAdvance, onRegress, compact }) {
               >
                 <Icon size={compact ? 11 : 14} />
               </div>
-              {<span className="mt-1 text-center" style={{ fontSize: compact ? 8 : 10, color: done ? "#0E90B8" : isNext ? "#D6248A" : "#A9A79C", fontWeight: 600, lineHeight: 1.2 }}>{s.label}</span>}
+              {<span className="mt-1 text-center" style={{ fontSize: compact ? 8 : 10, color: done ? "#0E90B8" : isNext ? "#D6248A" : "#A9A79C", fontWeight: 600, lineHeight: 1.2 }}>{done ? s.label : "未完了"}</span>}
             </button>
             {i < STAGES.length - 1 && <div style={{ width: compact ? 8 : 16, height: 2, background: i < completedStages ? "#0E90B8" : "#E4E1D6" }} />}
           </React.Fragment>
@@ -593,31 +593,9 @@ function ClientDetail({ client, clients, setClients, finance, setFinance, reels,
   const [editing, setEditing] = useState(false);
   const canEdit = true;
   const isAdmin = (currentUser.roles || []).includes("admin");
-  const [proposal, setProposal] = useState("");
-  const [loadingProposal, setLoadingProposal] = useState(false);
-  const [proposalError, setProposalError] = useState("");
 
   const clientReels = reels.filter(r => r.clientId === client.id);
   const postedCount = clientReels.filter(r => r.completedStages >= 5).length;
-
-  const generateProposal = async () => {
-    setLoadingProposal(true);
-    setProposalError("");
-    setProposal("");
-    try {
-      const text = await callApi("/api/proposal", {
-        clientName: client.companyName,
-        clientBusiness: client.business,
-        clientAppeal: client.appeal,
-        clientPlan: client.plan,
-      });
-      setProposal(text);
-    } catch (e) {
-      setProposalError("提案の生成に失敗しました：" + (e.message || "不明なエラー"));
-    } finally {
-      setLoadingProposal(false);
-    }
-  };
 
   if (editing) {
     return <ClientForm client={client} finance={finance.find(x => x.clientId === client.id)} isAdmin={isAdmin} onCancel={() => setEditing(false)} onSave={(c, f) => {
@@ -728,21 +706,6 @@ function ClientDetail({ client, clients, setClients, finance, setFinance, reels,
           <Badge tone="teal">今月投稿済み {postedCount}/{clientReels.length}</Badge>
         </div>
       </div>
-
-      {((currentUser.roles || []).includes("shooter") || (currentUser.roles || []).includes("admin")) && (
-        <div className="rounded-2xl p-5 border" style={{ borderColor: "#DEDACD", background: "#fff" }}>
-          <div className="flex items-center justify-between mb-2">
-            <p className="font-bold flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><Sparkles size={16} color="#D6248A" /> AI企画提案（トレンドリサーチ）</p>
-            <button onClick={generateProposal} disabled={loadingProposal} className="text-sm font-semibold px-4 py-2 rounded-lg text-white flex items-center gap-1.5 disabled:opacity-50" style={{ background: "#D6248A" }}>
-              {loadingProposal ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-              {loadingProposal ? "リサーチ中..." : "提案を生成"}
-            </button>
-          </div>
-          <p className="text-xs mb-2" style={{ color: "#8B897F" }}>最新のSNSトレンドをAIが検索し、クライアント情報をもとに次回撮影の企画・台本案を提案します。</p>
-          {proposalError && <p className="text-sm" style={{ color: "#A32D2D" }}>{proposalError}</p>}
-          {proposal && <div className="mt-2 p-3 rounded-xl text-sm whitespace-pre-wrap" style={{ background: "#FAF8F3", lineHeight: 1.7 }}>{proposal}</div>}
-        </div>
-      )}
     </div>
   );
 }
@@ -1795,19 +1758,29 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
   );
 }
 
-function ResearchPage() {
+function ResearchPage({ clients }) {
   const [genre, setGenre] = useState("");
-  const [theme, setTheme] = useState("");
+  const [minFollowers, setMinFollowers] = useState("");
+  const [minViews, setMinViews] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [history, setHistory] = useState([]);
+
+  const [proposalClientId, setProposalClientId] = useState(clients[0]?.id || "");
+  const proposalClient = clients.find(c => c.id === proposalClientId);
+  const [purpose, setPurpose] = useState("");
+  const [structure, setStructure] = useState("");
+  const [shootCount, setShootCount] = useState(3);
+  const [proposal, setProposal] = useState("");
+  const [loadingProposal, setLoadingProposal] = useState(false);
+  const [proposalError, setProposalError] = useState("");
 
   const search = async () => {
     setLoading(true);
     setError("");
     try {
-      const text = await callApi("/api/trend", { genre, theme });
-      const entry = { id: uid("trend"), genre, theme, text: text.trim(), createdAt: Date.now() };
+      const text = await callApi("/api/trend", { genre, minFollowers, minViews });
+      const entry = { id: uid("trend"), genre, minFollowers, minViews, text: text.trim(), createdAt: Date.now() };
       setHistory(prev => [entry, ...prev]);
     } catch (e) {
       setError("検索に失敗しました：" + (e.message || "不明なエラー"));
@@ -1816,16 +1789,59 @@ function ResearchPage() {
     }
   };
 
+  const generateProposal = async () => {
+    if (!proposalClient) return;
+    setLoadingProposal(true);
+    setProposalError("");
+    setProposal("");
+    try {
+      const text = await callApi("/api/proposal", {
+        clientName: proposalClient.companyName,
+        clientBusiness: proposalClient.business,
+        clientAppeal: proposalClient.appeal,
+        clientPlan: proposalClient.plan,
+        purpose, structure, shootCount,
+      });
+      setProposal(text);
+    } catch (e) {
+      setProposalError("提案の生成に失敗しました：" + (e.message || "不明なエラー"));
+    } finally {
+      setLoadingProposal(false);
+    }
+  };
+
   return (
     <div>
       <h2 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700 }} className="mb-4">リサーチ・企画</h2>
 
       <div className="rounded-2xl p-5 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
+        <p className="font-bold mb-2 flex items-center gap-1.5"><Sparkles size={16} color="#D6248A" /> AI企画提案（トレンドリサーチ）</p>
+        <p className="text-xs mb-3" style={{ color: "#8B897F" }}>最新のSNSトレンドをAIが検索し、選択したクライアントの情報・目的・構成をもとに次回撮影の企画・台本案を提案します。</p>
+        <Field label="クライアント">
+          <select value={proposalClientId} onChange={e => setProposalClientId(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 260 }}>
+            <option value="">クライアントを選択</option>
+            {clients.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
+          </select>
+        </Field>
+        <div className="grid md:grid-cols-3 gap-x-4">
+          <Field label="目的"><TextInput value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="例：新規集客、認知拡大、来店促進" /></Field>
+          <Field label="構成・演出の方向性"><TextInput value={structure} onChange={e => setStructure(e.target.value)} placeholder="例：ビフォーアフター、スタッフ紹介" /></Field>
+          <Field label="撮影本数"><TextInput type="number" value={shootCount} onChange={e => setShootCount(e.target.value)} min={1} /></Field>
+        </div>
+        <button onClick={generateProposal} disabled={loadingProposal || !proposalClientId} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 disabled:opacity-50" style={{ background: "#D6248A" }}>
+          {loadingProposal ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {loadingProposal ? "リサーチ中..." : "企画を提案してもらう"}
+        </button>
+        {proposalError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{proposalError}</p>}
+        {proposal && <div className="mt-2 p-3 rounded-xl text-sm whitespace-pre-wrap" style={{ background: "#FAF8F3", lineHeight: 1.7 }}>{proposal}</div>}
+      </div>
+
+      <div className="rounded-2xl p-5 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
         <p className="font-bold mb-2 flex items-center gap-1.5"><Sparkles size={16} color="#D6248A" /> バズっているショート動画を探す</p>
-        <p className="text-xs mb-3" style={{ color: "#8B897F" }}>ジャンルとテーマを入力すると、AIがWeb検索を使って実際にバズっているInstagramのリールを3つ探します。企画・撮影のアイデア出しにご活用ください。</p>
-        <div className="grid md:grid-cols-2 gap-x-4">
+        <p className="text-xs mb-3" style={{ color: "#8B897F" }}>ジャンルと、フォロワー数・再生数の条件を指定すると、AIがWeb検索を使って条件に近いバズっているInstagramのリールを3つ探します。企画・撮影のアイデア出しにご活用ください。</p>
+        <div className="grid md:grid-cols-3 gap-x-4">
           <Field label="ジャンル"><TextInput value={genre} onChange={e => setGenre(e.target.value)} placeholder="例：美容室、飲食店、不動産" /></Field>
-          <Field label="テーマ"><TextInput value={theme} onChange={e => setTheme(e.target.value)} placeholder="例：ビフォーアフター、Q&A" /></Field>
+          <Field label="フォロワー数（以上）"><TextInput type="number" value={minFollowers} onChange={e => setMinFollowers(e.target.value)} placeholder="例：10000" /></Field>
+          <Field label="再生数（以上）"><TextInput type="number" value={minViews} onChange={e => setMinViews(e.target.value)} placeholder="例：100000" /></Field>
         </div>
         <button onClick={search} disabled={loading} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 disabled:opacity-50" style={{ background: "#D6248A" }}>
           {loading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {loading ? "検索中..." : "バズ動画を3つ探す"}
@@ -1840,7 +1856,7 @@ function ResearchPage() {
             {history.map(p => (
               <div key={p.id} className="rounded-lg p-2.5" style={{ background: "#FAF8F3", border: "1px solid #EFEDE4" }}>
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-[11px]" style={{ color: "#8B897F" }}>{p.genre || "ジャンル未指定"} ・ {p.theme || "テーマ未指定"} ・ {timeAgo(p.createdAt)}</span>
+                  <span className="text-[11px]" style={{ color: "#8B897F" }}>{p.genre || "ジャンル未指定"} ・ フォロワー{p.minFollowers ? `${p.minFollowers}以上` : "指定なし"} ・ 再生数{p.minViews ? `${p.minViews}以上` : "指定なし"} ・ {timeAgo(p.createdAt)}</span>
                 </div>
                 <p className="text-xs whitespace-pre-wrap" style={{ lineHeight: 1.6, color: "#5F5E5A" }}>{p.text}</p>
               </div>
@@ -2723,7 +2739,7 @@ function AppInner() {
       case "dashboard": return <DashboardPage clients={clients} reels={reels} setReels={setReels} users={users} currentUser={currentUser} finance={finance} boardPosts={boardPosts} setBoardPosts={setBoardPosts} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} onGoReels={goReels} />;
       case "clients": return <ClientsPage clients={clients} setClients={setClients} finance={finance} setFinance={setFinance} currentUser={currentUser} onOpenClient={setOpenClientId} />;
       case "reels": return <ReelsPage clients={clients} reels={reels} setReels={setReels} users={users} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} currentUser={currentUser} focusClientId={reelsFocusClient} />;
-      case "research": return <ResearchPage />;
+      case "research": return <ResearchPage clients={clients} />;
       case "tasks": return <TasksPage clients={clients} reels={reels} users={users} onGoReels={goReels} onGoClient={goClientDetail} />;
       case "analytics": return <AnalyticsPage clients={clients} reels={reels} users={users} />;
       case "finance": return (currentUser.roles || []).includes("admin") ? <FinancePage clients={clients} finance={finance} setFinance={setFinance} reels={reels} users={users} /> : null;
