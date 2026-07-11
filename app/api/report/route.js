@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 
 export async function POST(req) {
   try {
-    const { clientName, monthLabel, posts } = await req.json();
+    const { clientName, monthLabel, posts, images } = await req.json();
 
     if (!posts || posts.length === 0) {
       return Response.json({ error: "投稿済みの動画がありません" }, { status: 400 });
@@ -16,7 +16,9 @@ export async function POST(req) {
       return `${i + 1}. 「${p.theme || "テーマ未設定"}」\n${links.join("\n")}`;
     }).join("\n\n");
 
-    const prompt = `あなたはSNS運用代行会社のレポート作成を担当するアナリストです。web検索ツールを使って、以下のクライアントの投稿URLについて、可能な範囲で現在の再生数・いいね数・シェア数・コメント数などの実績数値を調べてください。
+    const hasImages = Array.isArray(images) && images.length > 0;
+
+    const prompt = `あなたはSNS運用代行会社のレポート作成を担当するアナリストです。${hasImages ? "このメッセージに添付されている、Instagram・TikTok・公式LINEなどのインサイト（分析）画面のスクリーンショットを読み取り、そこに表示されている実績数値（リーチ数・再生数・いいね数・保存数・シェア数・コメント数・フォロワー数・友だち追加数など、画面に表示されているもの）を正確に抽出してください。加えて、" : ""}web検索ツールを使って、以下のクライアントの投稿URLについて、可能な範囲で現在の再生数・いいね数・シェア数・コメント数などの実績数値を調べてください。
 
 クライアント名: ${clientName}
 対象期間: ${monthLabel}
@@ -25,11 +27,20 @@ export async function POST(req) {
 ${postList}
 
 以下の形式で、SNS運用代行の月次報告書に使える文章を日本語で作成してください。
-- 各投稿ごとに、調べられた数値（再生数・いいね数・シェア数・コメント数）を箇条書きで記載
-- 数値が取得できなかった場合は「取得できませんでした」と正直に記載（架空の数値は絶対に作らないでください）
+${hasImages ? "- 添付されたスクリーンショットから読み取れた数値は、どの画面（Instagram/TikTok/LINEなど）のものか明記したうえで、正確に記載する\n" : ""}- 各投稿ごとに、調べられた数値（再生数・いいね数・シェア数・コメント数）を箇条書きで記載
+- 数値が取得できなかった場合は「取得できませんでした」と正直に記載（架空の数値やスクリーンショットに写っていない数値を絶対に作らないでください）
 - 最後に、今月の傾向・所感を3〜4行でまとめる
 
 前置きや余計な説明は不要で、報告書の本文のみを出力してください。`;
+
+    const content = [{ type: "text", text: prompt }];
+    if (hasImages) {
+      for (const img of images) {
+        if (img?.data && img?.mediaType) {
+          content.push({ type: "image", source: { type: "base64", media_type: img.mediaType, data: img.data } });
+        }
+      }
+    }
 
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -41,7 +52,7 @@ ${postList}
       body: JSON.stringify({
         model: "claude-sonnet-5",
         max_tokens: 2000,
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "user", content }],
         tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 10 }],
       }),
     });
