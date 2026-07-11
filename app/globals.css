@@ -12,3 +12,33 @@ html, body {
 
 input:disabled, textarea:disabled, select:disabled { opacity: .6; }
 ::selection { background: #FF5A36; color: #fff; }
+
+/* A4 PDFレポート出力用（分析資料ページ） */
+.printable-report-content { display: none; }
+@media print {
+  body * { visibility: hidden; }
+  #printable-report, #printable-report * { visibility: visible; }
+  #printable-report {
+    display: block !important;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 210mm;
+    min-height: 297mm;
+    padding: 20mm;
+    box-sizing: border-box;
+    font-family: 'Inter', sans-serif;
+  }
+  #printable-report h1 {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 16px;
+  }
+  #printable-report pre {
+    white-space: pre-wrap;
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    line-height: 1.8;
+  }
+  @page { size: A4; margin: 0; }
+}
