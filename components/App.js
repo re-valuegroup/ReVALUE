@@ -15,9 +15,9 @@ import { fetchAll, upsertRow, deleteRow, bulkUpsert } from "@/lib/db";
 
 const STAGES = [
   { key: "shoot", label: "撮影完了", icon: Camera },
-  { key: "edit_request", label: "編集指示", icon: MessageSquare },
-  { key: "editing", label: "編集中", icon: Scissors },
-  { key: "edit_done", label: "編集完了", icon: CheckSquare },
+  { key: "edit_request", label: "編集指示完了", icon: MessageSquare },
+  { key: "editing", label: "編集完了", icon: Scissors },
+  { key: "edit_done", label: "チェック完了", icon: CheckSquare },
   { key: "posted", label: "投稿完了", icon: Send },
 ];
 
@@ -111,6 +111,8 @@ const emptyClient = () => ({
   companyName: "", ceoName: "", address: "", website: "",
   instagram: { url: "", id: "", password: "" },
   tiktok: { url: "", id: "", password: "" },
+  youtube: { url: "", id: "" },
+  hashtag1: "", hashtag2: "", hashtag3: "",
   business: "", appeal: "", plan: "", monthlyCount: 4,
   contractEndDate: "", postDays: [],
   setupTasks: { profile: "pending", highlight: "pending", line: "pending", lp: "pending" },
@@ -146,9 +148,11 @@ const emptyReel = (clientId, ym) => ({
   checklist: emptyChecklist(), checkSubmitted: false, checkSubmittedAt: null,
   theme: "", script: "", editInstructions: "", driveUrl: "",
   transcript: "", memo: "", caption: "",
-  hashtag1: "", hashtag2: "", hashtag3: "",
   captionHistory: [], trendSearches: [],
-  completedStages: 0, stageVersion: 2, postedDate: "", views7day: "",
+  completedStages: 0, stageVersion: 2, postedDate: "",
+  instagramUrl: "", instagramViews: "", instagramLikes: "",
+  tiktokUrl: "", tiktokViews: "", tiktokLikes: "",
+  youtubeUrl: "", youtubeViews: "", youtubeLikes: "",
   createdAt: new Date().toISOString(),
 });
 
@@ -281,7 +285,7 @@ function Pipeline({ completedStages, onAdvance, onRegress, compact }) {
               >
                 <Icon size={compact ? 11 : 14} />
               </div>
-              {!compact && <span className="text-[10px] mt-1" style={{ color: done ? "#0E90B8" : isNext ? "#D6248A" : "#A9A79C", fontWeight: 600 }}>{s.label}</span>}
+              {<span className="mt-1 text-center" style={{ fontSize: compact ? 8 : 10, color: done ? "#0E90B8" : isNext ? "#D6248A" : "#A9A79C", fontWeight: 600, lineHeight: 1.2 }}>{s.label}</span>}
             </button>
             {i < STAGES.length - 1 && <div style={{ width: compact ? 8 : 16, height: 2, background: i < completedStages ? "#0E90B8" : "#E4E1D6" }} />}
           </React.Fragment>
@@ -391,8 +395,8 @@ function LoginScreen({ onAuthed }) {
   );
 }
 
-function ClientForm({ client, finance, onSave, onCancel }) {
-  const [c, setC] = useState(client);
+function ClientForm({ client, finance, isAdmin, onSave, onCancel }) {
+  const [c, setC] = useState({ ...emptyClient(), ...client, instagram: { ...emptyClient().instagram, ...client.instagram }, tiktok: { ...emptyClient().tiktok, ...client.tiktok }, youtube: { ...emptyClient().youtube, ...client.youtube } });
   const [f, setF] = useState(finance || emptyFinance(client.id));
   const set = (path, val) => {
     setC(prev => {
@@ -434,7 +438,7 @@ function ClientForm({ client, finance, onSave, onCancel }) {
         <Field label="備考メモ"><TextArea rows={2} value={c.notes} onChange={e => set("notes", e.target.value)} /></Field>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-x-6 mt-2 pt-4 border-t" style={{ borderColor: "#EFEDE4" }}>
+      <div className="grid md:grid-cols-3 gap-x-6 mt-2 pt-4 border-t" style={{ borderColor: "#EFEDE4" }}>
         <div>
           <p className="text-xs font-bold mb-2 flex items-center gap-1" style={{ color: "#96185E" }}><Instagram size={13} /> Instagram</p>
           <Field label="URL"><TextInput value={c.instagram.url} onChange={e => set("instagram.url", e.target.value)} placeholder="https://instagram.com/..." /></Field>
@@ -447,18 +451,34 @@ function ClientForm({ client, finance, onSave, onCancel }) {
           <Field label="ID"><TextInput value={c.tiktok.id} onChange={e => set("tiktok.id", e.target.value)} /></Field>
           <Field label="パスワード"><PasswordField value={c.tiktok.password} onChange={e => set("tiktok.password", e.target.value)} /></Field>
         </div>
+        <div>
+          <p className="text-xs font-bold mb-2" style={{ color: "#A32D2D" }}>YouTube</p>
+          <Field label="URL"><TextInput value={c.youtube.url} onChange={e => set("youtube.url", e.target.value)} placeholder="https://youtube.com/@..." /></Field>
+          <Field label="ID"><TextInput value={c.youtube.id} onChange={e => set("youtube.id", e.target.value)} /></Field>
+        </div>
       </div>
 
       <div className="mt-2 pt-4 border-t" style={{ borderColor: "#EFEDE4" }}>
-        <p className="text-xs font-bold mb-2 flex items-center gap-1" style={{ color: "#16171B" }}><Wallet size={13} /> 契約・料金情報（経理管理と連動）</p>
-        <div className="grid md:grid-cols-4 gap-x-4">
-          <Field label="契約開始日"><TextInput type="date" value={f.contractStart} onChange={e => setFin("contractStart", e.target.value)} /></Field>
-          <Field label="契約終了日"><TextInput type="date" value={f.contractEnd} onChange={e => setFin("contractEnd", e.target.value)} /></Field>
-          <Field label="月額料金"><TextInput type="number" value={f.monthlyFee} onChange={e => setFin("monthlyFee", e.target.value)} placeholder="円" /></Field>
-          <Field label="契約料金"><TextInput type="number" value={f.contractFee} onChange={e => setFin("contractFee", e.target.value)} placeholder="円" /></Field>
+        <p className="text-xs font-bold mb-2" style={{ color: "#16171B" }}>指定ハッシュタグ（動画のキャプション作成時、末尾に自動で追加されます）</p>
+        <div className="grid grid-cols-3 gap-2">
+          <TextInput value={c.hashtag1} onChange={e => set("hashtag1", e.target.value)} placeholder="#タグ1" />
+          <TextInput value={c.hashtag2} onChange={e => set("hashtag2", e.target.value)} placeholder="#タグ2" />
+          <TextInput value={c.hashtag3} onChange={e => set("hashtag3", e.target.value)} placeholder="#タグ3" />
         </div>
-        <p className="text-[11px]" style={{ color: "#A9A79C" }}>請求日・入金ステータスの管理は「経理管理」ページから行えます。</p>
       </div>
+
+      {isAdmin && (
+        <div className="mt-2 pt-4 border-t" style={{ borderColor: "#EFEDE4" }}>
+          <p className="text-xs font-bold mb-2 flex items-center gap-1" style={{ color: "#16171B" }}><Wallet size={13} /> 契約・料金情報（経理管理と連動）</p>
+          <div className="grid md:grid-cols-4 gap-x-4">
+            <Field label="契約開始日"><TextInput type="date" value={f.contractStart} onChange={e => setFin("contractStart", e.target.value)} /></Field>
+            <Field label="契約終了日"><TextInput type="date" value={f.contractEnd} onChange={e => setFin("contractEnd", e.target.value)} /></Field>
+            <Field label="月額料金"><TextInput type="number" value={f.monthlyFee} onChange={e => setFin("monthlyFee", e.target.value)} placeholder="円" /></Field>
+            <Field label="契約料金"><TextInput type="number" value={f.contractFee} onChange={e => setFin("contractFee", e.target.value)} placeholder="円" /></Field>
+          </div>
+          <p className="text-[11px]" style={{ color: "#A9A79C" }}>請求日・入金ステータスの管理は「経理管理」ページから行えます。</p>
+        </div>
+      )}
 
       <div className="mt-2 pt-4 border-t" style={{ borderColor: "#EFEDE4" }}>
         <p className="text-xs font-bold mb-2" style={{ color: "#16171B" }}>初期設定タスク</p>
@@ -495,7 +515,8 @@ function ClientForm({ client, finance, onSave, onCancel }) {
 function ClientsPage({ clients, setClients, finance, setFinance, currentUser, onOpenClient }) {
   const [editing, setEditing] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
-  const canEdit = (currentUser.roles || []).includes("admin");
+  const canEdit = true;
+  const isAdmin = (currentUser.roles || []).includes("admin");
 
   const save = (c, f) => {
     setClients(prev => {
@@ -515,7 +536,7 @@ function ClientsPage({ clients, setClients, finance, setFinance, currentUser, on
     setConfirmDeleteId(null);
   };
 
-  if (editing) return <ClientForm client={editing} finance={finance.find(x => x.clientId === editing.id)} onSave={save} onCancel={() => setEditing(null)} />;
+  if (editing) return <ClientForm client={editing} finance={finance.find(x => x.clientId === editing.id)} isAdmin={isAdmin} onSave={save} onCancel={() => setEditing(null)} />;
 
   return (
     <div>
@@ -550,7 +571,7 @@ function ClientsPage({ clients, setClients, finance, setFinance, currentUser, on
                   ) : (
                     <>
                       <button onClick={() => setEditing(c)} className="p-1.5 rounded-lg hover:bg-black/5"><Pencil size={14} /></button>
-                      <button onClick={() => setConfirmDeleteId(c.id)} className="p-1.5 rounded-lg hover:bg-black/5"><Trash2 size={14} /></button>
+                      {isAdmin && <button onClick={() => setConfirmDeleteId(c.id)} className="p-1.5 rounded-lg hover:bg-black/5"><Trash2 size={14} /></button>}
                     </>
                   )}
                 </div>
@@ -570,7 +591,8 @@ function ClientsPage({ clients, setClients, finance, setFinance, currentUser, on
 
 function ClientDetail({ client, clients, setClients, finance, setFinance, reels, currentUser, onBack, onGoReels }) {
   const [editing, setEditing] = useState(false);
-  const canEdit = (currentUser.roles || []).includes("admin");
+  const canEdit = true;
+  const isAdmin = (currentUser.roles || []).includes("admin");
   const [proposal, setProposal] = useState("");
   const [loadingProposal, setLoadingProposal] = useState(false);
   const [proposalError, setProposalError] = useState("");
@@ -591,14 +613,14 @@ function ClientDetail({ client, clients, setClients, finance, setFinance, reels,
       });
       setProposal(text);
     } catch (e) {
-      setProposalError("提案の生成に失敗しました。時間をおいて再度お試しください。");
+      setProposalError("提案の生成に失敗しました：" + (e.message || "不明なエラー"));
     } finally {
       setLoadingProposal(false);
     }
   };
 
   if (editing) {
-    return <ClientForm client={client} finance={finance.find(x => x.clientId === client.id)} onCancel={() => setEditing(false)} onSave={(c, f) => {
+    return <ClientForm client={client} finance={finance.find(x => x.clientId === client.id)} isAdmin={isAdmin} onCancel={() => setEditing(false)} onSave={(c, f) => {
       setClients(prev => prev.map(x => x.id === c.id ? c : x));
       if (f) {
         setFinance(prev => {
@@ -664,7 +686,7 @@ function ClientDetail({ client, clients, setClients, finance, setFinance, reels,
           </div>
         </div>
 
-        {canEdit && (
+        {isAdmin && (
           <div className="mt-4 pt-4 border-t" style={{ borderColor: "#EFEDE4" }}>
             <p className="text-xs font-semibold mb-2 flex items-center gap-1" style={{ color: "#8B897F" }}><Wallet size={12} /> 契約・料金情報（統括管理者専用・経理管理と連動）</p>
             {(() => {
@@ -681,17 +703,22 @@ function ClientDetail({ client, clients, setClients, finance, setFinance, reels,
           </div>
         )}
 
-        <div className="grid md:grid-cols-2 gap-4 mt-4 pt-4 border-t" style={{ borderColor: "#EFEDE4" }}>
-          {[{ label: "Instagram", data: client.instagram, tone: "coral" }, { label: "TikTok", data: client.tiktok, tone: "gray" }].map(sns => (
+        <div className="grid md:grid-cols-3 gap-4 mt-4 pt-4 border-t" style={{ borderColor: "#EFEDE4" }}>
+          {[{ label: "Instagram", data: client.instagram, hasPassword: true }, { label: "TikTok", data: client.tiktok, hasPassword: true }, { label: "YouTube", data: client.youtube || {}, hasPassword: false }].map(sns => (
             <div key={sns.label} className="rounded-xl p-3" style={{ background: "#FAF8F3" }}>
               <p className="text-xs font-bold mb-2">{sns.label}</p>
               {sns.data.url ? (
                 <a href={sns.data.url} target="_blank" rel="noreferrer" className="text-xs flex items-center gap-1 mb-1" style={{ color: "#96185E" }}>{sns.data.url} <ExternalLink size={11} /></a>
               ) : <p className="text-xs mb-1" style={{ color: "#A9A79C" }}>URL未設定</p>}
               <p className="text-xs" style={{ color: "#5F5E5A" }}>ID: {sns.data.id || "―"}</p>
-              <p className="text-xs" style={{ color: "#5F5E5A" }}>PW: {sns.data.password ? "••••••••" : "―"}</p>
+              {sns.hasPassword && <p className="text-xs" style={{ color: "#5F5E5A" }}>PW: {sns.data.password ? "••••••••" : "―"}</p>}
             </div>
           ))}
+        </div>
+
+        <div className="mt-4 pt-4 border-t" style={{ borderColor: "#EFEDE4" }}>
+          <p className="text-xs font-semibold mb-1" style={{ color: "#8B897F" }}>指定ハッシュタグ</p>
+          <p className="text-sm">{[client.hashtag1, client.hashtag2, client.hashtag3].filter(Boolean).join(" ") || "―"}</p>
         </div>
 
         <div className="flex items-center gap-2 mt-4">
@@ -730,12 +757,12 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
   const [genLoading, setGenLoading] = useState(false);
   const [genError, setGenError] = useState("");
   const [showHistory, setShowHistory] = useState(false);
-  const [trendLoading, setTrendLoading] = useState(false);
-  const [trendError, setTrendError] = useState("");
-  const [showTrendHistory, setShowTrendHistory] = useState(false);
-  const [genre, setGenre] = useState("");
-  const [trendTheme, setTrendTheme] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [draft, setDraft] = useState(reel);
+  const [dirty, setDirty] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+
+  useEffect(() => { setDraft(reel); setDirty(false); }, [reel.id]);
 
   const editors = users.filter(u => (u.roles || []).includes("editor"));
   const shooters = users.filter(u => (u.roles || []).includes("shooter"));
@@ -745,16 +772,30 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
     syncReelEditCalendar(setCalendarEvents, updated.id, updated.editStartDate, updated.editEndDate);
   };
 
+  // 「保存する」ボタンを押すまで反映されない、下書き編集用
+  const set = (patch) => { setDraft(prev => ({ ...prev, ...patch })); setDirty(true); };
+  const saveDraft = () => {
+    onChange(draft);
+    if (draft.editStartDate !== reel.editStartDate || draft.editEndDate !== reel.editEndDate) {
+      syncEditCalendar(draft);
+    }
+    setDirty(false);
+    setJustSaved(true);
+    setTimeout(() => setJustSaved(false), 2000);
+  };
+
+  // チェックリストの提出やパイプラインのクリックなど、即座に反映すべき操作用
   const update = (patch) => {
     const updated = { ...reel, ...patch };
     onChange(updated);
+    setDraft(prev => ({ ...prev, ...patch }));
     if ("editStartDate" in patch || "editEndDate" in patch) {
       syncEditCalendar(updated);
     }
   };
 
   const buildHashtagSuffix = () => {
-    const tags = [reel.hashtag1, reel.hashtag2, reel.hashtag3]
+    const tags = [client?.hashtag1, client?.hashtag2, client?.hashtag3]
       .map(t => (t || "").trim())
       .filter(Boolean)
       .map(t => t.startsWith("#") ? t : "#" + t);
@@ -768,17 +809,17 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
       const text = await callApi("/api/caption", {
         clientName: client?.companyName,
         clientBusiness: client?.business,
-        theme: reel.theme,
-        transcript: reel.transcript,
-        memo: reel.memo,
+        theme: draft.theme,
+        transcript: draft.transcript,
+        memo: draft.memo,
       });
       let clean = text.trim();
       const suffix = buildHashtagSuffix();
       if (suffix) clean = clean + "\n\n" + suffix;
       const historyEntry = { id: uid("cap"), text: clean, createdAt: Date.now() };
-      update({ caption: clean, captionHistory: [historyEntry, ...(reel.captionHistory || [])] });
+      set({ caption: clean, captionHistory: [historyEntry, ...(draft.captionHistory || [])] });
     } catch (e) {
-      setGenError("キャプション生成に失敗しました。時間をおいて再度お試しください。");
+      setGenError("キャプション生成に失敗しました：" + (e.message || "不明なエラー"));
     } finally {
       setGenLoading(false);
     }
@@ -787,7 +828,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
   const applyHashtagsToCaption = () => {
     const suffix = buildHashtagSuffix();
     if (!suffix) return;
-    const lines = (reel.caption || "").split("\n");
+    const lines = (draft.caption || "").split("\n");
     while (lines.length && lines[lines.length - 1].trim() === "") lines.pop();
     const isSingleHashtag = (line) => {
       const t = line.trim();
@@ -796,13 +837,13 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
     while (lines.length && isSingleHashtag(lines[lines.length - 1])) lines.pop();
     while (lines.length && lines[lines.length - 1].trim() === "") lines.pop();
     const newCaption = [...lines, "", suffix].join("\n");
-    update({ caption: newCaption });
+    set({ caption: newCaption });
   };
 
   const [copied, setCopied] = useState(false);
   const copyCaption = async () => {
     try {
-      await navigator.clipboard.writeText(reel.caption || "");
+      await navigator.clipboard.writeText(draft.caption || "");
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (e) {
@@ -810,27 +851,8 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
     }
   };
 
-  const applyHistoryCaption = (text) => update({ caption: text });
-  const deleteHistoryCaption = (id) => update({ captionHistory: (reel.captionHistory || []).filter(h => h.id !== id) });
-
-  const genTrendSearch = async () => {
-    setTrendLoading(true);
-    setTrendError("");
-    try {
-      const text = await callApi("/api/trend", {
-        genre,
-        theme: trendTheme || reel.theme,
-      });
-      const clean = text.trim();
-      const entry = { id: uid("trend"), genre, theme: trendTheme, text: clean, createdAt: Date.now() };
-      update({ trendSearches: [entry, ...(reel.trendSearches || [])] });
-      setShowTrendHistory(true);
-    } catch (e) {
-      setTrendError("検索に失敗しました。時間をおいて再度お試しください。");
-    } finally {
-      setTrendLoading(false);
-    }
-  };
+  const applyHistoryCaption = (text) => set({ caption: text });
+  const deleteHistoryCaption = (id) => set({ captionHistory: (draft.captionHistory || []).filter(h => h.id !== id) });
 
   const toggleCheck = (key) => update({ checklist: { ...(reel.checklist || emptyChecklist()), [key]: !((reel.checklist || {})[key]) } });
   const setCheckMemo = (memo) => update({ checklist: { ...(reel.checklist || emptyChecklist()), memo } });
@@ -864,56 +886,51 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
       {expanded && (
         <div className="px-4 pb-4 pt-1 border-t" style={{ borderColor: "#EFEDE4" }} onClick={e => e.stopPropagation()}>
           <div className="grid md:grid-cols-2 gap-x-4">
-            <Field label="テーマ"><TextInput value={reel.theme} onChange={e => update({ theme: e.target.value })} disabled={!canEdit} /></Field>
+            <Field label="テーマ"><TextInput value={draft.theme} onChange={e => set({ theme: e.target.value })} disabled={!canEdit} /></Field>
             <Field label="担当撮影者">
-              <select value={reel.assignedStaffId || ""} onChange={e => update({ assignedStaffId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
+              <select value={draft.assignedStaffId || ""} onChange={e => set({ assignedStaffId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
                 <option value="">未割り当て</option>
                 {shooters.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             </Field>
             <Field label="Google Drive 保存先URL">
               <div className="flex gap-1">
-                <TextInput value={reel.driveUrl} onChange={e => update({ driveUrl: e.target.value })} placeholder="https://drive.google.com/..." disabled={!canEdit} />
-                {reel.driveUrl && <a href={reel.driveUrl} target="_blank" rel="noreferrer" className="shrink-0 flex items-center justify-center w-9 rounded-lg border" style={{ borderColor: "#DEDACD" }}><Link2 size={14} /></a>}
+                <TextInput value={draft.driveUrl} onChange={e => set({ driveUrl: e.target.value })} placeholder="https://drive.google.com/..." disabled={!canEdit} />
+                {draft.driveUrl && <a href={draft.driveUrl} target="_blank" rel="noreferrer" className="shrink-0 flex items-center justify-center w-9 rounded-lg border" style={{ borderColor: "#DEDACD" }}><Link2 size={14} /></a>}
               </div>
             </Field>
-            <Field label="編集指示"><TextArea rows={2} value={reel.editInstructions} onChange={e => update({ editInstructions: e.target.value })} disabled={!canEdit} /></Field>
-            <Field label="台本（任意）"><TextArea rows={2} value={reel.script} onChange={e => update({ script: e.target.value })} disabled={!canEdit} /></Field>
+            <Field label="編集指示"><TextArea rows={2} value={draft.editInstructions} onChange={e => set({ editInstructions: e.target.value })} disabled={!canEdit} /></Field>
+            <Field label="台本（任意）"><TextArea rows={2} value={draft.script} onChange={e => set({ script: e.target.value })} disabled={!canEdit} /></Field>
             <Field label="①カット担当">
-              <select value={reel.cutEditorId || ""} onChange={e => update({ cutEditorId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
+              <select value={draft.cutEditorId || ""} onChange={e => set({ cutEditorId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
                 <option value="">未割り当て</option>
                 {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             </Field>
             <Field label="②テロップ担当">
-              <select value={reel.telopEditorId || ""} onChange={e => update({ telopEditorId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
+              <select value={draft.telopEditorId || ""} onChange={e => set({ telopEditorId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
                 <option value="">未割り当て</option>
                 {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             </Field>
             <Field label="③効果音担当">
-              <select value={reel.sfxEditorId || ""} onChange={e => update({ sfxEditorId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
+              <select value={draft.sfxEditorId || ""} onChange={e => set({ sfxEditorId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
                 <option value="">未割り当て</option>
                 {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             </Field>
             <Field label="編集予定日（カレンダーと連動）">
               <div className="flex items-center gap-1">
-                <TextInput type="date" value={reel.editStartDate || ""} onChange={e => update({ editStartDate: e.target.value })} disabled={!canEdit} />
+                <TextInput type="date" value={draft.editStartDate || ""} onChange={e => set({ editStartDate: e.target.value })} disabled={!canEdit} />
                 <span className="text-xs shrink-0" style={{ color: "#8B897F" }}>〜</span>
-                <TextInput type="date" value={reel.editEndDate || ""} onChange={e => update({ editEndDate: e.target.value })} disabled={!canEdit} />
+                <TextInput type="date" value={draft.editEndDate || ""} onChange={e => set({ editEndDate: e.target.value })} disabled={!canEdit} />
               </div>
             </Field>
             <Field label="編集工数（統括管理者のみ設定可）">
-              <select value={reel.editWorkload || ""} onChange={e => update({ editWorkload: e.target.value })} disabled={!isAdmin} className={inputCls} style={inputStyle}>
+              <select value={draft.editWorkload || ""} onChange={e => set({ editWorkload: e.target.value })} disabled={!isAdmin} className={inputCls} style={inputStyle}>
                 <option value="">未設定</option>
                 {EDIT_WORKLOAD_OPTIONS.map(v => <option key={v} value={v}>{v}</option>)}
               </select>
-              {reel.editWorkload && (
-                <p className="text-xs mt-1 flex items-center gap-1" style={{ color: "#8B897F" }}>
-                  <DollarSign size={12} /> 報酬単価: ¥{(parseFloat(reel.editWorkload) * 1000).toLocaleString()}
-                </p>
-              )}
             </Field>
           </div>
 
@@ -936,6 +953,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                 </label>
               ))}
             </div>
+            <Field label="動画の文字起こし（任意・AIキャプション生成にも使用されます）"><TextArea rows={3} value={draft.transcript} onChange={e => set({ transcript: e.target.value })} placeholder="完成した動画の文字起こしを貼り付け（なくても生成可）" disabled={!canEdit} /></Field>
             <Field label="メモ欄"><TextArea rows={2} value={checklist.memo} onChange={e => setCheckMemo(e.target.value)} disabled={!canEdit} /></Field>
             <div className="flex items-center justify-between">
               <span className="text-[11px]" style={{ color: "#8B897F" }}>チェック済み {checkedCount}/{CHECKLIST_ITEMS.length}</span>
@@ -948,56 +966,20 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
           </div>
 
           <div className="rounded-xl p-3 my-2" style={{ background: "#FAF8F3" }}>
-            <p className="text-xs font-bold mb-2 flex items-center gap-1.5"><Sparkles size={13} color="#D6248A" /> バズっているショート動画を探す</p>
-            <div className="grid md:grid-cols-2 gap-x-4">
-              <Field label="ジャンル"><TextInput value={genre} onChange={e => setGenre(e.target.value)} placeholder="例：美容室、飲食店、不動産" disabled={!canEdit} /></Field>
-              <Field label="テーマ"><TextInput value={trendTheme} onChange={e => setTrendTheme(e.target.value)} placeholder="例：ビフォーアフター、Q&A" disabled={!canEdit} /></Field>
-            </div>
-            {canEdit && (
-              <button onClick={genTrendSearch} disabled={trendLoading} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 disabled:opacity-50" style={{ background: "#D6248A" }}>
-                {trendLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {trendLoading ? "検索中..." : "バズ動画を3つ探す"}
-              </button>
-            )}
-            {trendError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{trendError}</p>}
-            {(reel.trendSearches || []).length > 0 && (
-              <button onClick={() => setShowTrendHistory(s => !s)} className="text-xs font-semibold mt-2" style={{ color: "#5F5E5A" }}>
-                検索結果を見る（{reel.trendSearches.length}件）{showTrendHistory ? " ▲" : " ▼"}
-              </button>
-            )}
-            {showTrendHistory && (
-              <div className="space-y-2 mt-2">
-                {(reel.trendSearches || []).map(p => (
-                  <div key={p.id} className="rounded-lg p-2.5" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[11px]" style={{ color: "#8B897F" }}>{p.genre || "ジャンル未指定"} ・ {p.theme || "テーマ未指定"} ・ {timeAgo(p.createdAt)}</span>
-                    </div>
-                    <p className="text-xs whitespace-pre-wrap" style={{ lineHeight: 1.6, color: "#5F5E5A" }}>{p.text}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-xl p-3 my-2" style={{ background: "#FAF8F3" }}>
             <p className="text-xs font-bold mb-2 flex items-center gap-1.5"><Sparkles size={13} color="#D6248A" /> AIキャプション作成</p>
             <div className="grid md:grid-cols-2 gap-x-4">
-              <Field label="動画概要メモ"><TextArea rows={3} value={reel.memo} onChange={e => update({ memo: e.target.value })} placeholder="動画の要点・伝えたいことのメモ" disabled={!canEdit} /></Field>
-              <Field label="動画の文字起こし（任意）"><TextArea rows={3} value={reel.transcript} onChange={e => update({ transcript: e.target.value })} placeholder="完成した動画の文字起こしを貼り付け（なくても生成可）" disabled={!canEdit} /></Field>
+              <Field label="動画概要メモ"><TextArea rows={3} value={draft.memo} onChange={e => set({ memo: e.target.value })} placeholder="動画の要点・伝えたいことのメモ" disabled={!canEdit} /></Field>
             </div>
-            <Field label="指定ハッシュタグ（必ずキャプション末尾に追加されます）">
-              <div className="grid grid-cols-3 gap-2">
-                <TextInput value={reel.hashtag1} onChange={e => update({ hashtag1: e.target.value })} placeholder="#タグ1" disabled={!canEdit} />
-                <TextInput value={reel.hashtag2} onChange={e => update({ hashtag2: e.target.value })} placeholder="#タグ2" disabled={!canEdit} />
-                <TextInput value={reel.hashtag3} onChange={e => update({ hashtag3: e.target.value })} placeholder="#タグ3" disabled={!canEdit} />
-              </div>
-            </Field>
+            <p className="text-[11px] mb-2" style={{ color: "#A9A79C" }}>
+              指定ハッシュタグ：{[client?.hashtag1, client?.hashtag2, client?.hashtag3].filter(Boolean).join(" ") || "未設定（クライアント情報の編集画面から設定できます）"}
+            </p>
             <div className="flex items-center gap-2">
               {canEdit && (
                 <button onClick={genCaption} disabled={genLoading} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 disabled:opacity-50" style={{ background: "#D6248A" }}>
-                  {genLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {genLoading ? "生成中..." : (reel.caption ? "AIで再生成" : "AIでキャプションを生成")}
+                  {genLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {genLoading ? "生成中..." : (draft.caption ? "AIで再生成" : "AIでキャプションを生成")}
                 </button>
               )}
-              {canEdit && reel.caption && (
+              {canEdit && draft.caption && (
                 <button onClick={applyHashtagsToCaption} className="text-xs font-semibold px-3 py-1.5 rounded-lg border" style={{ borderColor: "#DEDACD", color: "#5F5E5A" }}>
                   指定ハッシュタグを末尾に反映
                 </button>
@@ -1005,21 +987,21 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             </div>
             {genError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{genError}</p>}
             <Field label="キャプション">
-              <TextArea rows={4} value={reel.caption} onChange={e => update({ caption: e.target.value })} disabled={!canEdit} />
-              {reel.caption && (
+              <TextArea rows={4} value={draft.caption} onChange={e => set({ caption: e.target.value })} disabled={!canEdit} />
+              {draft.caption && (
                 <button onClick={copyCaption} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 mt-1.5" style={{ background: copied ? "#0E90B8" : "#16171B" }}>
                   {copied ? <CircleCheck size={12} /> : <Copy size={12} />} {copied ? "コピーしました" : "キャプションをコピー"}
                 </button>
               )}
             </Field>
-            {(reel.captionHistory || []).length > 0 && (
+            {(draft.captionHistory || []).length > 0 && (
               <button onClick={() => setShowHistory(s => !s)} className="text-xs font-semibold" style={{ color: "#5F5E5A" }}>
-                生成履歴を見る（{reel.captionHistory.length}件）{showHistory ? " ▲" : " ▼"}
+                生成履歴を見る（{draft.captionHistory.length}件）{showHistory ? " ▲" : " ▼"}
               </button>
             )}
             {showHistory && (
               <div className="space-y-2 mt-2">
-                {(reel.captionHistory || []).map(h => (
+                {(draft.captionHistory || []).map(h => (
                   <div key={h.id} className="rounded-lg p-2.5" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-[11px]" style={{ color: "#8B897F" }}>{timeAgo(h.createdAt)}</span>
@@ -1035,9 +1017,44 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             )}
           </div>
 
-          <div className="grid md:grid-cols-2 gap-x-4">
-            <Field label="投稿日"><TextInput type="date" value={reel.postedDate} onChange={e => update({ postedDate: e.target.value })} disabled={!canEdit} /></Field>
-            <Field label="投稿後1週間の再生回数"><TextInput type="number" value={reel.views7day} onChange={e => update({ views7day: e.target.value })} disabled={!canEdit} /></Field>
+          <div className="rounded-xl p-3 my-2" style={{ background: "#FAF8F3" }}>
+            <p className="text-xs font-bold mb-2">投稿情報</p>
+            <Field label="投稿日"><TextInput type="date" value={draft.postedDate} onChange={e => set({ postedDate: e.target.value })} disabled={!canEdit} /></Field>
+            <div className="grid md:grid-cols-3 gap-x-4">
+              {[
+                { key: "instagram", label: "Instagram" },
+                { key: "tiktok", label: "TikTok" },
+                { key: "youtube", label: "YouTube" },
+              ].map(sns => (
+                <div key={sns.key}>
+                  <Field label={`${sns.label} 投稿URL`}>
+                    <div className="flex gap-1">
+                      <TextInput value={draft[sns.key + "Url"] || ""} onChange={e => set({ [sns.key + "Url"]: e.target.value })} placeholder="https://..." disabled={!canEdit} />
+                      {draft[sns.key + "Url"] && (
+                        <a href={draft[sns.key + "Url"]} target="_blank" rel="noreferrer" className="shrink-0 flex items-center justify-center px-2 rounded-lg border text-xs font-semibold" style={{ borderColor: "#DEDACD" }}>
+                          開く
+                        </a>
+                      )}
+                    </div>
+                  </Field>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Field label="再生数"><TextInput type="number" value={draft[sns.key + "Views"] || ""} onChange={e => set({ [sns.key + "Views"]: e.target.value })} disabled={!canEdit} /></Field>
+                    <Field label="いいね数"><TextInput type="number" value={draft[sns.key + "Likes"] || ""} onChange={e => set({ [sns.key + "Likes"]: e.target.value })} disabled={!canEdit} /></Field>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="sticky bottom-0 -mx-4 px-4 py-2.5 flex items-center justify-between gap-2" style={{ background: "linear-gradient(to top, #fff 70%, transparent)" }}>
+            <span className="text-xs font-semibold" style={{ color: dirty ? "#A32D2D" : "#8B897F" }}>
+              {dirty ? "未保存の変更があります" : justSaved ? "保存しました" : ""}
+            </span>
+            {canEdit && (
+              <button onClick={saveDraft} disabled={!dirty} className="text-sm font-semibold px-4 py-2 rounded-lg text-white disabled:opacity-40" style={{ background: "#16171B" }}>
+                保存する
+              </button>
+            )}
           </div>
 
           {canEdit && (
@@ -1597,7 +1614,10 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
               const choice = getPickup(r.id);
               return (
                 <div key={r.id} className="rounded-xl p-3" style={{ background: "#FAF8F3" }}>
-                  <p className="font-semibold text-sm">{c?.companyName} ・ {r.theme || "（テーマ未設定）"}</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-semibold text-sm">{c?.companyName} ・ {r.theme || "（テーマ未設定）"}</p>
+                    {r.editWorkload && <Badge tone="amber">工数 {r.editWorkload}</Badge>}
+                  </div>
                   <p className="text-xs mt-1" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>
                   <div className="flex items-center gap-2 mt-2 flex-wrap">
                     <select value={choice.editorId} onChange={e => setPickup(r.id, { editorId: e.target.value })} className={inputCls} style={{ ...inputStyle, width: 160 }}>
@@ -1775,6 +1795,64 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
   );
 }
 
+function ResearchPage() {
+  const [genre, setGenre] = useState("");
+  const [theme, setTheme] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [history, setHistory] = useState([]);
+
+  const search = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const text = await callApi("/api/trend", { genre, theme });
+      const entry = { id: uid("trend"), genre, theme, text: text.trim(), createdAt: Date.now() };
+      setHistory(prev => [entry, ...prev]);
+    } catch (e) {
+      setError("検索に失敗しました：" + (e.message || "不明なエラー"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700 }} className="mb-4">リサーチ・企画</h2>
+
+      <div className="rounded-2xl p-5 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
+        <p className="font-bold mb-2 flex items-center gap-1.5"><Sparkles size={16} color="#D6248A" /> バズっているショート動画を探す</p>
+        <p className="text-xs mb-3" style={{ color: "#8B897F" }}>ジャンルとテーマを入力すると、AIがWeb検索を使って実際にバズっているInstagramのリールを3つ探します。企画・撮影のアイデア出しにご活用ください。</p>
+        <div className="grid md:grid-cols-2 gap-x-4">
+          <Field label="ジャンル"><TextInput value={genre} onChange={e => setGenre(e.target.value)} placeholder="例：美容室、飲食店、不動産" /></Field>
+          <Field label="テーマ"><TextInput value={theme} onChange={e => setTheme(e.target.value)} placeholder="例：ビフォーアフター、Q&A" /></Field>
+        </div>
+        <button onClick={search} disabled={loading} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 disabled:opacity-50" style={{ background: "#D6248A" }}>
+          {loading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {loading ? "検索中..." : "バズ動画を3つ探す"}
+        </button>
+        {error && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{error}</p>}
+      </div>
+
+      {history.length > 0 && (
+        <div className="rounded-2xl p-5" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
+          <p className="font-bold mb-3">検索結果</p>
+          <div className="space-y-2">
+            {history.map(p => (
+              <div key={p.id} className="rounded-lg p-2.5" style={{ background: "#FAF8F3", border: "1px solid #EFEDE4" }}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[11px]" style={{ color: "#8B897F" }}>{p.genre || "ジャンル未指定"} ・ {p.theme || "テーマ未指定"} ・ {timeAgo(p.createdAt)}</span>
+                </div>
+                <p className="text-xs whitespace-pre-wrap" style={{ lineHeight: 1.6, color: "#5F5E5A" }}>{p.text}</p>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] mt-2" style={{ color: "#A9A79C" }}>この検索結果は、画面を再読み込みすると消えます。必要なものはメモや動画の企画欄にコピーしてご利用ください。</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TasksPage({ clients, reels, users, onGoReels, onGoClient }) {
   const ym = currentYearMonth();
   const editors = users.filter(u => (u.roles || []).includes("editor"));
@@ -1926,6 +2004,52 @@ function AnalyticsPage({ clients, reels, users }) {
   const [clientId, setClientId] = useState(clients[0]?.id || "");
   const posted = reels.filter(r => r.clientId === clientId && r.completedStages >= 5);
   const months = [...new Set(posted.map(r => r.yearMonth))].sort().reverse();
+  const client = clients.find(c => c.id === clientId);
+  const [reportState, setReportState] = useState({});
+  const [imagesByMonth, setImagesByMonth] = useState({});
+
+  const addImages = async (m, fileList) => {
+    const files = Array.from(fileList || []).filter(f => f.type.startsWith("image/"));
+    const readOne = (file) => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result || "";
+        const base64 = String(result).split(",")[1] || "";
+        resolve({ name: file.name, mediaType: file.type, data: base64, previewUrl: result });
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    const newImages = await Promise.all(files.map(readOne));
+    setImagesByMonth(prev => ({ ...prev, [m]: [...(prev[m] || []), ...newImages] }));
+  };
+  const removeImage = (m, idx) => {
+    setImagesByMonth(prev => ({ ...prev, [m]: (prev[m] || []).filter((_, i) => i !== idx) }));
+  };
+
+  const genReport = async (m, rows) => {
+    setReportState(prev => ({ ...prev, [m]: { loading: true, error: "", text: prev[m]?.text || "" } }));
+    try {
+      const text = await callApi("/api/report", {
+        clientName: client?.companyName,
+        monthLabel: monthLabel(m),
+        posts: rows.map(r => ({ theme: r.theme, instagramUrl: r.instagramUrl, tiktokUrl: r.tiktokUrl, youtubeUrl: r.youtubeUrl })),
+        images: (imagesByMonth[m] || []).map(img => ({ mediaType: img.mediaType, data: img.data })),
+      });
+      setReportState(prev => ({ ...prev, [m]: { loading: false, error: "", text } }));
+    } catch (e) {
+      setReportState(prev => ({ ...prev, [m]: { loading: false, error: "レポート作成に失敗しました：" + (e.message || "不明なエラー"), text: prev[m]?.text || "" } }));
+    }
+  };
+
+  const printReport = (m) => {
+    const el = document.getElementById("printable-report");
+    if (el) {
+      el.dataset.title = `${client?.companyName || ""} ${monthLabel(m)} 月次レポート`;
+      el.dataset.body = reportState[m]?.text || "";
+      window.print();
+    }
+  };
 
   return (
     <div>
@@ -1938,28 +2062,89 @@ function AnalyticsPage({ clients, reels, users }) {
 
       {months.map(m => {
         const rows = posted.filter(r => r.yearMonth === m);
-        const totalViews = rows.reduce((s, r) => s + (parseInt(r.views7day) || 0), 0);
+        const totalReelViews = (r) => (parseInt(r.instagramViews) || 0) + (parseInt(r.tiktokViews) || 0) + (parseInt(r.youtubeViews) || 0);
+        const totalViews = rows.reduce((s, r) => s + totalReelViews(r), 0);
         const avg = rows.length ? Math.round(totalViews / rows.length) : 0;
+        const rs = reportState[m] || {};
         return (
           <div key={m} className="rounded-2xl p-5 mt-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
             <p className="font-bold mb-3">{monthLabel(m)} の月次レポート</p>
             <div className="grid grid-cols-3 gap-3 mb-3">
               <div className="rounded-xl p-3" style={{ background: "#FAF8F3" }}><p className="text-xs" style={{ color: "#8B897F" }}>投稿本数</p><p className="text-xl font-bold">{rows.length}</p></div>
-              <div className="rounded-xl p-3" style={{ background: "#FAF8F3" }}><p className="text-xs" style={{ color: "#8B897F" }}>合計再生数(1週間)</p><p className="text-xl font-bold">{totalViews.toLocaleString()}</p></div>
+              <div className="rounded-xl p-3" style={{ background: "#FAF8F3" }}><p className="text-xs" style={{ color: "#8B897F" }}>合計再生数（IG+TikTok+YouTube）</p><p className="text-xl font-bold">{totalViews.toLocaleString()}</p></div>
               <div className="rounded-xl p-3" style={{ background: "#FAF8F3" }}><p className="text-xs" style={{ color: "#8B897F" }}>平均再生数</p><p className="text-xl font-bold">{avg.toLocaleString()}</p></div>
             </div>
-            <div className="space-y-1">
-              {rows.sort((a, b) => (parseInt(b.views7day) || 0) - (parseInt(a.views7day) || 0)).map(r => (
+            <div className="space-y-1 mb-3">
+              {rows.sort((a, b) => totalReelViews(b) - totalReelViews(a)).map(r => (
                 <div key={r.id} className="flex items-center justify-between text-sm px-3 py-2 rounded-lg" style={{ background: "#FAF8F3" }}>
                   <span>{r.theme || "テーマ未設定"}</span>
-                  <span style={{ color: "#8B897F" }}>{(parseInt(r.views7day) || 0).toLocaleString()} 回</span>
+                  <span style={{ color: "#8B897F" }}>{totalReelViews(r).toLocaleString()} 回</span>
                 </div>
               ))}
+            </div>
+
+            <div className="rounded-xl p-3" style={{ background: "#FAF8F3" }}>
+              <p className="text-xs font-bold mb-2 flex items-center gap-1.5"><Sparkles size={13} color="#D6248A" /> AIによる報告書作成</p>
+              <p className="text-[11px] mb-2" style={{ color: "#A9A79C" }}>各動画に登録されたSNS投稿URLに加えて、Instagram・TikTok・公式LINEなどのインサイト画面のスクリーンショットをアップロードすると、AIがそこに表示された数値を読み取ってレポートに反映します。</p>
+
+              <label className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border cursor-pointer" style={{ borderColor: "#DEDACD" }}>
+                <ImageIcon size={13} /> インサイトのスクリーンショットを追加
+                <input type="file" accept="image/*" multiple className="hidden" onChange={e => { addImages(m, e.target.files); e.target.value = ""; }} />
+              </label>
+
+              {(imagesByMonth[m] || []).length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {(imagesByMonth[m] || []).map((img, i) => (
+                    <div key={i} className="relative">
+                      <img src={img.previewUrl} alt={img.name} className="rounded-lg object-cover" style={{ width: 64, height: 64, border: "1px solid #DEDACD" }} />
+                      <button onClick={() => removeImage(m, i)} className="absolute -top-1.5 -right-1.5 rounded-full flex items-center justify-center" style={{ width: 18, height: 18, background: "#A32D2D" }}>
+                        <X size={11} color="#fff" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 flex-wrap mt-2">
+                <button onClick={() => genReport(m, rows)} disabled={rs.loading} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 disabled:opacity-50" style={{ background: "#D6248A" }}>
+                  {rs.loading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {rs.loading ? "作成中..." : "AIでレポート数値を調べる"}
+                </button>
+                {rs.text && (
+                  <button onClick={() => printReport(m)} className="text-xs font-semibold px-3 py-1.5 rounded-lg border" style={{ borderColor: "#DEDACD" }}>
+                    A4 PDFとして出力
+                  </button>
+                )}
+              </div>
+              {rs.error && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{rs.error}</p>}
+              {rs.text && (
+                <TextArea rows={8} value={rs.text} onChange={e => setReportState(prev => ({ ...prev, [m]: { ...prev[m], text: e.target.value } }))} className="mt-2" />
+              )}
             </div>
           </div>
         );
       })}
       {clientId && months.length === 0 && <div className="text-center py-16 rounded-2xl border border-dashed mt-4" style={{ borderColor: "#DEDACD", color: "#8B897F" }}>投稿済みの動画がまだありません。</div>}
+
+      <PrintableReport />
+    </div>
+  );
+}
+
+// PDF出力用の非表示コンテナ。印刷時（window.print）にのみ表示され、A4サイズで出力されます。
+function PrintableReport() {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const handler = () => setTick(t => t + 1);
+    window.addEventListener("beforeprint", handler);
+    return () => window.removeEventListener("beforeprint", handler);
+  }, []);
+  const el = typeof document !== "undefined" ? document.getElementById("printable-report") : null;
+  const title = el?.dataset?.title || "";
+  const body = el?.dataset?.body || "";
+  return (
+    <div id="printable-report" data-title={title} data-body={body} className="printable-report-content">
+      <h1>{title}</h1>
+      <pre>{body}</pre>
     </div>
   );
 }
@@ -2357,6 +2542,28 @@ function AppInner() {
   const [openClientId, setOpenClientId] = useState(null);
   const [reelsFocusClient, setReelsFocusClient] = useState(null);
   const [navOpen, setNavOpen] = useState(false);
+  const [pageHistory, setPageHistory] = useState([]);
+
+  const navigateTo = (newPage, opts = {}) => {
+    setPageHistory(prev => [...prev, { page, openClientId, reelsFocusClient }]);
+    setPage(newPage);
+    setOpenClientId(opts.openClientId ?? null);
+    setReelsFocusClient(opts.reelsFocusClient ?? null);
+  };
+
+  const goBack = () => {
+    setPageHistory(prev => {
+      if (prev.length === 0) {
+        setPage("dashboard"); setOpenClientId(null); setReelsFocusClient(null);
+        return prev;
+      }
+      const last = prev[prev.length - 1];
+      setPage(last.page);
+      setOpenClientId(last.openClientId);
+      setReelsFocusClient(last.reelsFocusClient);
+      return prev.slice(0, -1);
+    });
+  };
 
   const prevIds = useRef({ clients: new Set(), reels: new Set(), users: new Set(), finance: new Set(), boardPosts: new Set(), calendarEvents: new Set() });
 
@@ -2437,8 +2644,8 @@ function AppInner() {
   useEffect(() => { syncBoardPosts(boardPosts); }, [boardPosts]);
   useEffect(() => { syncCalendarEvents(calendarEvents); }, [calendarEvents]);
 
-  const goReels = (clientId) => { setReelsFocusClient(clientId); setPage("reels"); };
-  const goClientDetail = (clientId) => { setOpenClientId(clientId); setPage("clients"); };
+  const goReels = (clientId) => { navigateTo("reels", { reelsFocusClient: clientId }); };
+  const goClientDetail = (clientId) => { navigateTo("clients", { openClientId: clientId }); };
   const logout = async () => { await supabase.auth.signOut(); setPage("dashboard"); };
 
   const [impersonating, setImpersonating] = useState(false);
@@ -2470,6 +2677,7 @@ function AppInner() {
       { key: "dashboard", label: "ダッシュボード", icon: LayoutDashboard, roles: ["admin", "editor", "shooter", "designer"] },
       { key: "clients", label: "クライアント", icon: Users, roles: ["admin", "editor", "shooter", "designer"] },
       { key: "reels", label: "動画制作管理", icon: Video, roles: ["admin", "editor", "shooter", "designer"] },
+      { key: "research", label: "リサーチ・企画", icon: Sparkles, roles: ["admin", "editor", "shooter", "designer"] },
       { key: "tasks", label: "タスク管理", icon: CheckSquare, roles: ["admin", "editor", "shooter", "designer"] },
       { key: "analytics", label: "分析資料", icon: BarChart3, roles: ["admin", "editor"] },
       { key: "finance", label: "経理管理", icon: Wallet, roles: ["admin"] },
@@ -2515,6 +2723,7 @@ function AppInner() {
       case "dashboard": return <DashboardPage clients={clients} reels={reels} setReels={setReels} users={users} currentUser={currentUser} finance={finance} boardPosts={boardPosts} setBoardPosts={setBoardPosts} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} onGoReels={goReels} />;
       case "clients": return <ClientsPage clients={clients} setClients={setClients} finance={finance} setFinance={setFinance} currentUser={currentUser} onOpenClient={setOpenClientId} />;
       case "reels": return <ReelsPage clients={clients} reels={reels} setReels={setReels} users={users} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} currentUser={currentUser} focusClientId={reelsFocusClient} />;
+      case "research": return <ResearchPage />;
       case "tasks": return <TasksPage clients={clients} reels={reels} users={users} onGoReels={goReels} onGoClient={goClientDetail} />;
       case "analytics": return <AnalyticsPage clients={clients} reels={reels} users={users} />;
       case "finance": return (currentUser.roles || []).includes("admin") ? <FinancePage clients={clients} finance={finance} setFinance={setFinance} reels={reels} users={users} /> : null;
@@ -2543,7 +2752,7 @@ function AppInner() {
           </div>
           <nav className="px-3 mt-2 space-y-1">
             {navItems.map(item => (
-              <button key={item.key} onClick={() => { setPage(item.key); setOpenClientId(null); if (item.key !== "reels") setReelsFocusClient(null); setNavOpen(false); }}
+              <button key={item.key} onClick={() => { navigateTo(item.key); setNavOpen(false); }}
                 className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition"
                 style={{ background: page === item.key ? "#D6248A" : "transparent", color: page === item.key ? "#fff" : "#B9B7AD" }}>
                 <item.icon size={17} /> {item.label}
@@ -2590,8 +2799,8 @@ function AppInner() {
           </div>
           <div className="p-4 md:p-8 max-w-6xl mx-auto">
             {page !== "dashboard" && (
-              <button onClick={() => { setPage("dashboard"); setOpenClientId(null); }} className="flex items-center gap-1 text-sm font-semibold mb-4" style={{ color: "#8B897F" }}>
-                <ArrowLeft size={15} /> ダッシュボードに戻る
+              <button onClick={goBack} className="flex items-center gap-1 text-sm font-semibold mb-4" style={{ color: "#8B897F" }}>
+                <ArrowLeft size={15} /> 戻る
               </button>
             )}
             {renderPage()}
