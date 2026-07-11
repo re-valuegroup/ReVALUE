@@ -591,7 +591,7 @@ function ClientDetail({ client, clients, setClients, finance, setFinance, reels,
       });
       setProposal(text);
     } catch (e) {
-      setProposalError("提案の生成に失敗しました。時間をおいて再度お試しください。");
+      setProposalError("提案の生成に失敗しました：" + (e.message || "不明なエラー"));
     } finally {
       setLoadingProposal(false);
     }
@@ -778,7 +778,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
       const historyEntry = { id: uid("cap"), text: clean, createdAt: Date.now() };
       update({ caption: clean, captionHistory: [historyEntry, ...(reel.captionHistory || [])] });
     } catch (e) {
-      setGenError("キャプション生成に失敗しました。時間をおいて再度お試しください。");
+      setGenError("キャプション生成に失敗しました：" + (e.message || "不明なエラー"));
     } finally {
       setGenLoading(false);
     }
@@ -826,7 +826,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
       update({ trendSearches: [entry, ...(reel.trendSearches || [])] });
       setShowTrendHistory(true);
     } catch (e) {
-      setTrendError("検索に失敗しました。時間をおいて再度お試しください。");
+      setTrendError("検索に失敗しました：" + (e.message || "不明なエラー"));
     } finally {
       setTrendLoading(false);
     }
