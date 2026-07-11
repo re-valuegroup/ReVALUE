@@ -111,6 +111,8 @@ const emptyClient = () => ({
   companyName: "", ceoName: "", address: "", website: "",
   instagram: { url: "", id: "", password: "" },
   tiktok: { url: "", id: "", password: "" },
+  youtube: { url: "", id: "" },
+  hashtag1: "", hashtag2: "", hashtag3: "",
   business: "", appeal: "", plan: "", monthlyCount: 4,
   contractEndDate: "", postDays: [],
   setupTasks: { profile: "pending", highlight: "pending", line: "pending", lp: "pending" },
@@ -146,7 +148,6 @@ const emptyReel = (clientId, ym) => ({
   checklist: emptyChecklist(), checkSubmitted: false, checkSubmittedAt: null,
   theme: "", script: "", editInstructions: "", driveUrl: "",
   transcript: "", memo: "", caption: "",
-  hashtag1: "", hashtag2: "", hashtag3: "",
   captionHistory: [], trendSearches: [],
   completedStages: 0, stageVersion: 2, postedDate: "",
   instagramUrl: "", instagramViews: "", instagramLikes: "",
@@ -395,7 +396,7 @@ function LoginScreen({ onAuthed }) {
 }
 
 function ClientForm({ client, finance, isAdmin, onSave, onCancel }) {
-  const [c, setC] = useState(client);
+  const [c, setC] = useState({ ...emptyClient(), ...client, instagram: { ...emptyClient().instagram, ...client.instagram }, tiktok: { ...emptyClient().tiktok, ...client.tiktok }, youtube: { ...emptyClient().youtube, ...client.youtube } });
   const [f, setF] = useState(finance || emptyFinance(client.id));
   const set = (path, val) => {
     setC(prev => {
@@ -437,7 +438,7 @@ function ClientForm({ client, finance, isAdmin, onSave, onCancel }) {
         <Field label="備考メモ"><TextArea rows={2} value={c.notes} onChange={e => set("notes", e.target.value)} /></Field>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-x-6 mt-2 pt-4 border-t" style={{ borderColor: "#EFEDE4" }}>
+      <div className="grid md:grid-cols-3 gap-x-6 mt-2 pt-4 border-t" style={{ borderColor: "#EFEDE4" }}>
         <div>
           <p className="text-xs font-bold mb-2 flex items-center gap-1" style={{ color: "#96185E" }}><Instagram size={13} /> Instagram</p>
           <Field label="URL"><TextInput value={c.instagram.url} onChange={e => set("instagram.url", e.target.value)} placeholder="https://instagram.com/..." /></Field>
@@ -449,6 +450,20 @@ function ClientForm({ client, finance, isAdmin, onSave, onCancel }) {
           <Field label="URL"><TextInput value={c.tiktok.url} onChange={e => set("tiktok.url", e.target.value)} placeholder="https://tiktok.com/@..." /></Field>
           <Field label="ID"><TextInput value={c.tiktok.id} onChange={e => set("tiktok.id", e.target.value)} /></Field>
           <Field label="パスワード"><PasswordField value={c.tiktok.password} onChange={e => set("tiktok.password", e.target.value)} /></Field>
+        </div>
+        <div>
+          <p className="text-xs font-bold mb-2" style={{ color: "#A32D2D" }}>YouTube</p>
+          <Field label="URL"><TextInput value={c.youtube.url} onChange={e => set("youtube.url", e.target.value)} placeholder="https://youtube.com/@..." /></Field>
+          <Field label="ID"><TextInput value={c.youtube.id} onChange={e => set("youtube.id", e.target.value)} /></Field>
+        </div>
+      </div>
+
+      <div className="mt-2 pt-4 border-t" style={{ borderColor: "#EFEDE4" }}>
+        <p className="text-xs font-bold mb-2" style={{ color: "#16171B" }}>指定ハッシュタグ（動画のキャプション作成時、末尾に自動で追加されます）</p>
+        <div className="grid grid-cols-3 gap-2">
+          <TextInput value={c.hashtag1} onChange={e => set("hashtag1", e.target.value)} placeholder="#タグ1" />
+          <TextInput value={c.hashtag2} onChange={e => set("hashtag2", e.target.value)} placeholder="#タグ2" />
+          <TextInput value={c.hashtag3} onChange={e => set("hashtag3", e.target.value)} placeholder="#タグ3" />
         </div>
       </div>
 
@@ -688,17 +703,22 @@ function ClientDetail({ client, clients, setClients, finance, setFinance, reels,
           </div>
         )}
 
-        <div className="grid md:grid-cols-2 gap-4 mt-4 pt-4 border-t" style={{ borderColor: "#EFEDE4" }}>
-          {[{ label: "Instagram", data: client.instagram, tone: "coral" }, { label: "TikTok", data: client.tiktok, tone: "gray" }].map(sns => (
+        <div className="grid md:grid-cols-3 gap-4 mt-4 pt-4 border-t" style={{ borderColor: "#EFEDE4" }}>
+          {[{ label: "Instagram", data: client.instagram, hasPassword: true }, { label: "TikTok", data: client.tiktok, hasPassword: true }, { label: "YouTube", data: client.youtube || {}, hasPassword: false }].map(sns => (
             <div key={sns.label} className="rounded-xl p-3" style={{ background: "#FAF8F3" }}>
               <p className="text-xs font-bold mb-2">{sns.label}</p>
               {sns.data.url ? (
                 <a href={sns.data.url} target="_blank" rel="noreferrer" className="text-xs flex items-center gap-1 mb-1" style={{ color: "#96185E" }}>{sns.data.url} <ExternalLink size={11} /></a>
               ) : <p className="text-xs mb-1" style={{ color: "#A9A79C" }}>URL未設定</p>}
               <p className="text-xs" style={{ color: "#5F5E5A" }}>ID: {sns.data.id || "―"}</p>
-              <p className="text-xs" style={{ color: "#5F5E5A" }}>PW: {sns.data.password ? "••••••••" : "―"}</p>
+              {sns.hasPassword && <p className="text-xs" style={{ color: "#5F5E5A" }}>PW: {sns.data.password ? "••••••••" : "―"}</p>}
             </div>
           ))}
+        </div>
+
+        <div className="mt-4 pt-4 border-t" style={{ borderColor: "#EFEDE4" }}>
+          <p className="text-xs font-semibold mb-1" style={{ color: "#8B897F" }}>指定ハッシュタグ</p>
+          <p className="text-sm">{[client.hashtag1, client.hashtag2, client.hashtag3].filter(Boolean).join(" ") || "―"}</p>
         </div>
 
         <div className="flex items-center gap-2 mt-4">
@@ -775,7 +795,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
   };
 
   const buildHashtagSuffix = () => {
-    const tags = [draft.hashtag1, draft.hashtag2, draft.hashtag3]
+    const tags = [client?.hashtag1, client?.hashtag2, client?.hashtag3]
       .map(t => (t || "").trim())
       .filter(Boolean)
       .map(t => t.startsWith("#") ? t : "#" + t);
@@ -950,13 +970,9 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             <div className="grid md:grid-cols-2 gap-x-4">
               <Field label="動画概要メモ"><TextArea rows={3} value={draft.memo} onChange={e => set({ memo: e.target.value })} placeholder="動画の要点・伝えたいことのメモ" disabled={!canEdit} /></Field>
             </div>
-            <Field label="指定ハッシュタグ（必ずキャプション末尾に追加されます）">
-              <div className="grid grid-cols-3 gap-2">
-                <TextInput value={draft.hashtag1} onChange={e => set({ hashtag1: e.target.value })} placeholder="#タグ1" disabled={!canEdit} />
-                <TextInput value={draft.hashtag2} onChange={e => set({ hashtag2: e.target.value })} placeholder="#タグ2" disabled={!canEdit} />
-                <TextInput value={draft.hashtag3} onChange={e => set({ hashtag3: e.target.value })} placeholder="#タグ3" disabled={!canEdit} />
-              </div>
-            </Field>
+            <p className="text-[11px] mb-2" style={{ color: "#A9A79C" }}>
+              指定ハッシュタグ：{[client?.hashtag1, client?.hashtag2, client?.hashtag3].filter(Boolean).join(" ") || "未設定（クライアント情報の編集画面から設定できます）"}
+            </p>
             <div className="flex items-center gap-2">
               {canEdit && (
                 <button onClick={genCaption} disabled={genLoading} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 disabled:opacity-50" style={{ background: "#D6248A" }}>
