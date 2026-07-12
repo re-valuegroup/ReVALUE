@@ -947,6 +947,13 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             </div>
           )}
 
+          {dirty && canEdit && (
+            <div className="rounded-xl p-2.5 mb-2 flex items-center justify-between gap-2" style={{ background: "#FBE4F1", border: "1px solid #D6248A" }}>
+              <span className="text-xs font-semibold" style={{ color: "#96185E" }}>未保存の変更があります</span>
+              <button onClick={saveDraft} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#16171B" }}>保存する</button>
+            </div>
+          )}
+
           <div className="grid md:grid-cols-2 gap-x-4">
             <Field label="テーマ"><TextInput value={draft.theme} onChange={e => set({ theme: e.target.value })} disabled={!canEdit} /></Field>
             <Field label="担当撮影者">
@@ -1108,9 +1115,9 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             </div>
           </div>
 
-          <div className="sticky bottom-0 -mx-4 px-4 py-2.5 flex items-center justify-between gap-2" style={{ background: "linear-gradient(to top, #fff 70%, transparent)" }}>
-            <span className="text-xs font-semibold" style={{ color: dirty ? "#A32D2D" : "#8B897F" }}>
-              {dirty ? "未保存の変更があります" : justSaved ? "保存しました" : ""}
+          <div className="rounded-xl p-3 flex items-center justify-between gap-2 flex-wrap" style={{ background: dirty ? "#FBE4F1" : "#FAF8F3", border: dirty ? "1px solid #D6248A" : "1px solid transparent" }}>
+            <span className="text-xs font-semibold" style={{ color: dirty ? "#96185E" : "#8B897F" }}>
+              {dirty ? "未保存の変更があります。下の「保存する」を押してください。" : justSaved ? "保存しました" : "変更するとここに保存ボタンが有効になります"}
             </span>
             {canEdit && (
               <button onClick={saveDraft} disabled={!dirty} className="text-sm font-semibold px-4 py-2 rounded-lg text-white disabled:opacity-40" style={{ background: "#16171B" }}>
@@ -2729,6 +2736,7 @@ function AppInner() {
   }, [session]);
 
   // 各テーブルの変更をSupabaseへ同期（一括upsert＋削除分の反映）
+  const [syncError, setSyncError] = useState("");
   const makeSync = (table, idField, idKey) => {
     return async (rows) => {
       if (!dataLoaded) return;
@@ -2739,8 +2747,10 @@ function AppInner() {
         for (const id of prevIdSet) {
           if (!currentIdSet.has(id)) await deleteRow(table, id, idField);
         }
+        setSyncError("");
       } catch (e) {
         console.error(`sync failed for ${table}`, e);
+        setSyncError(`保存に失敗しました（${table}）。もう一度お試しいただくか、通信状況をご確認ください。詳細: ${e?.message || String(e)}`);
       }
       prevIds.current[table] = currentIdSet;
     };
@@ -2913,6 +2923,12 @@ function AppInner() {
             <div style={{ width: 20 }} />
           </div>
           <div className="p-4 md:p-8 max-w-6xl mx-auto">
+            {syncError && (
+              <div className="rounded-xl p-3 mb-4 flex items-start justify-between gap-2" style={{ background: "#FCEBEB", border: "1px solid #F0A5A5" }}>
+                <p className="text-xs" style={{ color: "#A32D2D" }}>{syncError}</p>
+                <button onClick={() => setSyncError("")} className="shrink-0"><X size={14} color="#A32D2D" /></button>
+              </div>
+            )}
             {page !== "dashboard" && (
               <button onClick={goBack} className="flex items-center gap-1 text-sm font-semibold mb-4" style={{ color: "#8B897F" }}>
                 <ArrowLeft size={15} /> 戻る
