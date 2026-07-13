@@ -64,7 +64,7 @@ function normalizeReel(r) {
 
 // 動画1本の編集予定日を、カレンダー上の「その動画専用の編集イベント」と同期する
 // （カレンダー側で複数動画をまとめて登録したイベントとは別に、1動画=1イベントで自動管理する）
-function syncReelEditCalendar(setCalendarEvents, reelId, startDate, endDate, staffId) {
+function syncReelEditCalendar(setCalendarEvents, reelId, startDate, endDate, staffId, startTime, endTime) {
   if (!setCalendarEvents) return;
   setCalendarEvents(prev => {
     const existing = prev.find(e => e.type === "edit" && e.reelIds && e.reelIds.length === 1 && e.reelIds[0] === reelId);
@@ -73,9 +73,9 @@ function syncReelEditCalendar(setCalendarEvents, reelId, startDate, endDate, sta
     }
     const end = endDate || startDate;
     if (existing) {
-      return prev.map(e => e.id === existing.id ? { ...e, startDate, endDate: end, staffId: staffId || e.staffId } : e);
+      return prev.map(e => e.id === existing.id ? { ...e, startDate, endDate: end, staffId: staffId || e.staffId, startTime: startTime ?? e.startTime, endTime: endTime ?? e.endTime } : e);
     }
-    return [...prev, { id: uid("event"), type: "edit", reelIds: [reelId], staffId: staffId || "", startDate, endDate: end, note: "", createdAt: new Date().toISOString() }];
+    return [...prev, { id: uid("event"), type: "edit", reelIds: [reelId], staffId: staffId || "", startDate, endDate: end, startTime: startTime || "", endTime: endTime || "", note: "", createdAt: new Date().toISOString() }];
   });
 }
 
@@ -1484,6 +1484,9 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients }) 
           <button onClick={() => setShowForm(s => !s)} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1" style={{ background: "#D6248A" }}><Plus size={13} />予定を登録</button>
         </div>
       </div>
+      <p className="text-[11px] mb-2 flex items-center gap-1" style={{ color: "#8B897F" }}>
+        <span className="rounded-full inline-block" style={{ width: 6, height: 6, background: "#6B3FA0" }} /> は、その曜日を投稿日にしているクライアントがいることを示します（マスの下部）
+      </p>
 
       {showForm && (
         <div className="rounded-xl p-3 mb-3 grid md:grid-cols-6 gap-2 items-end" style={{ background: "#FAF8F3" }}>
@@ -1637,6 +1640,8 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients }) 
           if (!day) return <div key={i} />;
           const ds = dateStr(day);
           const dayEvents = eventsOnDay(day);
+          const weekday = new Date(y, m - 1, day).getDay();
+          const postingClients = clients.filter(c => (c.postDays || []).includes(weekday));
           return (
             <div key={i} className="rounded-lg p-1" style={{ minHeight: 64, background: ds === todayStr ? "#FDE7F2" : "#FAF8F3", border: ds === todayStr ? "1px solid #D6248A" : "1px solid transparent" }}>
               <p className="text-[11px] font-semibold" style={{ color: "#5F5E5A" }}>{day}</p>
@@ -1656,6 +1661,14 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients }) 
                   );
                 })}
               </div>
+              {postingClients.length > 0 && (
+                <div className="flex flex-wrap gap-0.5 mt-1 pt-1" style={{ borderTop: "1px dashed #DEDACD" }} title={`投稿予定：${postingClients.map(c => c.companyName).join("、")}`}>
+                  {postingClients.slice(0, 6).map(c => (
+                    <span key={c.id} className="rounded-full" style={{ width: 6, height: 6, background: "#6B3FA0" }} />
+                  ))}
+                  {postingClients.length > 6 && <span className="text-[8px]" style={{ color: "#6B3FA0" }}>+{postingClients.length - 6}</span>}
+                </div>
+              )}
             </div>
           );
         })}
@@ -1694,7 +1707,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
     && (!r.cutEditorId || !r.telopEditorId || !r.sfxEditorId))
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
   const [pickupChoice, setPickupChoice] = useState({});
-  const getPickup = (reelId) => pickupChoice[reelId] || { editorId: "", roles: [], date: "" };
+  const getPickup = (reelId) => pickupChoice[reelId] || { editorId: "", roles: [], date: "", time: "" };
   const setPickup = (reelId, patch) => setPickupChoice(prev => ({ ...prev, [reelId]: { ...getPickup(reelId), ...patch } }));
   const togglePickupRole = (reelId, roleKey) => {
     const cur = getPickup(reelId);
@@ -1711,8 +1724,8 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
       if (choice.date) { patch.editStartDate = choice.date; patch.editEndDate = choice.date; }
       return patch;
     }));
-    if (choice.date) syncReelEditCalendar(setCalendarEvents, reelId, choice.date, choice.date, choice.editorId);
-    setPickupChoice(prev => ({ ...prev, [reelId]: { editorId: "", roles: [], date: "" } }));
+    if (choice.date) syncReelEditCalendar(setCalendarEvents, reelId, choice.date, choice.date, choice.editorId, choice.time, choice.time);
+    setPickupChoice(prev => ({ ...prev, [reelId]: { editorId: "", roles: [], date: "", time: "" } }));
   };
 
   // 一括でチェック担当者を指定（カット・テロップ・効果音がすべて完了した動画）
@@ -1778,6 +1791,40 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
         ))}
       </div>
 
+      {(() => {
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const activeToday = calendarEvents.filter(e => e.startDate <= todayStr && e.endDate >= todayStr);
+        if (activeToday.length === 0) return null;
+        return (
+          <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
+            <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><UserCheck size={16} color="#D6248A" /> 本日稼働中のスタッフ（{activeToday.length}件）</p>
+            <div className="flex flex-wrap gap-2">
+              {activeToday.map(ev => {
+                const staff = users.find(u => u.id === ev.staffId);
+                const type = EVENT_TYPES.find(t => t.key === ev.type);
+                const task = ev.type === "edit" ? EDIT_TASK_OPTIONS.find(t => t.key === ev.editTask) : null;
+                const linkedReels = (ev.reelIds || []).map(id => reels.find(r => r.id === id)).filter(Boolean);
+                return (
+                  <div key={ev.id} className="rounded-xl px-3 py-2 flex items-center gap-2" style={{ background: "#FAF8F3" }}>
+                    <span className="rounded-full flex items-center justify-center shrink-0" style={{ width: 26, height: 26, background: type?.color, color: "#fff", fontSize: 11, fontWeight: 700 }}>
+                      {(staff?.name || "?").slice(0, 1)}
+                    </span>
+                    <div className="text-xs">
+                      <p className="font-semibold">{staff?.name || "不明"}</p>
+                      <p style={{ color: "#8B897F" }}>
+                        {type?.label}{task && task.key !== "all" ? `（${task.label}）` : ""}
+                        {(ev.startTime || ev.endTime) ? ` ・ ${ev.startTime || ""}${ev.endTime ? "〜" + ev.endTime : ""}` : ""}
+                        {linkedReels.length > 0 ? ` ・ ${linkedReels[0].theme || "動画"}${linkedReels.length > 1 ? `他${linkedReels.length - 1}件` : ""}` : ""}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
       <CalendarWidget events={calendarEvents} setEvents={setCalendarEvents} users={users} reels={reels} setReels={setReels} clients={clients} />
 
       {((currentUser.roles || []).includes("editor") || (currentUser.roles || []).includes("admin")) && (
@@ -1821,6 +1868,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                       </label>
                     ))}
                     <TextInput type="date" value={choice.date} onChange={e => setPickup(r.id, { date: e.target.value })} title="編集する日（カレンダーに反映されます）" style={{ width: 150 }} />
+                    <TextInput type="time" value={choice.time} onChange={e => setPickup(r.id, { time: e.target.value })} title="編集する時間（任意）" style={{ width: 110 }} />
                     <button onClick={() => confirmPickup(r.id)} disabled={!choice.editorId || choice.roles.length === 0} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>
                       担当する
                     </button>
