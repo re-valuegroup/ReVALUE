@@ -895,6 +895,11 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
   const setCheckMemo = (memo) => update({ checklist: { ...(reel.checklist || emptyChecklist()), memo } });
   const [checkSubmitError, setCheckSubmitError] = useState("");
   const submitCheck = () => {
+    if (reel.checkSubmitted) {
+      // すでに提出済みの場合は「チェック中」に戻す
+      update({ checkSubmitted: false, checkSubmittedAt: null, completedStages: Math.min(reel.completedStages, 3) });
+      return;
+    }
     if (!reel.editorSecondaryId) {
       setCheckSubmitError("チェック担当者が指定されていません");
       return;
@@ -917,13 +922,27 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
           <div className="flex items-center gap-2 shrink-0">
             {reel.assignedStaffId && <Badge tone="gray">{users.find(u => u.id === reel.assignedStaffId)?.name || "担当者"}</Badge>}
             {reel.completedStages >= 5 && <Badge tone="teal">投稿済み</Badge>}
-            {onDuplicate && canEdit && (
-              <button title="この動画を複製" onClick={(e) => { e.stopPropagation(); onDuplicate(reel); }} className="p-1 rounded-lg hover:bg-black/5"><Copy size={14} /></button>
-            )}
             <ChevronRight size={16} style={{ transform: expanded ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
           </div>
         </div>
         <div className="mt-3"><Pipeline compact completedStages={reel.completedStages} onAdvance={canEdit ? (i) => update({ completedStages: i + 1 }) : null} onRegress={canEdit ? (i) => update({ completedStages: i }) : null} /></div>
+
+        <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+          {[
+            { label: "①カット", assigneeId: reel.cutEditorId, done: reel.cutDone },
+            { label: "②テロップ", assigneeId: reel.telopEditorId, done: reel.telopDone },
+            { label: "③効果音", assigneeId: reel.sfxEditorId, done: reel.sfxDone },
+            { label: "④修正チェック", assigneeId: reel.editorSecondaryId, done: reel.checkSubmitted },
+          ].map(t => {
+            const person = users.find(u => u.id === t.assigneeId);
+            const tone = t.done ? "teal" : person ? "amber" : "gray";
+            return (
+              <Badge key={t.label} tone={tone}>
+                {t.label}：{person ? person.name : "未割当"}{t.done ? "・完了" : ""}
+              </Badge>
+            );
+          })}
+        </div>
       </div>
 
       {expanded && (
@@ -1057,7 +1076,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             <div className="flex items-center justify-between flex-wrap gap-2">
               <span className="text-[11px]" style={{ color: "#8B897F" }}>チェック済み {checkedCount}/{CHECKLIST_ITEMS.length}</span>
               {canEdit && (
-                <button onClick={submitCheck} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5" style={{ background: reel.checkSubmitted ? "#0E90B8" : "#16171B" }}>
+                <button onClick={submitCheck} title={reel.checkSubmitted ? "もう一度押すとチェック中に戻せます" : ""} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5" style={{ background: reel.checkSubmitted ? "#0E90B8" : "#16171B" }}>
                   {reel.checkSubmitted && <CircleCheck size={13} />} {reel.checkSubmitted ? "提出完了" : "チェック結果を提出"}
                 </button>
               )}
@@ -1156,6 +1175,9 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
               </button>
             )}
           </div>
+          <button onClick={() => setExpanded(false)} className="w-full text-sm font-semibold px-4 py-2 rounded-lg border mt-2" style={{ borderColor: "#DEDACD", color: "#5F5E5A" }}>
+            閉じる
+          </button>
 
           {canEdit && (
             confirmDelete ? (
