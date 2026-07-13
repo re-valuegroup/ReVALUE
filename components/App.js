@@ -8,7 +8,7 @@ import {
   Link2, Loader2, Camera, Scissors, MessageSquare, Send, Clock,
   CircleCheck, Circle, ArrowLeft, Building2, User, MapPin, Info, Copy,
   ClipboardList, MessageCircle, Megaphone, UserCheck, Image as ImageIcon,
-  DollarSign, LogOut
+  DollarSign, LogOut, RefreshCw
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { fetchAll, upsertRow, deleteRow, bulkUpsert } from "@/lib/db";
@@ -715,7 +715,7 @@ function timeAgo(ts) {
   return d.toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onChange, onDelete, onDuplicate, canEdit, currentUser, showClient }) {
+function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onChange, onDelete, onDuplicate, canEdit, currentUser, showClient, pastCaptions }) {
   const [expanded, setExpanded] = useState(false);
   const [genLoading, setGenLoading] = useState(false);
   const [genError, setGenError] = useState("");
@@ -841,6 +841,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
         theme: draft.theme,
         transcript: draft.transcript,
         memo: draft.memo,
+        pastCaptions,
       });
       let clean = text.trim();
       const suffix = buildHashtagSuffix();
@@ -885,7 +886,13 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
 
   const toggleCheck = (key) => update({ checklist: { ...(reel.checklist || emptyChecklist()), [key]: !((reel.checklist || {})[key]) } });
   const setCheckMemo = (memo) => update({ checklist: { ...(reel.checklist || emptyChecklist()), memo } });
+  const [checkSubmitError, setCheckSubmitError] = useState("");
   const submitCheck = () => {
+    if (!reel.editorSecondaryId) {
+      setCheckSubmitError("チェック担当者が指定されていません");
+      return;
+    }
+    setCheckSubmitError("");
     update({ checkSubmitted: true, checkSubmittedAt: new Date().toISOString(), completedStages: Math.max(reel.completedStages, 4) });
   };
   const checklist = reel.checklist || emptyChecklist();
@@ -1024,14 +1031,15 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             </div>
             <Field label="動画の文字起こし（任意・AIキャプション生成にも使用されます）"><TextArea rows={3} value={draft.transcript} onChange={e => set({ transcript: e.target.value })} placeholder="完成した動画の文字起こしを貼り付け（なくても生成可）" disabled={!canEdit} /></Field>
             <Field label="メモ欄"><TextArea rows={2} value={checklist.memo} onChange={e => setCheckMemo(e.target.value)} disabled={!canEdit} /></Field>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <span className="text-[11px]" style={{ color: "#8B897F" }}>チェック済み {checkedCount}/{CHECKLIST_ITEMS.length}</span>
               {canEdit && (
-                <button onClick={submitCheck} disabled={!reel.editorSecondaryId} title={!reel.editorSecondaryId ? "チェック担当者を選択してください" : ""} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#0E90B8" }}>
-                  チェック結果を提出
+                <button onClick={submitCheck} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5" style={{ background: reel.checkSubmitted ? "#0E90B8" : "#16171B" }}>
+                  {reel.checkSubmitted && <CircleCheck size={13} />} {reel.checkSubmitted ? "提出完了" : "チェック結果を提出"}
                 </button>
               )}
             </div>
+            {checkSubmitError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{checkSubmitError}</p>}
           </div>
 
           <div className="rounded-xl p-3 my-2" style={{ background: "#FAF8F3" }}>
@@ -1144,7 +1152,10 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
   );
 }
 
-function NewReelModal({ client, ym, users, existingReels, onCreate, onClose }) {
+function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate, onClose }) {
+  const [selectedClientId, setSelectedClientId] = useState(initialClientId || "");
+  const client = clients.find(c => c.id === selectedClientId);
+  const existingReels = allReels.filter(r => r.clientId === selectedClientId);
   const [form, setForm] = useState({ theme: "", editInstructions: "", script: "", driveUrl: "", assignedStaffId: "" });
   const [dupSource, setDupSource] = useState("");
 
@@ -1168,31 +1179,44 @@ function NewReelModal({ client, ym, users, existingReels, onCreate, onClose }) {
           <p className="font-bold text-lg" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>新規動画登録</p>
           <button onClick={onClose}><X size={18} /></button>
         </div>
-        <p className="text-xs mb-3" style={{ color: "#8B897F" }}>{client?.companyName} ・ {monthLabel(ym)}</p>
 
-        {existingReels.length > 0 && (
-          <Field label="過去の動画を複製して作成（任意）">
-            <select value={dupSource} onChange={e => applyDuplicate(e.target.value)} className={inputCls} style={inputStyle}>
-              <option value="">複製しない（新規に入力）</option>
-              {existingReels.map(r => <option key={r.id} value={r.id}>{monthLabel(r.yearMonth)} ・ {r.theme || "（テーマ未設定）"}</option>)}
+        {!initialClientId && (
+          <Field label="クライアント">
+            <select value={selectedClientId} onChange={e => { setSelectedClientId(e.target.value); setDupSource(""); setForm({ theme: "", editInstructions: "", script: "", driveUrl: "", assignedStaffId: "" }); }} className={inputCls} style={inputStyle}>
+              <option value="">クライアントを選択してください</option>
+              {clients.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
             </select>
           </Field>
         )}
+        {client && <p className="text-xs mb-3" style={{ color: "#8B897F" }}>{client.companyName} ・ {monthLabel(ym)}</p>}
 
-        <Field label="テーマ"><TextInput value={form.theme} onChange={e => setForm(f => ({ ...f, theme: e.target.value }))} placeholder="今月のリールテーマ" /></Field>
-        <Field label="編集指示"><TextArea rows={3} value={form.editInstructions} onChange={e => setForm(f => ({ ...f, editInstructions: e.target.value }))} placeholder="テロップの雰囲気、使う素材、尺の目安など" /></Field>
-        <Field label="台本（任意）"><TextArea rows={2} value={form.script} onChange={e => setForm(f => ({ ...f, script: e.target.value }))} /></Field>
-        <Field label="Google Drive 保存先URL（任意）"><TextInput value={form.driveUrl} onChange={e => setForm(f => ({ ...f, driveUrl: e.target.value }))} placeholder="https://drive.google.com/..." /></Field>
-        <Field label="担当撮影者（任意）">
-          <select value={form.assignedStaffId} onChange={e => setForm(f => ({ ...f, assignedStaffId: e.target.value }))} className={inputCls} style={inputStyle}>
-            <option value="">未割り当て</option>
-            {users.filter(u => (u.roles || []).includes("shooter")).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-          </select>
-        </Field>
+        {client && (
+          <>
+            {existingReels.length > 0 && (
+              <Field label="過去の動画を複製して作成（任意）">
+                <select value={dupSource} onChange={e => applyDuplicate(e.target.value)} className={inputCls} style={inputStyle}>
+                  <option value="">複製しない（新規に入力）</option>
+                  {existingReels.map(r => <option key={r.id} value={r.id}>{monthLabel(r.yearMonth)} ・ {r.theme || "（テーマ未設定）"}</option>)}
+                </select>
+              </Field>
+            )}
+
+            <Field label="テーマ"><TextInput value={form.theme} onChange={e => setForm(f => ({ ...f, theme: e.target.value }))} placeholder="今月のリールテーマ" /></Field>
+            <Field label="編集指示"><TextArea rows={3} value={form.editInstructions} onChange={e => setForm(f => ({ ...f, editInstructions: e.target.value }))} placeholder="テロップの雰囲気、使う素材、尺の目安など" /></Field>
+            <Field label="台本（任意）"><TextArea rows={2} value={form.script} onChange={e => setForm(f => ({ ...f, script: e.target.value }))} /></Field>
+            <Field label="Google Drive 保存先URL（任意）"><TextInput value={form.driveUrl} onChange={e => setForm(f => ({ ...f, driveUrl: e.target.value }))} placeholder="https://drive.google.com/..." /></Field>
+            <Field label="担当撮影者（任意）">
+              <select value={form.assignedStaffId} onChange={e => setForm(f => ({ ...f, assignedStaffId: e.target.value }))} className={inputCls} style={inputStyle}>
+                <option value="">未割り当て</option>
+                {users.filter(u => (u.roles || []).includes("shooter")).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </Field>
+          </>
+        )}
 
         <div className="flex justify-end gap-2 mt-2">
           <button onClick={onClose} className="text-sm font-semibold px-4 py-2 rounded-lg border" style={{ borderColor: "#DEDACD" }}>キャンセル</button>
-          <button onClick={submit} disabled={!form.theme.trim()} className="text-sm font-semibold px-4 py-2 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>登録する</button>
+          <button onClick={submit} disabled={!client || !form.theme.trim()} className="text-sm font-semibold px-4 py-2 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>登録する</button>
         </div>
       </div>
     </div>
@@ -1200,7 +1224,7 @@ function NewReelModal({ client, ym, users, existingReels, onCreate, onClose }) {
 }
 
 function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalendarEvents, currentUser, focusClientId }) {
-  const [clientId, setClientId] = useState(focusClientId || clients[0]?.id || "");
+  const [clientId, setClientId] = useState(focusClientId || "__all__");
   const [ym, setYm] = useState(currentYearMonth());
   const [staffFilter, setStaffFilter] = useState("");
   const [showAllMonths, setShowAllMonths] = useState(false);
@@ -1218,13 +1242,13 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
     .sort((a, b) => b.yearMonth.localeCompare(a.yearMonth));
 
   const addReel = () => {
-    if (!clientId || allClientsMode) return;
+    if (!clientId) return;
     setShowNew(true);
   };
   const createReel = (r) => { setReels(prev => [...prev, r]); setShowNew(false); };
   const updateReel = (r) => setReels(prev => prev.map(x => x.id === r.id ? r : x));
   const deleteReel = (id) => setReels(prev => prev.filter(x => x.id !== id));
-  const duplicateReelInPlace = (r) => setReels(prev => [...prev, duplicateReel(r, clientId, ym)]);
+  const duplicateReelInPlace = (r) => setReels(prev => [...prev, duplicateReel(r, r.clientId, ym)]);
 
   const shiftMonth = (delta) => {
     const [y, m] = ym.split("-").map(Number);
@@ -1238,7 +1262,6 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <select value={clientId} onChange={e => setClientId(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 220 }}>
-          <option value="">クライアントを選択</option>
           <option value="__all__">すべてのクライアントを表示</option>
           {clients.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
         </select>
@@ -1254,7 +1277,7 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
           <option value="">担当撮影者（全員）</option>
           {users.filter(u => (u.roles || []).includes("shooter")).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
-        {clientId && !allClientsMode && (
+        {clientId && (
           <button onClick={addReel} className="flex items-center gap-1 text-sm font-semibold px-3 py-2 rounded-lg text-white ml-auto" style={{ background: "#D6248A" }}>
             <Plus size={15} /> 動画を追加
           </button>
@@ -1269,18 +1292,19 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
       )}
 
       {!clientId && <div className="text-center py-16 rounded-2xl border border-dashed" style={{ borderColor: "#DEDACD", color: "#8B897F" }}>クライアントを選択してください。</div>}
-      {clientId && list.length === 0 && <div className="text-center py-16 rounded-2xl border border-dashed" style={{ borderColor: "#DEDACD", color: "#8B897F" }}>該当する動画はまだありません。{!allClientsMode && "「動画を追加」から作成できます。"}</div>}
+      {clientId && list.length === 0 && <div className="text-center py-16 rounded-2xl border border-dashed" style={{ borderColor: "#DEDACD", color: "#8B897F" }}>該当する動画はまだありません。「動画を追加」から作成できます。</div>}
 
       <div className="space-y-3">
-        {list.map(r => <ReelCard key={r.id} reel={r} client={clients.find(c => c.id === r.clientId)} users={users} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} currentUser={currentUser} onChange={updateReel} onDelete={deleteReel} onDuplicate={duplicateReelInPlace} canEdit={true} showClient={allClientsMode || showAllMonths} />)}
+        {list.map(r => <ReelCard key={r.id} reel={r} client={clients.find(c => c.id === r.clientId)} users={users} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} currentUser={currentUser} onChange={updateReel} onDelete={deleteReel} onDuplicate={duplicateReelInPlace} canEdit={true} showClient={allClientsMode || showAllMonths} pastCaptions={reels.filter(x => x.clientId === r.clientId && x.id !== r.id && x.caption).map(x => x.caption)} />)}
       </div>
 
-      {showNew && client && (
+      {showNew && (
         <NewReelModal
-          client={client}
+          clients={clients}
+          initialClientId={allClientsMode ? "" : clientId}
           ym={ym}
           users={users}
-          existingReels={reels.filter(r => r.clientId === clientId)}
+          allReels={reels}
           onCreate={createReel}
           onClose={() => setShowNew(false)}
         />
@@ -1864,7 +1888,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
   );
 }
 
-function ResearchPage({ clients }) {
+function ResearchPage({ clients, reels, setReels }) {
   const [genre, setGenre] = useState("");
   const [minFollowers, setMinFollowers] = useState("");
   const [minViews, setMinViews] = useState("");
@@ -1880,6 +1904,18 @@ function ResearchPage({ clients }) {
   const [proposal, setProposal] = useState("");
   const [loadingProposal, setLoadingProposal] = useState(false);
   const [proposalError, setProposalError] = useState("");
+
+  const [captionClientId, setCaptionClientId] = useState(clients[0]?.id || "");
+  const captionClient = clients.find(c => c.id === captionClientId);
+  const [captionGenre, setCaptionGenre] = useState("");
+  const [captionPurpose, setCaptionPurpose] = useState("");
+  const [captionMemo, setCaptionMemo] = useState("");
+  const [captionResult, setCaptionResult] = useState("");
+  const [captionLoading, setCaptionLoading] = useState(false);
+  const [captionError, setCaptionError] = useState("");
+  const [selectedReelId, setSelectedReelId] = useState("");
+  const [registerStatus, setRegisterStatus] = useState("");
+  const clientReels = reels.filter(r => r.clientId === captionClientId);
 
   const search = async () => {
     setLoading(true);
@@ -1916,6 +1952,42 @@ function ResearchPage({ clients }) {
     }
   };
 
+  const generateCaption = async () => {
+    if (!captionClient) return;
+    setCaptionLoading(true);
+    setCaptionError("");
+    setCaptionResult("");
+    setRegisterStatus("");
+    setSelectedReelId("");
+    try {
+      const pastCaptions = clientReels.filter(r => r.caption).map(r => r.caption);
+      const text = await callApi("/api/caption", {
+        clientName: captionClient.companyName,
+        clientBusiness: captionClient.business,
+        genre: captionGenre,
+        purpose: captionPurpose,
+        memo: captionMemo,
+        pastCaptions,
+      });
+      let clean = text.trim();
+      const tags = [captionClient.hashtag1, captionClient.hashtag2, captionClient.hashtag3]
+        .map(t => (t || "").trim()).filter(Boolean).map(t => t.startsWith("#") ? t : "#" + t);
+      if (tags.length) clean = clean + "\n\n" + tags.join("\n");
+      setCaptionResult(clean);
+    } catch (e) {
+      setCaptionError("キャプション生成に失敗しました：" + (e.message || "不明なエラー"));
+    } finally {
+      setCaptionLoading(false);
+    }
+  };
+
+  const registerCaptionToReel = () => {
+    if (!selectedReelId || !captionResult) return;
+    const entry = { id: uid("cap"), text: captionResult, createdAt: Date.now() };
+    setReels(prev => prev.map(r => r.id === selectedReelId ? { ...r, captionHistory: [entry, ...(r.captionHistory || [])] } : r));
+    setRegisterStatus("登録しました。対象の動画の「生成履歴」から確認・反映できます。");
+  };
+
   return (
     <div>
       <h2 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700 }} className="mb-4">リサーチ・企画</h2>
@@ -1939,6 +2011,41 @@ function ResearchPage({ clients }) {
         </button>
         {proposalError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{proposalError}</p>}
         {proposal && <div className="mt-2 p-3 rounded-xl text-sm whitespace-pre-wrap" style={{ background: "#FAF8F3", lineHeight: 1.7 }}>{proposal}</div>}
+      </div>
+
+      <div className="rounded-2xl p-5 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
+        <p className="font-bold mb-2 flex items-center gap-1.5"><Sparkles size={16} color="#D6248A" /> AIキャプション生成</p>
+        <p className="text-xs mb-3" style={{ color: "#8B897F" }}>クライアントの過去のキャプションの文体・トーンを踏まえて、ジャンル・目的・動画概要メモをもとにキャプション案を作成します。ここで作った提案は、あとから特定の動画に「使用した提案」として登録できます。</p>
+        <Field label="クライアント">
+          <select value={captionClientId} onChange={e => { setCaptionClientId(e.target.value); setCaptionResult(""); setSelectedReelId(""); setRegisterStatus(""); }} className={inputCls} style={{ ...inputStyle, width: 260 }}>
+            <option value="">クライアントを選択</option>
+            {clients.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
+          </select>
+        </Field>
+        <div className="grid md:grid-cols-3 gap-x-4">
+          <Field label="ジャンル"><TextInput value={captionGenre} onChange={e => setCaptionGenre(e.target.value)} placeholder="例：美容室、飲食店" /></Field>
+          <Field label="目的"><TextInput value={captionPurpose} onChange={e => setCaptionPurpose(e.target.value)} placeholder="例：新規集客、来店促進" /></Field>
+        </div>
+        <Field label="動画概要メモ"><TextArea rows={3} value={captionMemo} onChange={e => setCaptionMemo(e.target.value)} placeholder="動画の要点・伝えたいことのメモ" /></Field>
+        <button onClick={generateCaption} disabled={captionLoading || !captionClientId} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 disabled:opacity-50" style={{ background: "#D6248A" }}>
+          {captionLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {captionLoading ? "生成中..." : "キャプションを生成"}
+        </button>
+        {captionError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{captionError}</p>}
+        {captionResult && (
+          <>
+            <div className="mt-2 p-3 rounded-xl text-sm whitespace-pre-wrap" style={{ background: "#FAF8F3", lineHeight: 1.7 }}>{captionResult}</div>
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
+              <select value={selectedReelId} onChange={e => setSelectedReelId(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 260 }}>
+                <option value="">この提案を使用した動画を選択</option>
+                {clientReels.map(r => <option key={r.id} value={r.id}>{monthLabel(r.yearMonth)} ・ {r.theme || "（テーマ未設定）"}</option>)}
+              </select>
+              <button onClick={registerCaptionToReel} disabled={!selectedReelId} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#16171B" }}>
+                この動画で使用した提案として登録
+              </button>
+            </div>
+            {registerStatus && <p className="text-xs mt-1" style={{ color: "#0E90B8" }}>{registerStatus}</p>}
+          </>
+        )}
       </div>
 
       <div className="rounded-2xl p-5 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
@@ -2665,6 +2772,8 @@ function AppInner() {
   const [reelsFocusClient, setReelsFocusClient] = useState(null);
   const [navOpen, setNavOpen] = useState(false);
   const [pageHistory, setPageHistory] = useState([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [justRefreshed, setJustRefreshed] = useState(false);
 
   const navigateTo = (newPage, opts = {}) => {
     setPageHistory(prev => [...prev, { page, openClientId, reelsFocusClient }]);
@@ -2734,6 +2843,14 @@ function AppInner() {
     if (session) loadAllData();
     else { setDataLoaded(false); setCurrentUser(null); }
   }, [session]);
+
+  const refreshData = async () => {
+    setRefreshing(true);
+    await loadAllData();
+    setRefreshing(false);
+    setJustRefreshed(true);
+    setTimeout(() => setJustRefreshed(false), 2000);
+  };
 
   // 各テーブルの変更をSupabaseへ同期（一括upsert＋削除分の反映）
   const [syncError, setSyncError] = useState("");
@@ -2848,7 +2965,7 @@ function AppInner() {
       case "dashboard": return <DashboardPage clients={clients} reels={reels} setReels={setReels} users={users} currentUser={currentUser} finance={finance} boardPosts={boardPosts} setBoardPosts={setBoardPosts} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} onGoReels={goReels} />;
       case "clients": return <ClientsPage clients={clients} setClients={setClients} finance={finance} setFinance={setFinance} currentUser={currentUser} onOpenClient={setOpenClientId} />;
       case "reels": return <ReelsPage clients={clients} reels={reels} setReels={setReels} users={users} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} currentUser={currentUser} focusClientId={reelsFocusClient} />;
-      case "research": return <ResearchPage clients={clients} />;
+      case "research": return <ResearchPage clients={clients} reels={reels} setReels={setReels} />;
       case "tasks": return <TasksPage clients={clients} reels={reels} users={users} onGoReels={goReels} onGoClient={goClientDetail} />;
       case "analytics": return <AnalyticsPage clients={clients} reels={reels} users={users} />;
       case "finance": return (currentUser.roles || []).includes("admin") ? <FinancePage clients={clients} finance={finance} setFinance={setFinance} reels={reels} users={users} /> : null;
@@ -2873,7 +2990,10 @@ function AppInner() {
               <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, color: "#fff", fontSize: 15, lineHeight: 1.1 }}>ReVALUE</p>
               <p style={{ color: "#8B897F", fontSize: 11 }}>Studio Manager</p>
             </div>
-            <button className="ml-auto md:hidden" onClick={() => setNavOpen(false)}><X size={18} color="#fff" /></button>
+            <button onClick={refreshData} disabled={refreshing} className="ml-auto p-1.5 rounded-lg hover:bg-white/10" title="最新の情報に更新">
+              <RefreshCw size={16} color={justRefreshed ? "#0E90B8" : "#8B897F"} className={refreshing ? "animate-spin" : ""} />
+            </button>
+            <button className="md:hidden" onClick={() => setNavOpen(false)}><X size={18} color="#fff" /></button>
           </div>
           <nav className="px-3 mt-2 space-y-1">
             {navItems.map(item => (
