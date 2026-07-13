@@ -144,7 +144,8 @@ const emptyReel = (clientId, ym) => ({
   id: uid("reel"), clientId, yearMonth: ym,
   assignedStaffId: "",
   cutEditorId: "", telopEditorId: "", sfxEditorId: "", editorSecondaryId: "",
-  editStartDate: "", editEndDate: "", editWorkload: "",
+  cutDone: false, telopDone: false, sfxDone: false,
+  editStartDate: "", editEndDate: "", editWorkload: "", deadline: "",
   checklist: emptyChecklist(), checkSubmitted: false, checkSubmittedAt: null,
   theme: "", script: "", editInstructions: "", driveUrl: "",
   transcript: "", memo: "", caption: "",
@@ -257,19 +258,24 @@ function PasswordField({ value, onChange, placeholder, ...rest }) {
 }
 
 function Pipeline({ completedStages, onAdvance, onRegress, compact }) {
+  const [pending, setPending] = useState(null);
   return (
     <div className="flex items-center" style={{ gap: compact ? 2 : 4 }}>
       {STAGES.map((s, i) => {
         const done = i < completedStages;
         const isNext = i === completedStages;
+        const isPending = pending === i;
         const Icon = s.icon;
         return (
           <React.Fragment key={s.key}>
             <button
               type="button"
-              title={s.label}
-              onClick={() => {
+              title={isPending ? "もう一度押すと確定します" : s.label}
+              onClick={(e) => {
+                e.stopPropagation();
                 if (!onAdvance) return;
+                if (pending !== i) { setPending(i); return; }
+                setPending(null);
                 if (done) { onRegress && onRegress(i); } else { onAdvance(i); }
               }}
               className="flex flex-col items-center group"
@@ -279,13 +285,14 @@ function Pipeline({ completedStages, onAdvance, onRegress, compact }) {
                 className="rounded-full flex items-center justify-center transition"
                 style={{
                   width: compact ? 22 : 30, height: compact ? 22 : 30,
-                  background: done ? "#0E90B8" : isNext ? "#D6248A" : "#EDEBE4",
-                  color: done || isNext ? "#fff" : "#8B897F",
+                  background: isPending ? "#F6934B" : done ? "#0E90B8" : isNext ? "#D6248A" : "#EDEBE4",
+                  color: isPending || done || isNext ? "#fff" : "#8B897F",
+                  boxShadow: isPending ? "0 0 0 2px #F6934B55" : "none",
                 }}
               >
                 <Icon size={compact ? 11 : 14} />
               </div>
-              {<span className="mt-1 text-center" style={{ fontSize: compact ? 8 : 10, color: done ? "#0E90B8" : isNext ? "#D6248A" : "#A9A79C", fontWeight: 600, lineHeight: 1.2 }}>{done ? s.label : "未完了"}</span>}
+              {<span className="mt-1 text-center" style={{ fontSize: compact ? 8 : 10, color: isPending ? "#F6934B" : done ? "#0E90B8" : isNext ? "#D6248A" : "#A9A79C", fontWeight: 600, lineHeight: 1.2 }}>{isPending ? "確認" : done ? s.label : "未完了"}</span>}
             </button>
             {i < STAGES.length - 1 && <div style={{ width: compact ? 8 : 16, height: 2, background: i < completedStages ? "#0E90B8" : "#E4E1D6" }} />}
           </React.Fragment>
@@ -715,7 +722,7 @@ function timeAgo(ts) {
   return d.toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onChange, onDelete, onDuplicate, canEdit, currentUser, showClient, pastCaptions }) {
+function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onChange, onDelete, onDuplicate, canEdit, currentUser, showClient, pastCaptions, number }) {
   const [expanded, setExpanded] = useState(false);
   const [genLoading, setGenLoading] = useState(false);
   const [genError, setGenError] = useState("");
@@ -904,7 +911,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             {showClient && <p className="text-[11px] font-semibold truncate" style={{ color: "#D6248A" }}>{client?.companyName || "クライアント不明"} ・ {monthLabel(reel.yearMonth)}</p>}
-            <p className="font-bold truncate">{reel.theme || "（テーマ未設定）"}</p>
+            <p className="font-bold truncate">{number ? `No.${number} ・ ` : ""}{reel.theme || "（テーマ未設定）"}</p>
             <p className="text-xs mt-0.5 truncate" style={{ color: "#8B897F" }}>{reel.editInstructions || "編集指示未入力"}</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -978,23 +985,39 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             <Field label="編集指示"><TextArea rows={2} value={draft.editInstructions} onChange={e => set({ editInstructions: e.target.value })} disabled={!canEdit} /></Field>
             <Field label="台本（任意）"><TextArea rows={2} value={draft.script} onChange={e => set({ script: e.target.value })} disabled={!canEdit} /></Field>
             <Field label="①カット担当">
-              <select value={draft.cutEditorId || ""} onChange={e => set({ cutEditorId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
-                <option value="">未割り当て</option>
-                {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
+              <div className="flex items-center gap-2">
+                <select value={draft.cutEditorId || ""} onChange={e => set({ cutEditorId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
+                  <option value="">未割り当て</option>
+                  {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+                <label className="flex items-center gap-1 text-xs shrink-0" style={{ color: "#5F5E5A" }}>
+                  <input type="checkbox" checked={!!reel.cutDone} onChange={() => canEdit && update({ cutDone: !reel.cutDone })} disabled={!canEdit} /> 完了
+                </label>
+              </div>
             </Field>
             <Field label="②テロップ担当">
-              <select value={draft.telopEditorId || ""} onChange={e => set({ telopEditorId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
-                <option value="">未割り当て</option>
-                {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
+              <div className="flex items-center gap-2">
+                <select value={draft.telopEditorId || ""} onChange={e => set({ telopEditorId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
+                  <option value="">未割り当て</option>
+                  {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+                <label className="flex items-center gap-1 text-xs shrink-0" style={{ color: "#5F5E5A" }}>
+                  <input type="checkbox" checked={!!reel.telopDone} onChange={() => canEdit && update({ telopDone: !reel.telopDone })} disabled={!canEdit} /> 完了
+                </label>
+              </div>
             </Field>
             <Field label="③効果音担当">
-              <select value={draft.sfxEditorId || ""} onChange={e => set({ sfxEditorId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
-                <option value="">未割り当て</option>
-                {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
+              <div className="flex items-center gap-2">
+                <select value={draft.sfxEditorId || ""} onChange={e => set({ sfxEditorId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
+                  <option value="">未割り当て</option>
+                  {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+                <label className="flex items-center gap-1 text-xs shrink-0" style={{ color: "#5F5E5A" }}>
+                  <input type="checkbox" checked={!!reel.sfxDone} onChange={() => canEdit && update({ sfxDone: !reel.sfxDone })} disabled={!canEdit} /> 完了
+                </label>
+              </div>
             </Field>
+            <Field label="編集期限（投稿予定日）"><TextInput type="date" value={draft.deadline || ""} onChange={e => set({ deadline: e.target.value })} disabled={!canEdit} /></Field>
             <Field label="編集予定日（カレンダーと連動）">
               <div className="flex items-center gap-1">
                 <TextInput type="date" value={draft.editStartDate || ""} onChange={e => set({ editStartDate: e.target.value })} disabled={!canEdit} />
@@ -1156,7 +1179,7 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
   const [selectedClientId, setSelectedClientId] = useState(initialClientId || "");
   const client = clients.find(c => c.id === selectedClientId);
   const existingReels = allReels.filter(r => r.clientId === selectedClientId);
-  const [form, setForm] = useState({ theme: "", editInstructions: "", script: "", driveUrl: "", assignedStaffId: "" });
+  const [form, setForm] = useState({ theme: "", editInstructions: "", script: "", driveUrl: "", assignedStaffId: "", deadline: "" });
   const [dupSource, setDupSource] = useState("");
 
   const applyDuplicate = (id) => {
@@ -1164,12 +1187,13 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
     if (!id) return;
     const src = existingReels.find(r => r.id === id);
     if (!src) return;
-    setForm({ theme: src.theme, editInstructions: src.editInstructions, script: src.script, driveUrl: "", assignedStaffId: src.assignedStaffId || "" });
+    setForm({ theme: src.theme, editInstructions: src.editInstructions, script: src.script, driveUrl: "", assignedStaffId: src.assignedStaffId || "", deadline: "" });
   };
 
   const submit = () => {
     const base = emptyReel(client.id, ym);
-    onCreate({ ...base, ...form });
+    // 編集指示を入力したうえで登録するため、撮影・編集指示は完了済みとして扱う
+    onCreate({ ...base, ...form, completedStages: 2 });
   };
 
   return (
@@ -1211,6 +1235,8 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
                 {users.filter(u => (u.roles || []).includes("shooter")).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             </Field>
+            <Field label="編集期限（投稿予定日・任意）"><TextInput type="date" value={form.deadline} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} /></Field>
+            <p className="text-[11px]" style={{ color: "#A9A79C" }}>登録すると、この動画は自動的に「編集指示完了」の状態で登録されます。</p>
           </>
         )}
 
@@ -1231,6 +1257,11 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
   const canEdit = true;
   const client = clients.find(c => c.id === clientId);
   const allClientsMode = clientId === "__all__";
+
+  const numberMap = useMemo(() => {
+    const sorted = [...reels].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    return new Map(sorted.map((r, i) => [r.id, i + 1]));
+  }, [reels]);
 
   useEffect(() => { if (focusClientId) setClientId(focusClientId); }, [focusClientId]);
 
@@ -1295,7 +1326,7 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
       {clientId && list.length === 0 && <div className="text-center py-16 rounded-2xl border border-dashed" style={{ borderColor: "#DEDACD", color: "#8B897F" }}>該当する動画はまだありません。「動画を追加」から作成できます。</div>}
 
       <div className="space-y-3">
-        {list.map(r => <ReelCard key={r.id} reel={r} client={clients.find(c => c.id === r.clientId)} users={users} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} currentUser={currentUser} onChange={updateReel} onDelete={deleteReel} onDuplicate={duplicateReelInPlace} canEdit={true} showClient={allClientsMode || showAllMonths} pastCaptions={reels.filter(x => x.clientId === r.clientId && x.id !== r.id && x.caption).map(x => x.caption)} />)}
+        {list.map(r => <ReelCard key={r.id} reel={r} client={clients.find(c => c.id === r.clientId)} users={users} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} currentUser={currentUser} onChange={updateReel} onDelete={deleteReel} onDuplicate={duplicateReelInPlace} canEdit={true} showClient={allClientsMode || showAllMonths} pastCaptions={reels.filter(x => x.clientId === r.clientId && x.id !== r.id && x.caption).map(x => x.caption)} number={numberMap.get(r.id)} />)}
       </div>
 
       {showNew && (
@@ -1317,9 +1348,15 @@ const EVENT_TYPES = [
   { key: "shoot", label: "撮影", color: "#D6248A" },
   { key: "edit", label: "編集稼働", color: "#0E90B8" },
 ];
+const EDIT_TASK_OPTIONS = [
+  { key: "all", label: "①②③まとめて" },
+  { key: "cut", label: "①カット" },
+  { key: "telop", label: "②テロップ" },
+  { key: "sfx", label: "③効果音" },
+];
 
 function emptyCalendarEvent() {
-  return { id: uid("event"), staffId: "", reelIds: [], type: "shoot", startDate: "", endDate: "", note: "", createdAt: new Date().toISOString() };
+  return { id: uid("event"), staffId: "", reelIds: [], type: "shoot", editTask: "all", startDate: "", endDate: "", startTime: "", endTime: "", note: "", createdAt: new Date().toISOString() };
 }
 
 function CalendarWidget({ events, setEvents, users, reels, setReels, clients }) {
@@ -1440,6 +1477,13 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients }) 
             </select>
           </Field>
           {form.type === "edit" && (
+            <Field label="対象工程">
+              <select value={form.editTask || "all"} onChange={e => setForm(f => ({ ...f, editTask: e.target.value }))} className={inputCls} style={inputStyle}>
+                {EDIT_TASK_OPTIONS.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+              </select>
+            </Field>
+          )}
+          {form.type === "edit" && (
             <Field label="対象動画（複数選択可・任意）">
               <div className="max-h-28 overflow-y-auto rounded-lg border p-1.5 space-y-1" style={{ borderColor: "#DEDACD", background: "#fff" }}>
                 {editableReels.length === 0 && <p className="text-[11px]" style={{ color: "#A9A79C" }}>対象動画がありません</p>}
@@ -1460,6 +1504,12 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients }) 
               <TextInput type="date" value={form.endDate} onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))} />
             </Field>
           )}
+          <Field label="開始時刻（任意）">
+            <TextInput type="time" value={form.startTime || ""} onChange={e => setForm(f => ({ ...f, startTime: e.target.value }))} />
+          </Field>
+          <Field label="終了時刻（任意）">
+            <TextInput type="time" value={form.endTime || ""} onChange={e => setForm(f => ({ ...f, endTime: e.target.value }))} />
+          </Field>
           <Field label="メモ（任意）">
             <TextInput value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="クライアント名など" />
           </Field>
@@ -1488,9 +1538,18 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients }) 
                       <TextInput type="date" value={editForm.startDate} onChange={e => setEditForm(f => ({ ...f, startDate: e.target.value }))} />
                       <TextInput type="date" value={editForm.endDate} onChange={e => setEditForm(f => ({ ...f, endDate: e.target.value }))} disabled={editForm.type === "shoot"} />
                     </div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <TextInput type="time" value={editForm.startTime || ""} onChange={e => setEditForm(f => ({ ...f, startTime: e.target.value }))} placeholder="開始時刻" />
+                      <TextInput type="time" value={editForm.endTime || ""} onChange={e => setEditForm(f => ({ ...f, endTime: e.target.value }))} placeholder="終了時刻" />
+                    </div>
                     <select value={editForm.staffId} onChange={e => setEditForm(f => ({ ...f, staffId: e.target.value }))} className={inputCls} style={{ ...inputStyle, fontSize: 11 }}>
                       {users.filter(u => editForm.type === "shoot" ? (u.roles || []).includes("shooter") : (u.roles || []).includes("editor")).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                     </select>
+                    {editForm.type === "edit" && (
+                      <select value={editForm.editTask || "all"} onChange={e => setEditForm(f => ({ ...f, editTask: e.target.value }))} className={inputCls} style={{ ...inputStyle, fontSize: 11 }}>
+                        {EDIT_TASK_OPTIONS.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+                      </select>
+                    )}
                     {editForm.type === "edit" && (
                       <div className="max-h-24 overflow-y-auto rounded-lg border p-1.5 space-y-1" style={{ borderColor: "#DEDACD" }}>
                         {editableReels.map(r => (
@@ -1513,9 +1572,11 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients }) 
               return (
                 <div key={ev.id} className="flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5" style={{ background: "#fff", opacity: isPast ? 0.55 : 1 }}>
                   <div className="min-w-0">
-                    <p className="text-xs font-semibold flex items-center gap-1.5">
+                    <p className="text-xs font-semibold flex items-center gap-1.5 flex-wrap">
                       <span className="rounded px-1.5 py-0.5 text-white" style={{ background: type?.color, fontSize: 10 }}>{type?.label}</span>
+                      {ev.type === "edit" && ev.editTask && ev.editTask !== "all" && <span className="rounded px-1.5 py-0.5" style={{ background: "#EDEBE4", fontSize: 10 }}>{EDIT_TASK_OPTIONS.find(t => t.key === ev.editTask)?.label}</span>}
                       {ev.startDate}{ev.endDate && ev.endDate !== ev.startDate ? ` 〜 ${ev.endDate}` : ""}
+                      {(ev.startTime || ev.endTime) && ` ${ev.startTime || ""}${ev.endTime ? "〜" + ev.endTime : ""}`}
                     </p>
                     <p className="text-[11px] truncate" style={{ color: "#8B897F" }}>
                       {linkedReels.length > 0
@@ -1608,7 +1669,8 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
 
   // 編集指示が記入され、カット・テロップ・効果音のいずれかが未割当の動画
   const pickupList = reels.filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions
-    && (!r.cutEditorId || !r.telopEditorId || !r.sfxEditorId));
+    && (!r.cutEditorId || !r.telopEditorId || !r.sfxEditorId))
+    .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
   const [pickupChoice, setPickupChoice] = useState({});
   const getPickup = (reelId) => pickupChoice[reelId] || { editorId: "", roles: [], date: "" };
   const setPickup = (reelId, patch) => setPickupChoice(prev => ({ ...prev, [reelId]: { ...getPickup(reelId), ...patch } }));
@@ -1644,7 +1706,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
   };
 
   // 提出済みチェック一覧
-  const submittedChecks = reels.filter(r => r.checkSubmitted).sort((a, b) => (b.checkSubmittedAt || 0) - (a.checkSubmittedAt || 0));
+  const submittedChecks = reels.filter(r => r.checkSubmitted && r.completedStages < 5).sort((a, b) => (b.checkSubmittedAt || 0) - (a.checkSubmittedAt || 0));
 
   // 掲示板
   const [boardTheme, setBoardTheme] = useState("");
@@ -1710,8 +1772,21 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-semibold text-sm">{c?.companyName} ・ {r.theme || "（テーマ未設定）"}</p>
                     {r.editWorkload && <Badge tone="amber">工数 {r.editWorkload}</Badge>}
+                    {r.deadline && <Badge tone={r.deadline < new Date().toISOString().slice(0, 10) ? "red" : "gray"}>投稿予定日 {r.deadline}</Badge>}
                   </div>
                   <p className="text-xs mt-1" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>
+                  <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                    {EDIT_ROLE_FIELDS.map(f => {
+                      const assigned = !!r[f.key];
+                      const doneKey = f.key === "cutEditorId" ? "cutDone" : f.key === "telopEditorId" ? "telopDone" : "sfxDone";
+                      const done = !!r[doneKey];
+                      return (
+                        <Badge key={f.key} tone={done ? "teal" : assigned ? "amber" : "gray"}>
+                          {f.label}：{done ? "完了" : assigned ? "作業中" : "未割当"}
+                        </Badge>
+                      );
+                    })}
+                  </div>
                   <div className="flex items-center gap-2 mt-2 flex-wrap">
                     <select value={choice.editorId} onChange={e => setPickup(r.id, { editorId: e.target.value })} className={inputCls} style={{ ...inputStyle, width: 160 }}>
                       <option value="">動画編集者を選択</option>
