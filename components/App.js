@@ -1530,10 +1530,10 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients }) 
             </Field>
           )}
           <Field label="開始時刻（任意）">
-            <TextInput type="time" value={form.startTime || ""} onChange={e => setForm(f => ({ ...f, startTime: e.target.value }))} />
+            <TextInput type="time" step={600} value={form.startTime || ""} onChange={e => setForm(f => ({ ...f, startTime: e.target.value }))} />
           </Field>
           <Field label="終了時刻（任意）">
-            <TextInput type="time" value={form.endTime || ""} onChange={e => setForm(f => ({ ...f, endTime: e.target.value }))} />
+            <TextInput type="time" step={600} value={form.endTime || ""} onChange={e => setForm(f => ({ ...f, endTime: e.target.value }))} />
           </Field>
           <Field label="メモ（任意）">
             <TextInput value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="クライアント名など" />
@@ -1564,8 +1564,8 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients }) 
                       <TextInput type="date" value={editForm.endDate} onChange={e => setEditForm(f => ({ ...f, endDate: e.target.value }))} disabled={editForm.type === "shoot"} />
                     </div>
                     <div className="grid grid-cols-2 gap-1.5">
-                      <TextInput type="time" value={editForm.startTime || ""} onChange={e => setEditForm(f => ({ ...f, startTime: e.target.value }))} placeholder="開始時刻" />
-                      <TextInput type="time" value={editForm.endTime || ""} onChange={e => setEditForm(f => ({ ...f, endTime: e.target.value }))} placeholder="終了時刻" />
+                      <TextInput type="time" step={600} value={editForm.startTime || ""} onChange={e => setEditForm(f => ({ ...f, startTime: e.target.value }))} placeholder="開始時刻" />
+                      <TextInput type="time" step={600} value={editForm.endTime || ""} onChange={e => setEditForm(f => ({ ...f, endTime: e.target.value }))} placeholder="終了時刻" />
                     </div>
                     <select value={editForm.staffId} onChange={e => setEditForm(f => ({ ...f, staffId: e.target.value }))} className={inputCls} style={{ ...inputStyle, fontSize: 11 }}>
                       {users.filter(u => editForm.type === "shoot" ? (u.roles || []).includes("shooter") : (u.roles || []).includes("editor")).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
@@ -1707,7 +1707,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
     && (!r.cutEditorId || !r.telopEditorId || !r.sfxEditorId))
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
   const [pickupChoice, setPickupChoice] = useState({});
-  const getPickup = (reelId) => pickupChoice[reelId] || { editorId: "", roles: [], date: "", time: "" };
+  const getPickup = (reelId) => pickupChoice[reelId] || { editorId: "", roles: [], date: "", startTime: "", endTime: "" };
   const setPickup = (reelId, patch) => setPickupChoice(prev => ({ ...prev, [reelId]: { ...getPickup(reelId), ...patch } }));
   const togglePickupRole = (reelId, roleKey) => {
     const cur = getPickup(reelId);
@@ -1724,8 +1724,8 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
       if (choice.date) { patch.editStartDate = choice.date; patch.editEndDate = choice.date; }
       return patch;
     }));
-    if (choice.date) syncReelEditCalendar(setCalendarEvents, reelId, choice.date, choice.date, choice.editorId, choice.time, choice.time);
-    setPickupChoice(prev => ({ ...prev, [reelId]: { editorId: "", roles: [], date: "", time: "" } }));
+    if (choice.date) syncReelEditCalendar(setCalendarEvents, reelId, choice.date, choice.date, choice.editorId, choice.startTime, choice.endTime);
+    setPickupChoice(prev => ({ ...prev, [reelId]: { editorId: "", roles: [], date: "", startTime: "", endTime: "" } }));
   };
 
   // 一括でチェック担当者を指定（カット・テロップ・効果音がすべて完了した動画）
@@ -1794,32 +1794,55 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
       {(() => {
         const todayStr = new Date().toISOString().slice(0, 10);
         const activeToday = calendarEvents.filter(e => e.startDate <= todayStr && e.endDate >= todayStr);
-        if (activeToday.length === 0) return null;
+        const activeStaffIds = new Set(activeToday.map(e => e.staffId));
         return (
-          <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
-            <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><UserCheck size={16} color="#D6248A" /> 本日稼働中のスタッフ（{activeToday.length}件）</p>
-            <div className="flex flex-wrap gap-2">
-              {activeToday.map(ev => {
-                const staff = users.find(u => u.id === ev.staffId);
-                const type = EVENT_TYPES.find(t => t.key === ev.type);
-                const task = ev.type === "edit" ? EDIT_TASK_OPTIONS.find(t => t.key === ev.editTask) : null;
-                const linkedReels = (ev.reelIds || []).map(id => reels.find(r => r.id === id)).filter(Boolean);
-                return (
-                  <div key={ev.id} className="rounded-xl px-3 py-2 flex items-center gap-2" style={{ background: "#FAF8F3" }}>
-                    <span className="rounded-full flex items-center justify-center shrink-0" style={{ width: 26, height: 26, background: type?.color, color: "#fff", fontSize: 11, fontWeight: 700 }}>
-                      {(staff?.name || "?").slice(0, 1)}
-                    </span>
-                    <div className="text-xs">
-                      <p className="font-semibold">{staff?.name || "不明"}</p>
-                      <p style={{ color: "#8B897F" }}>
-                        {type?.label}{task && task.key !== "all" ? `（${task.label}）` : ""}
-                        {(ev.startTime || ev.endTime) ? ` ・ ${ev.startTime || ""}${ev.endTime ? "〜" + ev.endTime : ""}` : ""}
-                        {linkedReels.length > 0 ? ` ・ ${linkedReels[0].theme || "動画"}${linkedReels.length > 1 ? `他${linkedReels.length - 1}件` : ""}` : ""}
-                      </p>
+          <div className="grid md:grid-cols-2 gap-4 mb-6">
+            <div className="rounded-2xl p-5" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
+              <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><UserCheck size={16} color="#D6248A" /> 本日稼働中のスタッフ（{activeToday.length}件）</p>
+              {activeToday.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>本日、予定が入っているスタッフはいません。</p>}
+              <div className="flex flex-wrap gap-2">
+                {activeToday.map(ev => {
+                  const staff = users.find(u => u.id === ev.staffId);
+                  const type = EVENT_TYPES.find(t => t.key === ev.type);
+                  const task = ev.type === "edit" ? EDIT_TASK_OPTIONS.find(t => t.key === ev.editTask) : null;
+                  const linkedReels = (ev.reelIds || []).map(id => reels.find(r => r.id === id)).filter(Boolean);
+                  return (
+                    <div key={ev.id} className="rounded-xl px-3 py-2 flex items-center gap-2" style={{ background: "#FAF8F3" }}>
+                      <span className="rounded-full flex items-center justify-center shrink-0" style={{ width: 26, height: 26, background: type?.color, color: "#fff", fontSize: 11, fontWeight: 700 }}>
+                        {(staff?.name || "?").slice(0, 1)}
+                      </span>
+                      <div className="text-xs">
+                        <p className="font-semibold">{staff?.name || "不明"}</p>
+                        <p style={{ color: "#8B897F" }}>
+                          {type?.label}{task && task.key !== "all" ? `（${task.label}）` : ""}
+                          {(ev.startTime || ev.endTime) ? ` ・ ${ev.startTime || ""}${ev.endTime ? "〜" + ev.endTime : ""}` : ""}
+                          {linkedReels.length > 0 ? ` ・ ${linkedReels[0].theme || "動画"}${linkedReels.length > 1 ? `他${linkedReels.length - 1}件` : ""}` : ""}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="rounded-2xl p-5" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
+              <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><Users size={16} color="#D6248A" /> 登録スタッフ一覧（{users.length}人）</p>
+              <div className="flex flex-wrap gap-2">
+                {users.map(u => {
+                  const isActive = activeStaffIds.has(u.id);
+                  return (
+                    <div key={u.id} className="rounded-xl px-3 py-2 flex items-center gap-2" style={{ background: isActive ? "#FBE4F1" : "#FAF8F3" }}>
+                      <span className="rounded-full flex items-center justify-center shrink-0" style={{ width: 26, height: 26, background: isActive ? "#D6248A" : "#DEDACD", color: isActive ? "#fff" : "#5F5E5A", fontSize: 11, fontWeight: 700 }}>
+                        {u.name.slice(0, 1)}
+                      </span>
+                      <div className="text-xs">
+                        <p className="font-semibold">{u.name}</p>
+                        <p style={{ color: "#8B897F" }}>{roleLabels(u.roles)}{isActive ? " ・ 本日稼働中" : ""}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         );
@@ -1868,7 +1891,9 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                       </label>
                     ))}
                     <TextInput type="date" value={choice.date} onChange={e => setPickup(r.id, { date: e.target.value })} title="編集する日（カレンダーに反映されます）" style={{ width: 150 }} />
-                    <TextInput type="time" value={choice.time} onChange={e => setPickup(r.id, { time: e.target.value })} title="編集する時間（任意）" style={{ width: 110 }} />
+                    <TextInput type="time" step={600} value={choice.startTime} onChange={e => setPickup(r.id, { startTime: e.target.value })} title="開始時刻（10分刻み・任意）" style={{ width: 110 }} />
+                    <span className="text-xs shrink-0" style={{ color: "#8B897F" }}>〜</span>
+                    <TextInput type="time" step={600} value={choice.endTime} onChange={e => setPickup(r.id, { endTime: e.target.value })} title="終了時刻（10分刻み・任意）" style={{ width: 110 }} />
                     <button onClick={() => confirmPickup(r.id)} disabled={!choice.editorId || choice.roles.length === 0} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>
                       担当する
                     </button>
