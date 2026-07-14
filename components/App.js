@@ -324,14 +324,18 @@ function LoginScreen({ onAuthed }) {
       } else {
         if (!name.trim()) throw new Error("名前を入力してください");
         if (roles.length === 0) throw new Error("役割を1つ以上選択してください");
-        // 日本語などの名前をサインアップのメタデータに直接含めると、
-        // 一部のブラウザ環境で内部的なエラーが起きるため、
-        // まずメールアドレス・パスワードだけでサインアップし、
-        // 作成されたプロフィールの名前・役割はあとから更新する
-        const { data, error: err } = await supabase.auth.signUp({ email, password });
+        const { data, error: err } = await supabase.auth.signUp({
+          email, password,
+          options: { data: { name: name.trim(), roles } },
+        });
         if (err) throw err;
-        if (data?.user) {
-          await supabase.from("profiles").update({ name: name.trim(), roles }).eq("auth_user_id", data.user.id);
+        // メール確認が有効な環境では、サインアップ直後はまだ認証済みセッションがなく、
+        // プロフィールへの直接更新がRLSで失敗することがあるため、
+        // 名前・役割は上記のサインアップ時のメタデータ経由（DB側のトリガーで反映）で確実に設定する。
+        // ここではセッションが確立している場合のみ、念のため補助的に反映を試みる。
+        if (data?.user && data?.session) {
+          const { error: updErr } = await supabase.from("profiles").update({ name: name.trim(), roles }).eq("auth_user_id", data.user.id);
+          if (updErr) console.error("profile update failed", updErr);
         }
       }
       onAuthed && onAuthed();
@@ -726,6 +730,8 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
   const [expanded, setExpanded] = useState(false);
   const [genLoading, setGenLoading] = useState(false);
   const [genError, setGenError] = useState("");
+  const [transcriptCleanLoading, setTranscriptCleanLoading] = useState(false);
+  const [transcriptCleanError, setTranscriptCleanError] = useState("");
   const [showHistory, setShowHistory] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [draft, setDraft] = useState(reel);
@@ -836,6 +842,25 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
       .filter(Boolean)
       .map(t => t.startsWith("#") ? t : "#" + t);
     return tags.join("\n");
+  };
+
+  const cleanTranscript = async () => {
+    setTranscriptCleanLoading(true);
+    setTranscriptCleanError("");
+    try {
+      const res = await fetch("/api/transcript-clean", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript: draft.transcript }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || "添削に失敗しました");
+      set({ transcript: data.text });
+    } catch (e) {
+      setTranscriptCleanError("添削に失敗しました：" + (e.message || "不明なエラー"));
+    } finally {
+      setTranscriptCleanLoading(false);
+    }
   };
 
   const genCaption = async () => {
@@ -1071,7 +1096,15 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                 </label>
               ))}
             </div>
-            <Field label="動画の文字起こし（任意・AIキャプション生成にも使用されます）"><TextArea rows={3} value={draft.transcript} onChange={e => set({ transcript: e.target.value })} placeholder="完成した動画の文字起こしを貼り付け（なくても生成可）" disabled={!canEdit} /></Field>
+            <Field label="動画の文字起こし（任意・AIキャプション生成にも使用されます）">
+              <TextArea rows={3} value={draft.transcript} onChange={e => set({ transcript: e.target.value })} placeholder="完成した動画の文字起こしを貼り付け（なくても生成可）" disabled={!canEdit} />
+              {canEdit && draft.transcript && (
+                <button onClick={cleanTranscript} disabled={transcriptCleanLoading} className="text-xs font-semibold px-3 py-1.5 rounded-lg border flex items-center gap-1.5 mt-1.5 disabled:opacity-50" style={{ borderColor: "#DEDACD", color: "#5F5E5A" }}>
+                  {transcriptCleanLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {transcriptCleanLoading ? "添削中..." : "文章を添削"}
+                </button>
+              )}
+              {transcriptCleanError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{transcriptCleanError}</p>}
+            </Field>
             <Field label="メモ欄"><TextArea rows={2} value={checklist.memo} onChange={e => setCheckMemo(e.target.value)} disabled={!canEdit} /></Field>
             <div className="flex items-center justify-between flex-wrap gap-2">
               <span className="text-[11px]" style={{ color: "#8B897F" }}>チェック済み {checkedCount}/{CHECKLIST_ITEMS.length}</span>
@@ -1381,7 +1414,7 @@ function emptyCalendarEvent() {
   return { id: uid("event"), staffId: "", reelIds: [], type: "shoot", editTask: "all", startDate: "", endDate: "", startTime: "", endTime: "", note: "", createdAt: new Date().toISOString() };
 }
 
-function CalendarWidget({ events, setEvents, users, reels, setReels, clients }) {
+function CalendarWidget({ events, setEvents, users, reels, setReels, clients, onGoReels }) {
   const [month, setMonth] = useState(currentYearMonth());
   const [form, setForm] = useState(emptyCalendarEvent());
   const [showForm, setShowForm] = useState(false);
@@ -1653,9 +1686,10 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients }) 
                   const label = linkedReels.length > 0
                     ? (linkedReels[0].theme || "動画") + (linkedReels.length > 1 ? ` 他${linkedReels.length - 1}件` : "")
                     : (staff?.name || "?");
-                  const tooltip = `${type?.label} ・ ${staff?.name || ""}${linkedReels.length ? " ・ " + linkedReels.map(r => r.theme || "動画").join("、") : ""}${ev.note ? " ・ " + ev.note : ""}（クリックでスケジュール一覧を表示）`;
+                  const hasLink = linkedReels.length > 0 && onGoReels;
+                  const tooltip = `${type?.label} ・ ${staff?.name || ""}${linkedReels.length ? " ・ " + linkedReels.map(r => r.theme || "動画").join("、") : ""}${ev.note ? " ・ " + ev.note : ""}${hasLink ? "（クリックで動画を開く）" : "（クリックでスケジュール一覧を表示）"}`;
                   return (
-                    <div key={ev.id} onClick={() => setSelectedStaffId(ev.staffId)} title={tooltip} className="text-[9px] px-1 py-0.5 rounded truncate cursor-pointer" style={{ background: type?.color, color: "#fff" }}>
+                    <div key={ev.id} onClick={() => hasLink ? onGoReels(linkedReels[0].clientId) : setSelectedStaffId(ev.staffId)} title={tooltip} className="text-[9px] px-1 py-0.5 rounded truncate cursor-pointer" style={{ background: type?.color, color: "#fff" }}>
                       {type?.label}：{label}
                     </div>
                   );
@@ -1848,7 +1882,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
         );
       })()}
 
-      <CalendarWidget events={calendarEvents} setEvents={setCalendarEvents} users={users} reels={reels} setReels={setReels} clients={clients} />
+      <CalendarWidget events={calendarEvents} setEvents={setCalendarEvents} users={users} reels={reels} setReels={setReels} clients={clients} onGoReels={onGoReels} />
 
       {((currentUser.roles || []).includes("editor") || (currentUser.roles || []).includes("admin")) && (
         <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
