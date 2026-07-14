@@ -1420,7 +1420,7 @@ const EDIT_TASK_OPTIONS = [
 ];
 
 function emptyCalendarEvent() {
-  return { id: uid("event"), staffId: "", reelIds: [], type: "shoot", editTask: "all", startDate: "", endDate: "", startTime: "", endTime: "", note: "", createdAt: new Date().toISOString() };
+  return { id: uid("event"), staffId: "", staffIds: [], reelIds: [], type: "shoot", editTask: "all", startDate: "", endDate: "", startTime: "", endTime: "", note: "", createdAt: new Date().toISOString() };
 }
 
 function CalendarWidget({ events, setEvents, users, reels, setReels, clients, onGoReels }) {
@@ -1428,6 +1428,7 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients, on
   const [form, setForm] = useState(emptyCalendarEvent());
   const [showForm, setShowForm] = useState(false);
   const [selectedStaffId, setSelectedStaffId] = useState(null);
+  const [selectedDate, setSelectedDate] = useState(null);
   const [editingEventId, setEditingEventId] = useState(null);
   const [editForm, setEditForm] = useState(null);
   const [confirmDeleteEventId, setConfirmDeleteEventId] = useState(null);
@@ -1461,10 +1462,12 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients, on
   };
 
   const addEvent = () => {
-    if (!form.staffId || !form.startDate) return;
+    const staffIds = form.staffIds || [];
+    if (staffIds.length === 0 || !form.startDate) return;
     const endDate = (form.type === "edit" ? form.endDate : "") || form.startDate;
-    const newEvent = { ...form, id: uid("event"), endDate };
-    setEvents(prev => [...prev, newEvent]);
+    const { staffIds: _omit, ...base } = form;
+    const newEvents = staffIds.map(sid => ({ ...base, staffId: sid, id: uid("event"), endDate }));
+    setEvents(prev => [...prev, ...newEvents]);
     if (form.type === "edit" && form.reelIds.length > 0) {
       applyDatesToReels(form.reelIds, form.startDate, endDate);
     }
@@ -1540,15 +1543,19 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients, on
       {showForm && (
         <div className="rounded-xl p-3 mb-3 grid md:grid-cols-6 gap-2 items-end" style={{ background: "#FAF8F3" }}>
           <Field label="種別">
-            <select value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value, staffId: "", reelIds: [] }))} className={inputCls} style={inputStyle}>
+            <select value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value, reelIds: [] }))} className={inputCls} style={inputStyle}>
               {EVENT_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
             </select>
           </Field>
-          <Field label="担当者">
-            <select value={form.staffId} onChange={e => setForm(f => ({ ...f, staffId: e.target.value }))} className={inputCls} style={inputStyle}>
-              <option value="">選択してください</option>
-              {users.filter(u => form.type === "shoot" ? (u.roles || []).includes("shooter") : (u.roles || []).includes("editor")).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
+          <Field label="担当者（複数選択可）">
+            <div className="max-h-28 overflow-y-auto rounded-lg border p-1.5 space-y-1" style={{ borderColor: "#DEDACD", background: "#fff" }}>
+              {users.filter(u => form.type === "shoot" ? (u.roles || []).includes("shooter") : (u.roles || []).includes("editor")).map(u => (
+                <label key={u.id} className="flex items-center gap-1.5 text-[11px] cursor-pointer">
+                  <input type="checkbox" checked={(form.staffIds || []).includes(u.id)} onChange={() => setForm(f => ({ ...f, staffIds: toggleReelId(f.staffIds || [], u.id) }))} />
+                  <span className="truncate">{u.name}</span>
+                </label>
+              ))}
+            </div>
           </Field>
           {form.type === "edit" && (
             <Field label="対象工程">
@@ -1587,7 +1594,46 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients, on
           <Field label="メモ（任意）">
             <TextInput value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="クライアント名など" />
           </Field>
-          <button onClick={addEvent} disabled={!form.staffId || !form.startDate} className="text-xs font-semibold px-3 py-2 rounded-lg text-white disabled:opacity-40 h-fit" style={{ background: "#16171B" }}>登録する</button>
+          <button onClick={addEvent} disabled={!(form.staffIds || []).length || !form.startDate} className="text-xs font-semibold px-3 py-2 rounded-lg text-white disabled:opacity-40 h-fit" style={{ background: "#16171B" }}>登録する</button>
+        </div>
+      )}
+
+      {selectedDate && (
+        <div className="rounded-xl p-3 mb-3" style={{ background: "#F3EEFB" }}>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-bold" style={{ color: "#6B3FA0" }}>{selectedDate} の予定一覧</p>
+            <button onClick={() => setSelectedDate(null)} className="text-xs" style={{ color: "#6B3FA0" }}><X size={14} /></button>
+          </div>
+          {(() => {
+            const dayList = events.filter(e => e.startDate && e.endDate && e.startDate <= selectedDate && e.endDate >= selectedDate)
+              .sort((a, b) => (a.startTime || "").localeCompare(b.startTime || ""));
+            if (dayList.length === 0) return <p className="text-xs" style={{ color: "#8B897F" }}>この日の予定はありません。</p>;
+            return (
+              <div className="space-y-1.5">
+                {dayList.map(ev => {
+                  const staff = users.find(u => u.id === ev.staffId);
+                  const type = EVENT_TYPES.find(t => t.key === ev.type);
+                  const task = ev.type === "edit" ? EDIT_TASK_OPTIONS.find(t => t.key === ev.editTask) : null;
+                  const linkedReels = (ev.reelIds || []).map(id => reels.find(r => r.id === id)).filter(Boolean);
+                  return (
+                    <div key={ev.id} className="flex items-center gap-2 rounded-lg px-2.5 py-1.5" style={{ background: "#fff" }}>
+                      <span className="rounded-full shrink-0" style={{ width: 10, height: 10, background: staffColor(ev.staffId) }} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold">
+                          {staff?.name || "不明"} ・ {type?.label}{task && task.key !== "all" ? `（${task.label}）` : ""}
+                          {(ev.startTime || ev.endTime) ? ` ・ ${ev.startTime || ""}${ev.endTime ? "〜" + ev.endTime : ""}` : ""}
+                        </p>
+                        <p className="text-[11px] truncate" style={{ color: "#8B897F" }}>
+                          {linkedReels.length > 0 ? linkedReels.map(r => r.theme || "動画").join("・") : (ev.note || "メモなし")}
+                        </p>
+                      </div>
+                      <button onClick={() => setSelectedStaffId(ev.staffId)} className="text-[11px] font-semibold shrink-0" style={{ color: "#5F5E5A" }}>編集</button>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -1693,17 +1739,16 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients, on
           const postingClients = clients.filter(c => (c.postDays || []).includes(weekday));
           return (
             <div key={i} className="rounded-lg p-1" style={{ minHeight: 64, background: ds === todayStr ? "#FDE7F2" : "#FAF8F3", border: ds === todayStr ? "1px solid #D6248A" : "1px solid transparent" }}>
-              <p className="text-[11px] font-semibold" style={{ color: "#5F5E5A" }}>{day}</p>
+              <button onClick={() => setSelectedDate(ds)} className="text-[11px] font-semibold hover:underline" style={{ color: "#5F5E5A" }}>{day}</button>
               <div className="space-y-0.5 mt-0.5">
                 {dayEvents.slice(0, 3).map(ev => {
                   const staff = users.find(u => u.id === ev.staffId);
                   const type = EVENT_TYPES.find(t => t.key === ev.type);
                   const linkedReels = (ev.reelIds || []).map(id => reels.find(r => r.id === id)).filter(Boolean);
-                  const label = linkedReels.length > 0
-                    ? (linkedReels[0].theme || "動画") + (linkedReels.length > 1 ? ` 他${linkedReels.length - 1}件` : "")
-                    : (staff?.name || "?");
+                  const timeLabel = (ev.startTime || ev.endTime) ? `${ev.startTime || ""}${ev.endTime ? "〜" + ev.endTime : ""}` : "";
+                  const label = `${staff?.name || "?"}${timeLabel ? " " + timeLabel : ""}`;
                   const hasLink = linkedReels.length > 0 && onGoReels;
-                  const tooltip = `${type?.label} ・ ${staff?.name || ""}${linkedReels.length ? " ・ " + linkedReels.map(r => r.theme || "動画").join("、") : ""}${ev.note ? " ・ " + ev.note : ""}${hasLink ? "（クリックで動画を開く）" : "（クリックでスケジュール一覧を表示）"}`;
+                  const tooltip = `${type?.label} ・ ${staff?.name || ""}${timeLabel ? " ・ " + timeLabel : ""}${linkedReels.length ? " ・ " + linkedReels.map(r => r.theme || "動画").join("、") : ""}${ev.note ? " ・ " + ev.note : ""}${hasLink ? "（クリックで動画を開く）" : "（クリックでスケジュール一覧を表示）"}`;
                   return (
                     <div key={ev.id} onClick={() => hasLink ? onGoReels(linkedReels[0].clientId) : setSelectedStaffId(ev.staffId)} title={tooltip} className="text-[9px] px-1 py-0.5 rounded truncate cursor-pointer" style={{ background: staffColor(ev.staffId), color: "#fff", borderLeft: ev.type === "shoot" ? "2px solid #fff" : "none" }}>
                       {type?.label}：{label}
@@ -1877,17 +1922,28 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
 
             <div className="rounded-2xl p-5" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
               <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><Users size={16} color="#D6248A" /> 登録スタッフ一覧（{users.length}人）</p>
-              <div className="flex flex-wrap gap-2">
-                {users.map(u => {
-                  const isActive = activeStaffIds.has(u.id);
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {["admin", "shooter", "editor", "designer"].map(roleKey => {
+                  const roleInfo = ROLES.find(r => r.key === roleKey);
+                  const staffInRole = users.filter(u => (u.roles || []).includes(roleKey));
                   return (
-                    <div key={u.id} className="rounded-xl px-3 py-2 flex items-center gap-2" style={{ background: isActive ? "#FBE4F1" : "#FAF8F3" }}>
-                      <span className="rounded-full flex items-center justify-center shrink-0" style={{ width: 26, height: 26, background: staffColor(u.id), color: "#fff", fontSize: 11, fontWeight: 700 }}>
-                        {u.name.slice(0, 1)}
-                      </span>
-                      <div className="text-xs">
-                        <p className="font-semibold">{u.name}</p>
-                        <p style={{ color: "#8B897F" }}>{roleLabels(u.roles)}{isActive ? " ・ 本日稼働中" : ""}</p>
+                    <div key={roleKey}>
+                      <p className="text-[11px] font-bold mb-1.5 flex items-center gap-1" style={{ color: "#5F5E5A" }}>
+                        <roleInfo.icon size={12} /> {roleInfo.label}（{staffInRole.length}）
+                      </p>
+                      <div className="space-y-1.5">
+                        {staffInRole.length === 0 && <p className="text-[11px]" style={{ color: "#A9A79C" }}>―</p>}
+                        {staffInRole.map(u => {
+                          const isActive = activeStaffIds.has(u.id);
+                          return (
+                            <div key={u.id} className="rounded-lg px-2 py-1.5 flex items-center gap-1.5" style={{ background: isActive ? "#FBE4F1" : "#FAF8F3" }}>
+                              <span className="rounded-full flex items-center justify-center shrink-0" style={{ width: 20, height: 20, background: staffColor(u.id), color: "#fff", fontSize: 9, fontWeight: 700 }}>
+                                {u.name.slice(0, 1)}
+                              </span>
+                              <p className="text-[11px] font-semibold truncate">{u.name}{isActive ? " ・ 稼働中" : ""}</p>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   );
