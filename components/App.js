@@ -1252,7 +1252,7 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(22,23,27,0.55)" }} onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(22,23,27,0.55)" }}>
       <div className="w-full max-w-lg rounded-2xl p-5" style={{ background: "#fff" }} onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-3">
           <p className="font-bold text-lg" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>新規動画登録</p>
@@ -1399,6 +1399,15 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
   );
 }
 
+// スタッフごとに固定の色を割り当てる（カレンダーで誰がいつ稼働しているか一目で分かるように）
+const STAFF_COLORS = ["#D6248A", "#0E90B8", "#F6934B", "#6B3FA0", "#2E9E5B", "#C0392B", "#1F6FEB", "#B8860B", "#008B8B", "#8E44AD"];
+function staffColor(staffId) {
+  if (!staffId) return "#8B897F";
+  let hash = 0;
+  for (let i = 0; i < staffId.length; i++) hash = (hash * 31 + staffId.charCodeAt(i)) >>> 0;
+  return STAFF_COLORS[hash % STAFF_COLORS.length];
+}
+
 const EVENT_TYPES = [
   { key: "shoot", label: "撮影", color: "#D6248A" },
   { key: "edit", label: "編集稼働", color: "#0E90B8" },
@@ -1520,6 +1529,13 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients, on
       <p className="text-[11px] mb-2 flex items-center gap-1" style={{ color: "#8B897F" }}>
         <span className="rounded-full inline-block" style={{ width: 6, height: 6, background: "#6B3FA0" }} /> は、その曜日を投稿日にしているクライアントがいることを示します（マスの下部）
       </p>
+      <div className="flex items-center gap-2 flex-wrap mb-3">
+        {users.map(u => (
+          <span key={u.id} className="text-[10px] px-1.5 py-0.5 rounded-full flex items-center gap-1" style={{ background: "#FAF8F3", color: "#5F5E5A" }}>
+            <span className="rounded-full inline-block" style={{ width: 8, height: 8, background: staffColor(u.id) }} /> {u.name}
+          </span>
+        ))}
+      </div>
 
       {showForm && (
         <div className="rounded-xl p-3 mb-3 grid md:grid-cols-6 gap-2 items-end" style={{ background: "#FAF8F3" }}>
@@ -1689,7 +1705,7 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients, on
                   const hasLink = linkedReels.length > 0 && onGoReels;
                   const tooltip = `${type?.label} ・ ${staff?.name || ""}${linkedReels.length ? " ・ " + linkedReels.map(r => r.theme || "動画").join("、") : ""}${ev.note ? " ・ " + ev.note : ""}${hasLink ? "（クリックで動画を開く）" : "（クリックでスケジュール一覧を表示）"}`;
                   return (
-                    <div key={ev.id} onClick={() => hasLink ? onGoReels(linkedReels[0].clientId) : setSelectedStaffId(ev.staffId)} title={tooltip} className="text-[9px] px-1 py-0.5 rounded truncate cursor-pointer" style={{ background: type?.color, color: "#fff" }}>
+                    <div key={ev.id} onClick={() => hasLink ? onGoReels(linkedReels[0].clientId) : setSelectedStaffId(ev.staffId)} title={tooltip} className="text-[9px] px-1 py-0.5 rounded truncate cursor-pointer" style={{ background: staffColor(ev.staffId), color: "#fff", borderLeft: ev.type === "shoot" ? "2px solid #fff" : "none" }}>
                       {type?.label}：{label}
                     </div>
                   );
@@ -1842,7 +1858,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                   const linkedReels = (ev.reelIds || []).map(id => reels.find(r => r.id === id)).filter(Boolean);
                   return (
                     <div key={ev.id} className="rounded-xl px-3 py-2 flex items-center gap-2" style={{ background: "#FAF8F3" }}>
-                      <span className="rounded-full flex items-center justify-center shrink-0" style={{ width: 26, height: 26, background: type?.color, color: "#fff", fontSize: 11, fontWeight: 700 }}>
+                      <span className="rounded-full flex items-center justify-center shrink-0" style={{ width: 26, height: 26, background: staffColor(ev.staffId), color: "#fff", fontSize: 11, fontWeight: 700 }}>
                         {(staff?.name || "?").slice(0, 1)}
                       </span>
                       <div className="text-xs">
@@ -1866,7 +1882,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                   const isActive = activeStaffIds.has(u.id);
                   return (
                     <div key={u.id} className="rounded-xl px-3 py-2 flex items-center gap-2" style={{ background: isActive ? "#FBE4F1" : "#FAF8F3" }}>
-                      <span className="rounded-full flex items-center justify-center shrink-0" style={{ width: 26, height: 26, background: isActive ? "#D6248A" : "#DEDACD", color: isActive ? "#fff" : "#5F5E5A", fontSize: 11, fontWeight: 700 }}>
+                      <span className="rounded-full flex items-center justify-center shrink-0" style={{ width: 26, height: 26, background: staffColor(u.id), color: "#fff", fontSize: 11, fontWeight: 700 }}>
                         {u.name.slice(0, 1)}
                       </span>
                       <div className="text-xs">
