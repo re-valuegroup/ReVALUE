@@ -23,14 +23,23 @@ export async function POST(req) {
     }
 
     // 本人が統括管理者であることを確認
-    const { data: requesterProfile } = await supabaseAdmin
+    const { data: requesterProfiles, error: profileErr } = await supabaseAdmin
       .from("profiles")
-      .select("roles")
-      .eq("auth_user_id", requesterAuth.user.id)
-      .single();
+      .select("id, roles, email")
+      .eq("auth_user_id", requesterAuth.user.id);
 
-    if (!requesterProfile || !(requesterProfile.roles || []).includes("admin")) {
-      return Response.json({ error: "この操作は統括管理者のみ実行できます" }, { status: 403 });
+    if (profileErr) {
+      return Response.json({ error: "プロフィールの確認に失敗しました：" + profileErr.message }, { status: 500 });
+    }
+    if (!requesterProfiles || requesterProfiles.length === 0) {
+      return Response.json({ error: `ログイン中のアカウント（${requesterAuth.user.email}）に紐づくプロフィールが見つかりません。メンバー管理でこのメールアドレスのプロフィールが存在するか確認してください。` }, { status: 403 });
+    }
+    if (requesterProfiles.length > 1) {
+      return Response.json({ error: `ログイン中のアカウント（${requesterAuth.user.email}）に紐づくプロフィールが複数見つかりました（${requesterProfiles.length}件）。メンバー管理で重複しているプロフィールを確認・削除してください。` }, { status: 403 });
+    }
+    const requesterProfile = requesterProfiles[0];
+    if (!(requesterProfile.roles || []).includes("admin")) {
+      return Response.json({ error: `統括管理者のみ実行できます（現在の役割：${(requesterProfile.roles || []).join("、") || "未設定"}）` }, { status: 403 });
     }
 
     // 切り替え先のスタッフのメールアドレスを取得
