@@ -32,7 +32,7 @@ export async function POST(req) {
       return Response.json({ error: "プロフィールの確認に失敗しました：" + profileErr.message }, { status: 500 });
     }
     if (!requesterProfiles || requesterProfiles.length === 0) {
-      return Response.json({ error: `ログイン中のアカウント（${requesterAuth.user.email}）に紐づくプロフィールが見つかりません。メンバー管理でこのメールアドレスのプロフィールが存在するか確認してください。` }, { status: 403 });
+      return Response.json({ error: `ログイン中のアカウント（${requesterAuth.user.email} ／ ID: ${requesterAuth.user.id}）に紐づくプロフィールが見つかりません。メンバー管理でこのメールアドレスのプロフィールが存在するか確認してください。` }, { status: 403 });
     }
     if (requesterProfiles.length > 1) {
       return Response.json({ error: `ログイン中のアカウント（${requesterAuth.user.email}）に紐づくプロフィールが複数見つかりました（${requesterProfiles.length}件）。メンバー管理で重複しているプロフィールを確認・削除してください。` }, { status: 403 });
