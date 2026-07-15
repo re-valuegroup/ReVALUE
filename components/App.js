@@ -731,6 +731,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
   const [genLoading, setGenLoading] = useState(false);
   const [genError, setGenError] = useState("");
   const [transcriptCleanLoading, setTranscriptCleanLoading] = useState(false);
+  const [transcriptFileError, setTranscriptFileError] = useState("");
   const [transcriptCleanError, setTranscriptCleanError] = useState("");
   const [showHistory, setShowHistory] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -842,6 +843,24 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
       .filter(Boolean)
       .map(t => t.startsWith("#") ? t : "#" + t);
     return tags.join("\n");
+  };
+
+  const handleTranscriptFile = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setTranscriptFileError("");
+    if (!file.name.toLowerCase().endsWith(".txt") && file.type !== "text/plain") {
+      setTranscriptFileError("テキストファイル（.txt）のみ読み込めます。");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const content = String(reader.result || "");
+      set({ transcript: draft.transcript ? draft.transcript + "\n" + content : content });
+    };
+    reader.onerror = () => setTranscriptFileError("ファイルの読み込みに失敗しました。");
+    reader.readAsText(file, "UTF-8");
   };
 
   const cleanTranscript = async () => {
@@ -1098,11 +1117,20 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             </div>
             <Field label="動画の文字起こし（任意・AIキャプション生成にも使用されます）">
               <TextArea rows={3} value={draft.transcript} onChange={e => set({ transcript: e.target.value })} placeholder="完成した動画の文字起こしを貼り付け（なくても生成可）" disabled={!canEdit} />
-              {canEdit && draft.transcript && (
-                <button onClick={cleanTranscript} disabled={transcriptCleanLoading} className="text-xs font-semibold px-3 py-1.5 rounded-lg border flex items-center gap-1.5 mt-1.5 disabled:opacity-50" style={{ borderColor: "#DEDACD", color: "#5F5E5A" }}>
-                  {transcriptCleanLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {transcriptCleanLoading ? "添削中..." : "文章を添削"}
-                </button>
+              {canEdit && (
+                <div className="flex items-center gap-2 flex-wrap mt-1.5">
+                  <label className="text-xs font-semibold px-3 py-1.5 rounded-lg border flex items-center gap-1.5 cursor-pointer" style={{ borderColor: "#DEDACD", color: "#5F5E5A" }}>
+                    <ClipboardList size={12} /> テキストファイルを読み込む
+                    <input type="file" accept=".txt,text/plain" className="hidden" onChange={handleTranscriptFile} />
+                  </label>
+                  {draft.transcript && (
+                    <button onClick={cleanTranscript} disabled={transcriptCleanLoading} className="text-xs font-semibold px-3 py-1.5 rounded-lg border flex items-center gap-1.5 disabled:opacity-50" style={{ borderColor: "#DEDACD", color: "#5F5E5A" }}>
+                      {transcriptCleanLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {transcriptCleanLoading ? "添削中..." : "文章を添削"}
+                    </button>
+                  )}
+                </div>
               )}
+              {transcriptFileError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{transcriptFileError}</p>}
               {transcriptCleanError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{transcriptCleanError}</p>}
             </Field>
             <Field label="メモ欄"><TextArea rows={2} value={checklist.memo} onChange={e => setCheckMemo(e.target.value)} disabled={!canEdit} /></Field>
