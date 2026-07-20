@@ -997,7 +997,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
         </div>
         <div className="mt-3"><Pipeline compact completedStages={reel.completedStages} onAdvance={null} onRegress={null} /></div>
 
-        <div className="rounded-lg mt-2 p-1.5 flex items-center gap-1.5 flex-wrap" style={{ background: "#F4F2EA" }}>
+        <div className="rounded-lg mt-2 p-1.5 flex items-center gap-1 flex-wrap" style={{ background: "#F4F2EA" }}>
           <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background: "#EDEBE4", color: "#5F5E5A" }}>
             {EDIT_TYPE_OPTIONS.find(o => o.key === (reel.editType || "direction"))?.key === "telop" ? "フルテロップ編集" : "演出編集"}
           </span>
@@ -1007,41 +1007,45 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             { label: "③効果音", key: "sfxEditorId", doneKey: "sfxDone", assigneeId: reel.sfxEditorId, done: reel.sfxDone },
           ].filter(t => editRolesForReel(reel).some(f => f.key === t.key)).concat([
             { label: "④修正チェック", doneKey: null, assigneeId: reel.editorSecondaryId, done: reel.checkSubmitted },
-          ]).map(t => {
+            { label: "⑤キャプション作成", readOnly: true, done: !!(reel.caption && reel.caption.trim()) },
+            { label: "⑥投稿", readOnly: true, done: reel.completedStages >= 5 },
+          ]).map((t, i, arr) => {
             const person = users.find(u => u.id === t.assigneeId);
             const tone = t.done ? "teal" : person ? "amber" : "gray";
             const toneStyle = { teal: { background: "#D6F0EA", color: "#0E6B57" }, amber: { background: "#FCEEDB", color: "#854F0B" }, gray: { background: "#F0EEE7", color: "#8B897F" } }[tone];
-            const canToggle = t.doneKey ? (t.done || canToggleRoleDone(reel, t.doneKey)) : (t.done || canSubmitCheck(reel));
-            const disabledReason = !t.assigneeId ? "担当者が割り当てられていません" : !t.done && !canToggle ? "前の工程がまだ完了していません" : "";
+            const canToggle = t.readOnly ? false : t.doneKey ? (t.done || canToggleRoleDone(reel, t.doneKey)) : (t.done || canSubmitCheck(reel));
+            const disabledReason = t.readOnly ? "他の項目から自動的に反映されます" : !t.assigneeId ? "担当者が割り当てられていません" : !t.done && !canToggle ? "前の工程がまだ完了していません" : "";
             return (
-              <button
-                key={t.label}
-                type="button"
-                disabled={!canEdit || !canToggle}
-                title={!canEdit ? "" : disabledReason || "クリックで完了・未完了を切り替え"}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (!canEdit || !canToggle) return;
-                  if (t.doneKey) {
-                    const nextDone = !t.done;
-                    const patch = { [t.doneKey]: nextDone };
-                    if (nextDone) {
-                      const stillNeeded = editRolesForReel(reel).some(f => {
-                        const dk = DONE_KEY_FOR_ROLE[f.key];
-                        return dk === t.doneKey ? false : !reel[dk];
-                      });
-                      if (!stillNeeded) patch.completedStages = Math.max(reel.completedStages, 3);
+              <React.Fragment key={t.label}>
+                <button
+                  type="button"
+                  disabled={t.readOnly || !canEdit || !canToggle}
+                  title={t.readOnly ? disabledReason : !canEdit ? "" : disabledReason || "クリックで完了・未完了を切り替え"}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (t.readOnly || !canEdit || !canToggle) return;
+                    if (t.doneKey) {
+                      const nextDone = !t.done;
+                      const patch = { [t.doneKey]: nextDone };
+                      if (nextDone) {
+                        const stillNeeded = editRolesForReel(reel).some(f => {
+                          const dk = DONE_KEY_FOR_ROLE[f.key];
+                          return dk === t.doneKey ? false : !reel[dk];
+                        });
+                        if (!stillNeeded) patch.completedStages = Math.max(reel.completedStages, 3);
+                      }
+                      update(patch);
+                    } else {
+                      submitCheck();
                     }
-                    update(patch);
-                  } else {
-                    submitCheck();
-                  }
-                }}
-                className="text-[11px] font-semibold px-2 py-1 rounded-full flex items-center gap-1"
-                style={{ ...toneStyle, cursor: canEdit && canToggle ? "pointer" : "default", opacity: !canEdit || (!t.done && !canToggle) ? 0.5 : 1 }}
-              >
-                {t.done ? <CircleCheck size={12} /> : <Circle size={12} />} {t.label}：{person ? person.name : "未割当"}
-              </button>
+                  }}
+                  className="text-[11px] font-semibold px-2 py-1 rounded-full flex items-center gap-1"
+                  style={{ ...toneStyle, cursor: !t.readOnly && canEdit && canToggle ? "pointer" : "default", opacity: t.readOnly ? 1 : !canEdit || (!t.done && !canToggle) ? 0.5 : 1 }}
+                >
+                  {t.done ? <CircleCheck size={12} /> : <Circle size={12} />} {t.label}{person ? `：${person.name}` : t.readOnly ? "" : "：未割当"}
+                </button>
+                {i < arr.length - 1 && <span style={{ color: "#C4C2B8", fontSize: 11 }}>→</span>}
+              </React.Fragment>
             );
           })}
         </div>
@@ -1231,6 +1235,17 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                 </select>
                 <span className="text-xs font-semibold shrink-0" style={{ color: reel.checkSubmitted ? "#0E90B8" : "#5F5E5A" }}>{reel.checkSubmitted ? "✓ 提出完了" : "未提出（下の④修正チェック欄で確認）"}</span>
               </div>
+              {[
+                { label: "⑤キャプション作成", done: !!(reel.caption && reel.caption.trim()) },
+                { label: "⑥投稿", done: reel.completedStages >= 5 },
+              ].map(t => (
+                <div key={t.label} className="rounded-lg p-2 flex items-center gap-2" style={{ background: "#fff", border: t.done ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
+                  <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>{t.label}</span>
+                  <span className="flex items-center gap-1 text-xs font-semibold" style={{ color: t.done ? "#0E90B8" : "#A9A79C" }}>
+                    {t.done ? <CircleCheck size={16} color="#0E90B8" /> : <Circle size={16} color="#A9A79C" />} {t.done ? "完了（自動反映）" : "未完了（自動反映）"}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -1991,16 +2006,6 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
     { label: "制作中", value: inProgress, icon: Clock, tone: "amber" },
   ];
 
-  // クライアントの投稿状況（全クライアント）
-  const clientPostStatus = clients.map(c => {
-    const monthly = parseInt(c.monthlyCount) || 0;
-    const postedThisMonth = reels.filter(r => r.clientId === c.id && r.yearMonth === ym && r.completedStages >= 5).length;
-    const onTrack = monthly === 0 || postedThisMonth >= monthly;
-    const clientReels = reels.filter(r => r.clientId === c.id && r.yearMonth === ym && r.completedStages < 5);
-    const best = clientReels.sort((a, b) => b.completedStages - a.completedStages)[0];
-    return { client: c, monthly, postedThisMonth, onTrack, reel: best || null };
-  }).sort((a, b) => (a.onTrack === b.onTrack ? 0 : a.onTrack ? 1 : -1));
-
   // 編集指示が記入され、カット・テロップ・効果音のいずれかが未割当の動画
   // 編集指示一覧：①カットがまだ割り当てられていない動画（最初の入り口）
   const pickupList = reels.filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions && !r.cutEditorId)
@@ -2353,45 +2358,6 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
       )}
 
       <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
-        <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><Calendar size={16} color="#D6248A" /> クライアントの投稿状況</p>
-        {clientPostStatus.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>クライアントがまだ登録されていません。</p>}
-        <div className="space-y-2">
-          {clientPostStatus.map(({ client, monthly, postedThisMonth, onTrack, reel }) => (
-            <div key={client.id} className="rounded-xl p-3 flex items-center justify-between gap-3 flex-wrap" style={{ background: onTrack ? "#FAF8F3" : "#FCEBEB", border: onTrack ? "1px solid transparent" : "1px solid #F0A5A5" }}>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="font-semibold text-sm">{client.companyName}</p>
-                  <Badge tone={onTrack ? "teal" : "red"}>今月 {postedThisMonth}/{monthly} 本投稿済み</Badge>
-                </div>
-                {reel && (
-                  <div className="mt-1">
-                    {reel.completedStages >= 4 ? (
-                      <span className="text-xs" style={{ color: "#0E90B8" }}>完成済み・投稿待ち：{reel.theme || "（テーマ未設定）"}</span>
-                    ) : (
-                      <span className="text-xs" style={{ color: "#854F0B" }}>制作中：{reel.theme || "（テーマ未設定）"} ・ 次工程 {STAGES[reel.completedStages]?.label}</span>
-                    )}
-                  </div>
-                )}
-                {!reel && !onTrack && <span className="text-xs" style={{ color: "#A32D2D" }}>この月の動画がまだ登録されていません</span>}
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {reel ? (
-                  <>
-                    {reel.completedStages >= 4 && (
-                      <button onClick={() => setReels(prev => prev.map(r => r.id === reel.id ? { ...r, completedStages: 5, postedDate: r.postedDate || new Date().toISOString().slice(0, 10) } : r))} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#0E90B8" }}>投稿完了にする</button>
-                    )}
-                    <button onClick={() => onGoReels(client.id)} className="text-xs font-semibold px-3 py-1.5 rounded-lg border" style={{ borderColor: "#DEDACD" }}>詳細を開く</button>
-                  </>
-                ) : (
-                  <button onClick={() => onGoReels(client.id)} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#D6248A" }}>動画を登録する</button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
         <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><Megaphone size={16} color="#D6248A" /> 掲示板（情報共有）</p>
         <div className="flex items-center gap-2 mb-2 flex-wrap">
           <div className="flex-1 min-w-[160px]">
@@ -2674,6 +2640,10 @@ function TasksPage({ clients, reels, users, onGoReels, onGoClient }) {
   const unpostedList = reels.filter(r => r.completedStages < 5)
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
 
+  // キャプション未作成の一覧（④修正チェックまで完了しているのに、まだキャプションが作られていない動画）
+  const captionMissingList = reels.filter(r => r.completedStages >= 4 && r.completedStages < 5 && !(r.caption && r.caption.trim()))
+    .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
+
   // キャプション生成が完了している一覧（コピーしてすぐ使える）
   const captionReadyList = reels.filter(r => r.caption && r.caption.trim() && r.completedStages < 5)
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
@@ -2687,6 +2657,11 @@ function TasksPage({ clients, reels, users, onGoReels, onGoClient }) {
       // クリップボードが使えない環境向けのフォールバックは省略
     }
   };
+
+  // 投稿完了一覧（直近1ヶ月のみ）
+  const oneMonthAgoStr = (() => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); })();
+  const recentPostedList = reels.filter(r => r.completedStages >= 5 && r.postedDate && r.postedDate >= oneMonthAgoStr)
+    .sort((a, b) => (b.postedDate || "").localeCompare(a.postedDate || ""));
 
   // 初期設定タスク（インスタプロフィール・ハイライト・公式LINE・LP）が未完了のクライアント
   const setupClients = clients.map(c => {
@@ -2838,6 +2813,32 @@ function TasksPage({ clients, reels, users, onGoReels, onGoClient }) {
                   {copiedId === r.id ? <CircleCheck size={12} /> : <Copy size={12} />} {copiedId === r.id ? "コピーしました" : "キャプションをコピー"}
                 </button>
               </div>
+            );
+          })}
+        </TaskCard>
+
+        <TaskCard title="⑤キャプション未作成一覧" icon={Sparkles} tone="#F6934B" count={captionMissingList.length}>
+          {captionMissingList.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>キャプション未作成の動画はありません。</p>}
+          {captionMissingList.map(r => {
+            const c = clients.find(x => x.id === r.clientId);
+            return (
+              <button key={r.id} onClick={() => onGoReels(r.clientId)} className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-black/5" style={{ background: "#FAF8F3" }}>
+                <p className="font-semibold">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
+                <p style={{ color: "#8B897F" }}>{r.deadline ? `投稿予定 ${r.deadline}` : "投稿予定日未設定"}</p>
+              </button>
+            );
+          })}
+        </TaskCard>
+
+        <TaskCard title="⑥投稿完了一覧（直近1ヶ月）" icon={CircleCheck} tone="#0E90B8" count={recentPostedList.length}>
+          {recentPostedList.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>直近1ヶ月で投稿完了した動画はありません。</p>}
+          {recentPostedList.map(r => {
+            const c = clients.find(x => x.id === r.clientId);
+            return (
+              <button key={r.id} onClick={() => onGoReels(r.clientId)} className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-black/5" style={{ background: "#FAF8F3" }}>
+                <p className="font-semibold">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
+                <p style={{ color: "#8B897F" }}>投稿日 {r.postedDate}</p>
+              </button>
             );
           })}
         </TaskCard>
