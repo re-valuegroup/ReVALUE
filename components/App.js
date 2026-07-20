@@ -121,7 +121,7 @@ const emptyClient = () => ({
   tiktok: { url: "", id: "", password: "" },
   youtube: { url: "", id: "" },
   hashtag1: "", hashtag2: "", hashtag3: "",
-  business: "", appeal: "", plan: "", monthlyCount: 4,
+  business: "", appeal: "", plan: "", monthlyCount: 4, shortTermCount: "",
   contractEndDate: "", postDays: [],
   setupTasks: { profile: "pending", highlight: "pending", line: "pending", lp: "pending" },
   notes: "", createdAt: new Date().toISOString(),
@@ -441,6 +441,7 @@ function ClientForm({ client, finance, isAdmin, onSave, onCancel }) {
         <Field label="事業内容"><TextArea rows={2} value={c.business} onChange={e => set("business", e.target.value)} placeholder="美容室経営 / ヘアサロン" /></Field>
         <Field label="アピールポイント"><TextArea rows={2} value={c.appeal} onChange={e => set("appeal", e.target.value)} placeholder="低価格、地域No.1の技術力など" /></Field>
         <Field label="月の動画制作本数"><TextInput type="number" value={c.monthlyCount} onChange={e => set("monthlyCount", e.target.value)} /></Field>
+        <Field label="制作本数（短期契約用・任意）"><TextInput type="number" value={c.shortTermCount} onChange={e => set("shortTermCount", e.target.value)} placeholder="例：単発契約で合計5本など" /></Field>
         <Field label="投稿曜日">
           <div className="flex gap-1">
             {WEEKDAYS.map((w, i) => {
@@ -656,7 +657,7 @@ function ClientDetail({ client, clients, setClients, finance, setFinance, reels,
           </div>
           <div>
             <p className="text-xs font-semibold mb-1" style={{ color: "#8B897F" }}>プラン / 月間本数</p>
-            <p className="text-sm">{client.plan || "―"} ・ 月{client.monthlyCount || 0}本</p>
+            <p className="text-sm">{client.plan || "―"} ・ 月{client.monthlyCount || 0}本{client.shortTermCount ? ` ・ 短期契約 計${client.shortTermCount}本` : ""}</p>
           </div>
           <div>
             <p className="text-xs font-semibold mb-1" style={{ color: "#8B897F" }}>契約終了予定日</p>
@@ -985,18 +986,32 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             {EDIT_TYPE_OPTIONS.find(o => o.key === (reel.editType || "direction"))?.key === "telop" ? "フルテロップ編集" : "演出編集"}
           </span>
           {[
-            { label: "①カット", key: "cutEditorId", assigneeId: reel.cutEditorId, done: reel.cutDone },
-            { label: "②テロップ", key: "telopEditorId", assigneeId: reel.telopEditorId, done: reel.telopDone },
-            { label: "③効果音", key: "sfxEditorId", assigneeId: reel.sfxEditorId, done: reel.sfxDone },
+            { label: "①カット", key: "cutEditorId", doneKey: "cutDone", assigneeId: reel.cutEditorId, done: reel.cutDone },
+            { label: "②テロップ", key: "telopEditorId", doneKey: "telopDone", assigneeId: reel.telopEditorId, done: reel.telopDone },
+            { label: "③効果音", key: "sfxEditorId", doneKey: "sfxDone", assigneeId: reel.sfxEditorId, done: reel.sfxDone },
           ].filter(t => editRolesForReel(reel).some(f => f.key === t.key)).concat([
-            { label: "④修正チェック", assigneeId: reel.editorSecondaryId, done: reel.checkSubmitted },
+            { label: "④修正チェック", doneKey: null, assigneeId: reel.editorSecondaryId, done: reel.checkSubmitted },
           ]).map(t => {
             const person = users.find(u => u.id === t.assigneeId);
             const tone = t.done ? "teal" : person ? "amber" : "gray";
+            const toneStyle = { teal: { background: "#D6F0EA", color: "#0E6B57" }, amber: { background: "#FCEEDB", color: "#854F0B" }, gray: { background: "#F0EEE7", color: "#8B897F" } }[tone];
             return (
-              <Badge key={t.label} tone={tone}>
+              <button
+                key={t.label}
+                type="button"
+                disabled={!canEdit}
+                title={canEdit ? "クリックで完了・未完了を切り替え" : ""}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!canEdit) return;
+                  if (t.doneKey) update({ [t.doneKey]: !t.done });
+                  else submitCheck();
+                }}
+                className="text-[11px] font-semibold px-2 py-1 rounded-full flex items-center gap-1"
+                style={{ ...toneStyle, cursor: canEdit ? "pointer" : "default" }}
+              >
                 {t.done ? "✓ " : ""}{t.label}：{person ? person.name : "未割当"}
-              </Badge>
+              </button>
             );
           })}
         </div>
