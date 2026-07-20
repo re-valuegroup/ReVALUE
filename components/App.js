@@ -1235,17 +1235,6 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                 </select>
                 <span className="text-xs font-semibold shrink-0" style={{ color: reel.checkSubmitted ? "#0E90B8" : "#5F5E5A" }}>{reel.checkSubmitted ? "✓ 提出完了" : "未提出（下の④修正チェック欄で確認）"}</span>
               </div>
-              {[
-                { label: "⑤キャプション作成", done: !!reel.captionDone, note: "上の「キャプションの作成を完了する」ボタンで反映" },
-                { label: "⑥投稿", done: reel.completedStages >= 5, note: "投稿日の入力で自動反映", extra: reel.completedStages >= 5 && reel.postedDate ? reel.postedDate : "" },
-              ].map(t => (
-                <div key={t.label} className="rounded-lg p-2 flex items-center gap-2" style={{ background: "#fff", border: t.done ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
-                  <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>{t.label}</span>
-                  <span className="flex items-center gap-1 text-xs font-semibold" style={{ color: t.done ? "#0E90B8" : "#A9A79C" }}>
-                    {t.done ? <CircleCheck size={16} color="#0E90B8" /> : <Circle size={16} color="#A9A79C" />} {t.done ? `完了${t.extra ? `（${t.extra}）` : ""}` : `未完了（${t.note}）`}
-                  </span>
-                </div>
-              ))}
             </div>
           </div>
 
@@ -1296,6 +1285,20 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
               )}
             </div>
             {checkSubmitError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{checkSubmitError}</p>}
+          </div>
+
+          <div className="rounded-xl p-3 my-2 space-y-1.5" style={{ background: "#FAF8F3" }}>
+            {[
+              { label: "⑤キャプション作成", done: !!reel.captionDone, note: "下の「キャプションの作成を完了する」ボタンで反映" },
+              { label: "⑥投稿", done: reel.completedStages >= 5, note: "投稿日の入力で自動反映", extra: reel.completedStages >= 5 && reel.postedDate ? reel.postedDate : "" },
+            ].map(t => (
+              <div key={t.label} className="rounded-lg p-2 flex items-center gap-2" style={{ background: "#fff", border: t.done ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
+                <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>{t.label}</span>
+                <span className="flex items-center gap-1 text-xs font-semibold" style={{ color: t.done ? "#0E90B8" : "#A9A79C" }}>
+                  {t.done ? <CircleCheck size={16} color="#0E90B8" /> : <Circle size={16} color="#A9A79C" />} {t.done ? `完了${t.extra ? `（${t.extra}）` : ""}` : `未完了（${t.note}）`}
+                </span>
+              </div>
+            ))}
           </div>
 
           <div className="rounded-xl p-3 my-2" style={{ background: "#FAF8F3" }}>
@@ -2101,9 +2104,6 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
     setBulkChecker("");
   };
 
-  // 提出済みチェック一覧
-  const submittedChecks = reels.filter(r => r.checkSubmitted && r.completedStages < 5).sort((a, b) => (b.checkSubmittedAt || 0) - (a.checkSubmittedAt || 0));
-
   // 掲示板
   const [boardTheme, setBoardTheme] = useState("");
   const [boardText, setBoardText] = useState("");
@@ -2343,29 +2343,6 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
               {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
             </select>
             <button onClick={applyBulkChecker} disabled={!bulkChecker || selectedForBulk.length === 0} className="text-xs font-semibold px-3 py-2 rounded-lg text-white disabled:opacity-40" style={{ background: "#16171B" }}>選択した{selectedForBulk.length}件に一括指定</button>
-          </div>
-        </div>
-      )}
-
-      {(currentUser.roles || []).includes("admin") && submittedChecks.length > 0 && (
-        <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
-          <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><ClipboardList size={16} color="#0E90B8" /> 修正チェック提出一覧</p>
-          <div className="space-y-2">
-            {submittedChecks.slice(0, 8).map(r => {
-              const c = clients.find(x => x.id === r.clientId);
-              const checker = users.find(u => u.id === r.editorSecondaryId);
-              const checkedCount = CHECKLIST_ITEMS.filter(i => (r.checklist || {})[i.key]).length;
-              return (
-                <button key={r.id} onClick={() => onGoReels(r.clientId)} className="w-full text-left rounded-xl p-3 hover:bg-black/5" style={{ background: "#FAF8F3" }}>
-                  <div className="flex items-center justify-between">
-                    <p className="font-semibold text-sm">{c?.companyName} ・ {r.theme || "（テーマ未設定）"}</p>
-                    <Badge tone={checkedCount === CHECKLIST_ITEMS.length ? "teal" : "amber"}>{checkedCount}/{CHECKLIST_ITEMS.length}項目OK</Badge>
-                  </div>
-                  <p className="text-xs mt-1" style={{ color: "#8B897F" }}>チェック担当: {checker?.name || "不明"} ・ {timeAgo(r.checkSubmittedAt)}</p>
-                  {r.checklist?.memo && <p className="text-xs mt-1" style={{ color: "#5F5E5A" }}>メモ: {r.checklist.memo}</p>}
-                </button>
-              );
-            })}
           </div>
         </div>
       )}
@@ -2823,6 +2800,13 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoClient }) {
                 </button>
                 <button onClick={() => copyCaption(r)} className="text-xs font-semibold px-2.5 py-1 rounded-lg text-white flex items-center gap-1 mt-1.5" style={{ background: copiedId === r.id ? "#0E90B8" : "#16171B" }}>
                   {copiedId === r.id ? <CircleCheck size={12} /> : <Copy size={12} />} {copiedId === r.id ? "コピーしました" : "キャプションをコピー"}
+                </button>
+                <button
+                  onClick={() => updateReelField({ postedDate: r.postedDate || new Date().toISOString().slice(0, 10), completedStages: 5 })}
+                  className="text-xs font-semibold px-2.5 py-1 rounded-lg text-white flex items-center gap-1 mt-1.5 ml-1.5"
+                  style={{ background: "#0E90B8" }}
+                >
+                  <CircleCheck size={12} /> 投稿完了
                 </button>
                 <div className="mt-2 pt-2 space-y-1" style={{ borderTop: "1px dashed #DEDACD" }}>
                   <Field label="投稿日">
