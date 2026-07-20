@@ -2622,30 +2622,41 @@ function TasksPage({ clients, reels, users, onGoReels, onGoClient }) {
   const editors = users.filter(u => (u.roles || []).includes("editor"));
   const [editorFilter, setEditorFilter] = useState("");
 
-  const postClients = clients.map(c => {
-    const monthly = parseInt(c.monthlyCount) || 0;
-    const postedThisMonth = reels.filter(r => r.clientId === c.id && r.yearMonth === ym && r.completedStages >= 5).length;
-    if (postedThisMonth >= monthly) return null;
-    const ready = reels.filter(r => r.clientId === c.id && r.yearMonth === ym && r.completedStages === 4)[0];
-    return { client: c, monthly, postedThisMonth, ready };
-  }).filter(Boolean);
-
-  const editItems = reels.filter(r => r.completedStages === 2 || r.completedStages === 3)
-    .sort((a, b) => a.yearMonth.localeCompare(b.yearMonth));
+  const activeReels = reels.filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions);
 
   const shootItems = reels.filter(r => r.completedStages === 0)
     .sort((a, b) => a.yearMonth.localeCompare(b.yearMonth));
 
-  // 投稿未完了の一覧（投稿完了になっていないすべての動画）
-  const unpostedList = reels.filter(r => r.completedStages < 5)
+  // 初期設定タスク（インスタプロフィール・ハイライト・公式LINE・LP）が未完了のクライアント
+  const setupClients = clients.map(c => {
+    const tasks = getSetupTasks(c);
+    const pending = SETUP_TASK_FIELDS.filter(f => tasks[f.key] === "pending");
+    if (pending.length === 0) return null;
+    return { client: c, pending };
+  }).filter(Boolean);
+
+  // ①カット待ち：カットがまだ完了していない動画
+  const cutWaitList = activeReels.filter(r => !r.cutDone)
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
 
-  // キャプション未作成の一覧（④修正チェックまで完了しているのに、まだキャプションが作られていない動画）
-  const captionMissingList = reels.filter(r => r.completedStages >= 4 && r.completedStages < 5 && !(r.caption && r.caption.trim()))
+  // ②テロップ待ち：カットは完了、テロップがまだ完了していない動画
+  const telopWaitList = activeReels.filter(r => r.cutDone && !r.telopDone)
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
 
-  // キャプション生成が完了している一覧（コピーしてすぐ使える）
-  const captionReadyList = reels.filter(r => r.caption && r.caption.trim() && r.completedStages < 5)
+  // ③効果音待ち：カットは完了、効果音が必要な編集タイプでまだ完了していない動画
+  const sfxWaitList = activeReels.filter(r => r.cutDone && editRolesForReel(r).some(f => f.key === "sfxEditorId") && !r.sfxDone)
+    .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
+
+  // ④修正チェック待ち：必要な①②③がすべて完了し、まだ提出されていない動画
+  const checkWaitList = activeReels.filter(r => editRolesForReel(r).every(f => r[DONE_KEY_FOR_ROLE[f.key]]) && !r.checkSubmitted)
+    .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
+
+  // ⑤キャプション作成待ち：④修正チェックまで完了し、キャプションがまだ作られていない動画
+  const captionWaitList = reels.filter(r => r.completedStages >= 4 && r.completedStages < 5 && !(r.caption && r.caption.trim()))
+    .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
+
+  // ⑥投稿待ち：キャプションは完成しているが、まだ投稿されていない動画（コピーしてすぐ使える）
+  const postWaitList = reels.filter(r => r.caption && r.caption.trim() && r.completedStages < 5)
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
   const [copiedId, setCopiedId] = useState("");
   const copyCaption = async (r) => {
@@ -2663,14 +2674,6 @@ function TasksPage({ clients, reels, users, onGoReels, onGoClient }) {
   const recentPostedList = reels.filter(r => r.completedStages >= 5 && r.postedDate && r.postedDate >= oneMonthAgoStr)
     .sort((a, b) => (b.postedDate || "").localeCompare(a.postedDate || ""));
 
-  // 初期設定タスク（インスタプロフィール・ハイライト・公式LINE・LP）が未完了のクライアント
-  const setupClients = clients.map(c => {
-    const tasks = getSetupTasks(c);
-    const pending = SETUP_TASK_FIELDS.filter(f => tasks[f.key] === "pending");
-    if (pending.length === 0) return null;
-    return { client: c, pending };
-  }).filter(Boolean);
-
   // 選択した編集者が現在進めている案件（カット・テロップ・効果音・修正チェックいずれかで担当している、未完了の動画すべて）
   const editorCases = editorFilter
     ? reels.filter(r => r.completedStages < 5 && (r.cutEditorId === editorFilter || r.telopEditorId === editorFilter || r.sfxEditorId === editorFilter || r.editorSecondaryId === editorFilter))
@@ -2686,6 +2689,21 @@ function TasksPage({ clients, reels, users, onGoReels, onGoClient }) {
       </div>
       <div className="space-y-2">{children}</div>
     </div>
+  );
+
+  const simpleList = (list, extra) => (
+    <>
+      {list.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>対象の動画はありません。</p>}
+      {list.map(r => {
+        const c = clients.find(x => x.id === r.clientId);
+        return (
+          <button key={r.id} onClick={() => onGoReels(r.clientId)} className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-black/5" style={{ background: "#FAF8F3" }}>
+            <p className="font-semibold">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
+            <p style={{ color: "#8B897F" }}>{extra ? extra(r) : (r.deadline ? `投稿予定 ${r.deadline}` : "投稿予定日未設定")}</p>
+          </button>
+        );
+      })}
+    </>
   );
 
   return (
@@ -2731,37 +2749,20 @@ function TasksPage({ clients, reels, users, onGoReels, onGoClient }) {
         </div>
       )}
 
-      <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-3">
-        <TaskCard title="投稿すべきクライアント一覧" icon={Send} tone="#D6248A" count={postClients.length}>
-          {postClients.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>今月の投稿予定はすべて達成しています。</p>}
-          {postClients.map(({ client, monthly, postedThisMonth, ready }) => (
-            <button key={client.id} onClick={() => onGoReels(client.id)} className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-black/5" style={{ background: "#FAF8F3" }}>
+      <div className="grid md:grid-cols-2 gap-3 mb-3">
+        <TaskCard title="初期設定未完了一覧" icon={CircleCheck} tone="#6B3FA0" count={setupClients.length}>
+          {setupClients.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>初期設定タスクはすべて完了しています。</p>}
+          {setupClients.map(({ client, pending }) => (
+            <button key={client.id} onClick={() => onGoClient && onGoClient(client.id)} className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-black/5" style={{ background: "#FAF8F3" }}>
               <p className="font-semibold">{client.companyName}</p>
-              <p style={{ color: "#8B897F" }}>今月 {postedThisMonth}/{monthly} 本投稿済み</p>
-              {ready && <Badge tone="teal">完成済み・投稿待ち</Badge>}
+              <div className="flex flex-wrap gap-1 mt-1">
+                {pending.map(f => <Badge key={f.key} tone="amber">{f.label}</Badge>)}
+              </div>
             </button>
           ))}
         </TaskCard>
 
-        <TaskCard title="動画編集すべき一覧" icon={Scissors} tone="#0E90B8" count={editItems.length}>
-          {editItems.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>編集待ちの動画はありません。</p>}
-          {editItems.map(r => {
-            const c = clients.find(x => x.id === r.clientId);
-            const openRoles = r.completedStages === 2 ? editRolesForReel(r).filter(f => !r[f.key]).map(f => f.label) : [];
-            const checker = users.find(u => u.id === r.editorSecondaryId);
-            return (
-              <button key={r.id} onClick={() => onGoReels(r.clientId)} className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-black/5" style={{ background: "#FAF8F3" }}>
-                <p className="font-semibold">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
-                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                  <Badge tone="amber">{r.completedStages === 2 ? `${openRoles.join("・")}待ち` : "④修正チェック待ち"}</Badge>
-                  <span style={{ color: "#8B897F" }}>{monthLabel(r.yearMonth)}{r.completedStages === 3 && checker ? ` ・ 担当: ${checker.name}` : ""}</span>
-                </div>
-              </button>
-            );
-          })}
-        </TaskCard>
-
-        <TaskCard title="撮影すべき一覧" icon={Camera} tone="#854F0B" count={shootItems.length}>
+        <TaskCard title="撮影待ち" icon={Camera} tone="#854F0B" count={shootItems.length}>
           {shootItems.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>撮影待ちの動画はありません。</p>}
           {shootItems.map(r => {
             const c = clients.find(x => x.id === r.clientId);
@@ -2774,35 +2775,32 @@ function TasksPage({ clients, reels, users, onGoReels, onGoClient }) {
             );
           })}
         </TaskCard>
+      </div>
 
-        <TaskCard title="初期設定 未完了一覧" icon={CircleCheck} tone="#6B3FA0" count={setupClients.length}>
-          {setupClients.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>初期設定タスクはすべて完了しています。</p>}
-          {setupClients.map(({ client, pending }) => (
-            <button key={client.id} onClick={() => onGoClient && onGoClient(client.id)} className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-black/5" style={{ background: "#FAF8F3" }}>
-              <p className="font-semibold">{client.companyName}</p>
-              <div className="flex flex-wrap gap-1 mt-1">
-                {pending.map(f => <Badge key={f.key} tone="amber">{f.label}</Badge>)}
-              </div>
-            </button>
-          ))}
+      <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-3">
+        <TaskCard title="①カット待ち" icon={Scissors} tone="#0E90B8" count={cutWaitList.length}>
+          {simpleList(cutWaitList, r => `担当：${users.find(u => u.id === r.cutEditorId)?.name || "未割当"}`)}
         </TaskCard>
 
-        <TaskCard title="投稿未完了の一覧" icon={Send} tone="#A32D2D" count={unpostedList.length}>
-          {unpostedList.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>投稿未完了の動画はありません。</p>}
-          {unpostedList.map(r => {
-            const c = clients.find(x => x.id === r.clientId);
-            return (
-              <button key={r.id} onClick={() => onGoReels(r.clientId)} className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-black/5" style={{ background: "#FAF8F3" }}>
-                <p className="font-semibold">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
-                <p style={{ color: "#8B897F" }}>{STAGES[r.completedStages]?.label || "撮影完了"}{r.deadline ? ` ・ 投稿予定 ${r.deadline}` : ""}</p>
-              </button>
-            );
-          })}
+        <TaskCard title="②テロップ待ち" icon={MessageCircle} tone="#0E90B8" count={telopWaitList.length}>
+          {simpleList(telopWaitList, r => `担当：${users.find(u => u.id === r.telopEditorId)?.name || "未割当"}`)}
         </TaskCard>
 
-        <TaskCard title="キャプション生成済み一覧" icon={Sparkles} tone="#D6248A" count={captionReadyList.length}>
-          {captionReadyList.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>キャプションが生成された動画はまだありません。</p>}
-          {captionReadyList.map(r => {
+        <TaskCard title="③効果音待ち" icon={Megaphone} tone="#0E90B8" count={sfxWaitList.length}>
+          {simpleList(sfxWaitList, r => `担当：${users.find(u => u.id === r.sfxEditorId)?.name || "未割当"}`)}
+        </TaskCard>
+
+        <TaskCard title="④修正チェック待ち" icon={ClipboardList} tone="#0E90B8" count={checkWaitList.length}>
+          {simpleList(checkWaitList, r => `担当：${users.find(u => u.id === r.editorSecondaryId)?.name || "未割当"}`)}
+        </TaskCard>
+
+        <TaskCard title="⑤キャプション作成待ち" icon={Sparkles} tone="#F6934B" count={captionWaitList.length}>
+          {simpleList(captionWaitList)}
+        </TaskCard>
+
+        <TaskCard title="⑥投稿待ち" icon={Send} tone="#D6248A" count={postWaitList.length}>
+          {postWaitList.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>投稿待ちの動画はありません。</p>}
+          {postWaitList.map(r => {
             const c = clients.find(x => x.id === r.clientId);
             return (
               <div key={r.id} className="rounded-lg p-2.5" style={{ background: "#FAF8F3" }}>
@@ -2817,35 +2815,14 @@ function TasksPage({ clients, reels, users, onGoReels, onGoClient }) {
           })}
         </TaskCard>
 
-        <TaskCard title="⑤キャプション未作成一覧" icon={Sparkles} tone="#F6934B" count={captionMissingList.length}>
-          {captionMissingList.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>キャプション未作成の動画はありません。</p>}
-          {captionMissingList.map(r => {
-            const c = clients.find(x => x.id === r.clientId);
-            return (
-              <button key={r.id} onClick={() => onGoReels(r.clientId)} className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-black/5" style={{ background: "#FAF8F3" }}>
-                <p className="font-semibold">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
-                <p style={{ color: "#8B897F" }}>{r.deadline ? `投稿予定 ${r.deadline}` : "投稿予定日未設定"}</p>
-              </button>
-            );
-          })}
-        </TaskCard>
-
-        <TaskCard title="⑥投稿完了一覧（直近1ヶ月）" icon={CircleCheck} tone="#0E90B8" count={recentPostedList.length}>
-          {recentPostedList.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>直近1ヶ月で投稿完了した動画はありません。</p>}
-          {recentPostedList.map(r => {
-            const c = clients.find(x => x.id === r.clientId);
-            return (
-              <button key={r.id} onClick={() => onGoReels(r.clientId)} className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-black/5" style={{ background: "#FAF8F3" }}>
-                <p className="font-semibold">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
-                <p style={{ color: "#8B897F" }}>投稿日 {r.postedDate}</p>
-              </button>
-            );
-          })}
+        <TaskCard title="投稿完了一覧（直近1ヶ月）" icon={CircleCheck} tone="#0E90B8" count={recentPostedList.length}>
+          {simpleList(recentPostedList, r => `投稿日 ${r.postedDate}`)}
         </TaskCard>
       </div>
     </div>
   );
 }
+
 
 function AnalyticsPage({ clients, reels, users }) {
   const [clientId, setClientId] = useState(clients[0]?.id || "");
