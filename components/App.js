@@ -42,6 +42,18 @@ const editRolesForReel = (reel) => {
   const opt = EDIT_TYPE_OPTIONS.find(o => o.key === reel?.editType) || EDIT_TYPE_OPTIONS[1];
   return EDIT_ROLE_FIELDS.filter(f => opt.roles.includes(f.key));
 };
+const DONE_KEY_FOR_ROLE = { cutEditorId: "cutDone", telopEditorId: "telopDone", sfxEditorId: "sfxDone" };
+// ①②③を順番通りにしか完了チェックできないようにする（かつ担当者が割り当てられていないとチェックできない）
+const canToggleRoleDone = (reel, doneKey) => {
+  const roleKey = Object.keys(DONE_KEY_FOR_ROLE).find(k => DONE_KEY_FOR_ROLE[k] === doneKey);
+  if (!reel[roleKey]) return false; // 担当者未割り当て
+  const orderedDoneKeys = editRolesForReel(reel).map(f => DONE_KEY_FOR_ROLE[f.key]);
+  const idx = orderedDoneKeys.indexOf(doneKey);
+  if (idx <= 0) return true;
+  return orderedDoneKeys.slice(0, idx).every(k => reel[k]);
+};
+// ④修正チェックを提出できるのは、必要な①②③がすべて完了している場合のみ
+const canSubmitCheck = (reel) => editRolesForReel(reel).every(f => reel[DONE_KEY_FOR_ROLE[f.key]]) && !!reel.editorSecondaryId;
 
 const CONTRACT_TYPES = ["正社員", "業務委託", "アルバイト", "その他"];
 const WORK_STATUSES = ["稼働中", "休止中", "退職"];
@@ -958,6 +970,10 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
       setCheckSubmitError("チェック担当者が指定されていません");
       return;
     }
+    if (!editRolesForReel(reel).every(f => reel[DONE_KEY_FOR_ROLE[f.key]])) {
+      setCheckSubmitError("①②③（必要な工程）がすべて完了してから提出してください");
+      return;
+    }
     setCheckSubmitError("");
     update({ checkSubmitted: true, checkSubmittedAt: new Date().toISOString(), completedStages: Math.max(reel.completedStages, 4) });
   };
@@ -995,21 +1011,23 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             const person = users.find(u => u.id === t.assigneeId);
             const tone = t.done ? "teal" : person ? "amber" : "gray";
             const toneStyle = { teal: { background: "#D6F0EA", color: "#0E6B57" }, amber: { background: "#FCEEDB", color: "#854F0B" }, gray: { background: "#F0EEE7", color: "#8B897F" } }[tone];
+            const canToggle = t.doneKey ? (t.done || canToggleRoleDone(reel, t.doneKey)) : (t.done || canSubmitCheck(reel));
+            const disabledReason = !t.assigneeId ? "担当者が割り当てられていません" : !t.done && !canToggle ? "前の工程がまだ完了していません" : "";
             return (
               <button
                 key={t.label}
                 type="button"
-                disabled={!canEdit}
-                title={canEdit ? "クリックで完了・未完了を切り替え" : ""}
+                disabled={!canEdit || !canToggle}
+                title={!canEdit ? "" : disabledReason || "クリックで完了・未完了を切り替え"}
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (!canEdit) return;
+                  if (!canEdit || !canToggle) return;
                   if (t.doneKey) {
                     const nextDone = !t.done;
                     const patch = { [t.doneKey]: nextDone };
                     if (nextDone) {
                       const stillNeeded = editRolesForReel(reel).some(f => {
-                        const dk = f.key === "cutEditorId" ? "cutDone" : f.key === "telopEditorId" ? "telopDone" : "sfxDone";
+                        const dk = DONE_KEY_FOR_ROLE[f.key];
                         return dk === t.doneKey ? false : !reel[dk];
                       });
                       if (!stillNeeded) patch.completedStages = Math.max(reel.completedStages, 3);
@@ -1020,7 +1038,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   }
                 }}
                 className="text-[11px] font-semibold px-2 py-1 rounded-full flex items-center gap-1"
-                style={{ ...toneStyle, cursor: canEdit ? "pointer" : "default" }}
+                style={{ ...toneStyle, cursor: canEdit && canToggle ? "pointer" : "default", opacity: !canEdit || (!t.done && !canToggle) ? 0.5 : 1 }}
               >
                 {t.done ? <CircleCheck size={12} /> : <Circle size={12} />} {t.label}：{person ? person.name : "未割当"}
               </button>
@@ -1172,6 +1190,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                 { key: "sfxEditorId", doneKey: "sfxDone", label: "③効果音担当" },
               ].filter(f => editRolesForReel(draft).some(r => r.key === f.key)).map(f => {
                 const done = !!reel[f.doneKey];
+                const canToggle = done || canToggleRoleDone(reel, f.doneKey);
                 return (
                   <div key={f.key} className="rounded-lg p-2 flex items-center gap-2 flex-wrap" style={{ background: "#fff", border: done ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
                     <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>{f.label}</span>
@@ -1181,14 +1200,15 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                     </select>
                     <button
                       type="button"
-                      disabled={!canEdit}
+                      disabled={!canEdit || !canToggle}
+                      title={!reel[f.key] ? "担当者を割り当ててください" : !done && !canToggle ? "前の工程がまだ完了していません" : ""}
                       onClick={() => {
-                        if (!canEdit) return;
+                        if (!canEdit || !canToggle) return;
                         const nextDone = !reel[f.doneKey];
                         const patch = { [f.doneKey]: nextDone };
                         if (nextDone) {
                           const stillNeeded = editRolesForReel(reel).some(rf => {
-                            const dk = rf.key === "cutEditorId" ? "cutDone" : rf.key === "telopEditorId" ? "telopDone" : "sfxDone";
+                            const dk = DONE_KEY_FOR_ROLE[rf.key];
                             return dk === f.doneKey ? false : !reel[dk];
                           });
                           if (!stillNeeded) patch.completedStages = Math.max(reel.completedStages, 3);
@@ -1196,9 +1216,9 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                         update(patch);
                       }}
                       className="flex items-center gap-1 text-xs shrink-0 font-semibold"
-                      style={{ color: done ? "#0E90B8" : "#5F5E5A" }}
+                      style={{ color: done ? "#0E90B8" : canToggle ? "#5F5E5A" : "#C4C2B8" }}
                     >
-                      {done ? <CircleCheck size={16} color="#0E90B8" /> : <Circle size={16} color="#A9A79C" />} {done ? "完了" : "未完了（クリックで完了）"}
+                      {done ? <CircleCheck size={16} color="#0E90B8" /> : <Circle size={16} color="#A9A79C" />} {done ? "完了" : !reel[f.key] ? "担当者未割当" : canToggle ? "未完了（クリックで完了）" : "前の工程待ち"}
                     </button>
                   </div>
                 );
@@ -1255,7 +1275,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             <div className="flex items-center justify-between flex-wrap gap-2">
               <span className="text-[11px]" style={{ color: "#8B897F" }}>チェック済み {checkedCount}/{CHECKLIST_ITEMS.length}</span>
               {canEdit && (
-                <button onClick={submitCheck} title={reel.checkSubmitted ? "もう一度押すとチェック中に戻せます" : ""} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5" style={{ background: reel.checkSubmitted ? "#0E90B8" : "#16171B" }}>
+                <button onClick={submitCheck} disabled={!reel.checkSubmitted && !canSubmitCheck(reel)} title={reel.checkSubmitted ? "もう一度押すとチェック中に戻せます" : !canSubmitCheck(reel) ? "①②③（必要な工程）がすべて完了してから提出できます" : ""} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 disabled:opacity-40" style={{ background: reel.checkSubmitted ? "#0E90B8" : "#16171B" }}>
                   {reel.checkSubmitted && <CircleCheck size={13} />} {reel.checkSubmitted ? "提出完了" : "チェック結果を提出"}
                 </button>
               )}
@@ -2285,10 +2305,13 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
             {checkTodoList.map(r => {
               const c = clients.find(x => x.id === r.clientId);
               const person = users.find(u => u.id === r.editorSecondaryId);
+              const roleNames = EDIT_ROLE_FIELDS.filter(f => editRolesForReel(r).some(rf => rf.key === f.key))
+                .map(f => `${f.label}：${users.find(u => u.id === r[f.key])?.name || "未割当"}`);
               return (
                 <button key={r.id} onClick={() => onGoReels(r.clientId)} className="text-left text-xs p-2.5 rounded-xl hover:bg-black/5" style={{ background: "#FAF8F3", minWidth: 200 }}>
                   <p className="font-semibold truncate">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
-                  <p style={{ color: "#8B897F" }}>{person ? `担当：${person.name}` : "担当未割当"}{r.deadline ? ` ・ 投稿予定 ${r.deadline}` : ""}</p>
+                  <p style={{ color: "#8B897F" }}>{roleNames.join(" ・ ")}</p>
+                  <p style={{ color: "#8B897F" }}>④修正チェック担当：{person ? person.name : "担当未割当"}{r.deadline ? ` ・ 投稿予定 ${r.deadline}` : ""}</p>
                 </button>
               );
             })}
@@ -2302,11 +2325,11 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
           <div className="space-y-1.5 mb-3">
             {needsChecker.map(r => {
               const c = clients.find(x => x.id === r.clientId);
-              const names = EDIT_ROLE_FIELDS.map(f => users.find(u => u.id === r[f.key])?.name).filter(Boolean).join("・");
+              const names = editRolesForReel(r).map(f => `${f.label}：${users.find(u => u.id === r[f.key])?.name || "未割当"}`).join(" ・ ");
               return (
                 <label key={r.id} className="flex items-center gap-2 text-sm px-2 py-1.5 rounded-lg hover:bg-black/5 cursor-pointer">
                   <input type="checkbox" checked={selectedForBulk.includes(r.id)} onChange={() => toggleBulk(r.id)} />
-                  <span>{c?.companyName} ・ {r.theme || "（テーマ未設定）"} <span style={{ color: "#8B897F" }}>（編集: {names}）</span></span>
+                  <span>{c?.companyName} ・ {r.theme || "（テーマ未設定）"} <span style={{ color: "#8B897F" }}>（{names}）</span></span>
                 </label>
               );
             })}
