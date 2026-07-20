@@ -1276,7 +1276,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
               <span className="text-[11px]" style={{ color: "#8B897F" }}>チェック済み {checkedCount}/{CHECKLIST_ITEMS.length}</span>
               {canEdit && (
                 <button onClick={submitCheck} disabled={!reel.checkSubmitted && !canSubmitCheck(reel)} title={reel.checkSubmitted ? "もう一度押すとチェック中に戻せます" : !canSubmitCheck(reel) ? "①②③（必要な工程）がすべて完了してから提出できます" : ""} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 disabled:opacity-40" style={{ background: reel.checkSubmitted ? "#0E90B8" : "#16171B" }}>
-                  {reel.checkSubmitted && <CircleCheck size={13} />} {reel.checkSubmitted ? "提出完了" : "チェック結果を提出"}
+                  {reel.checkSubmitted && <CircleCheck size={13} />} {reel.checkSubmitted ? "修正チェック完了" : "修正チェック完了にする"}
                 </button>
               )}
             </div>
@@ -2027,9 +2027,18 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
     if (r.cutEditorId && !r.cutDone) {
       inProgressList.push({ reel: r, task: "①カット編集中", assigneeId: r.cutEditorId });
     } else if (r.cutDone) {
-      if (r.telopEditorId && !r.telopDone) inProgressList.push({ reel: r, task: "②テロップ編集中", assigneeId: r.telopEditorId });
-      if (editRolesForReel(r).some(f => f.key === "sfxEditorId") && r.sfxEditorId && !r.sfxDone) {
-        inProgressList.push({ reel: r, task: "③効果音編集中", assigneeId: r.sfxEditorId });
+      const telopPending = r.telopEditorId && !r.telopDone;
+      const sfxRequired = editRolesForReel(r).some(f => f.key === "sfxEditorId");
+      const sfxPending = sfxRequired && r.sfxEditorId && !r.sfxDone;
+      if (telopPending && sfxPending && r.telopEditorId === r.sfxEditorId) {
+        // ②テロップと③効果音を同じ人が兼任している場合はまとめて表示
+        inProgressList.push({ reel: r, task: "②③テロップ・効果音編集中", assigneeId: r.telopEditorId });
+      } else {
+        if (telopPending) inProgressList.push({ reel: r, task: "②テロップ編集中", assigneeId: r.telopEditorId });
+        if (sfxPending) inProgressList.push({ reel: r, task: "③効果音編集中", assigneeId: r.sfxEditorId });
+      }
+      if (editRolesForReel(r).every(f => r[DONE_KEY_FOR_ROLE[f.key]]) && r.editorSecondaryId && !r.checkSubmitted) {
+        inProgressList.push({ reel: r, task: "④修正チェック中", assigneeId: r.editorSecondaryId });
       }
     }
   });
@@ -2064,8 +2073,6 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
   // 一括でチェック担当者を指定（カット・テロップ・効果音がすべて完了した動画）
   const needsChecker = reels.filter(r => editRolesForReel(r).every(f => r[f.key]) && !r.editorSecondaryId && r.completedStages < 5);
 
-  const checkTodoList = reels.filter(r => r.completedStages < 5 && editRolesForReel(r).every(f => r[f.key]) && !r.checkSubmitted)
-    .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
   const [selectedForBulk, setSelectedForBulk] = useState([]);
   const [bulkChecker, setBulkChecker] = useState("");
   const toggleBulk = (id) => setSelectedForBulk(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -2291,28 +2298,6 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                     </button>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {((currentUser.roles || []).includes("editor") || (currentUser.roles || []).includes("admin")) && (
-        <div className="rounded-2xl p-4 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
-          <p className="font-bold mb-2 text-sm flex items-center gap-1.5"><ClipboardList size={14} color="#0E90B8" /> 修正チェックをすべき一覧（{checkTodoList.length}）</p>
-          {checkTodoList.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>対象の動画はありません。</p>}
-          <div className="flex flex-wrap gap-2">
-            {checkTodoList.map(r => {
-              const c = clients.find(x => x.id === r.clientId);
-              const person = users.find(u => u.id === r.editorSecondaryId);
-              const roleNames = EDIT_ROLE_FIELDS.filter(f => editRolesForReel(r).some(rf => rf.key === f.key))
-                .map(f => `${f.label}：${users.find(u => u.id === r[f.key])?.name || "未割当"}`);
-              return (
-                <button key={r.id} onClick={() => onGoReels(r.clientId)} className="text-left text-xs p-2.5 rounded-xl hover:bg-black/5" style={{ background: "#FAF8F3", minWidth: 200 }}>
-                  <p className="font-semibold truncate">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
-                  <p style={{ color: "#8B897F" }}>{roleNames.join(" ・ ")}</p>
-                  <p style={{ color: "#8B897F" }}>④修正チェック担当：{person ? person.name : "担当未割当"}{r.deadline ? ` ・ 投稿予定 ${r.deadline}` : ""}</p>
-                </button>
               );
             })}
           </div>
@@ -2685,6 +2670,24 @@ function TasksPage({ clients, reels, users, onGoReels, onGoClient }) {
   const shootItems = reels.filter(r => r.completedStages === 0)
     .sort((a, b) => a.yearMonth.localeCompare(b.yearMonth));
 
+  // 投稿未完了の一覧（投稿完了になっていないすべての動画）
+  const unpostedList = reels.filter(r => r.completedStages < 5)
+    .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
+
+  // キャプション生成が完了している一覧（コピーしてすぐ使える）
+  const captionReadyList = reels.filter(r => r.caption && r.caption.trim() && r.completedStages < 5)
+    .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
+  const [copiedId, setCopiedId] = useState("");
+  const copyCaption = async (r) => {
+    try {
+      await navigator.clipboard.writeText(r.caption);
+      setCopiedId(r.id);
+      setTimeout(() => setCopiedId(""), 2000);
+    } catch (e) {
+      // クリップボードが使えない環境向けのフォールバックは省略
+    }
+  };
+
   // 初期設定タスク（インスタプロフィール・ハイライト・公式LINE・LP）が未完了のクライアント
   const setupClients = clients.map(c => {
     const tasks = getSetupTasks(c);
@@ -2807,6 +2810,36 @@ function TasksPage({ clients, reels, users, onGoReels, onGoClient }) {
               </div>
             </button>
           ))}
+        </TaskCard>
+
+        <TaskCard title="投稿未完了の一覧" icon={Send} tone="#A32D2D" count={unpostedList.length}>
+          {unpostedList.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>投稿未完了の動画はありません。</p>}
+          {unpostedList.map(r => {
+            const c = clients.find(x => x.id === r.clientId);
+            return (
+              <button key={r.id} onClick={() => onGoReels(r.clientId)} className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-black/5" style={{ background: "#FAF8F3" }}>
+                <p className="font-semibold">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
+                <p style={{ color: "#8B897F" }}>{STAGES[r.completedStages]?.label || "撮影完了"}{r.deadline ? ` ・ 投稿予定 ${r.deadline}` : ""}</p>
+              </button>
+            );
+          })}
+        </TaskCard>
+
+        <TaskCard title="キャプション生成済み一覧" icon={Sparkles} tone="#D6248A" count={captionReadyList.length}>
+          {captionReadyList.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>キャプションが生成された動画はまだありません。</p>}
+          {captionReadyList.map(r => {
+            const c = clients.find(x => x.id === r.clientId);
+            return (
+              <div key={r.id} className="rounded-lg p-2.5" style={{ background: "#FAF8F3" }}>
+                <button onClick={() => onGoReels(r.clientId)} className="w-full text-left">
+                  <p className="font-semibold text-xs">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
+                </button>
+                <button onClick={() => copyCaption(r)} className="text-xs font-semibold px-2.5 py-1 rounded-lg text-white flex items-center gap-1 mt-1.5" style={{ background: copiedId === r.id ? "#0E90B8" : "#16171B" }}>
+                  {copiedId === r.id ? <CircleCheck size={12} /> : <Copy size={12} />} {copiedId === r.id ? "コピーしました" : "キャプションをコピー"}
+                </button>
+              </div>
+            );
+          })}
         </TaskCard>
       </div>
     </div>
