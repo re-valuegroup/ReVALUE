@@ -1228,12 +1228,10 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                 );
               })}
               <div className="rounded-lg p-2 flex items-center gap-2 flex-wrap" style={{ background: "#fff", border: reel.checkSubmitted ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
-                <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>④修正チェック担当</span>
-                <select value={reel.editorSecondaryId || ""} onChange={e => update({ editorSecondaryId: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
-                  <option value="">未割り当て</option>
-                  {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                </select>
-                <span className="text-xs font-semibold shrink-0" style={{ color: reel.checkSubmitted ? "#0E90B8" : "#5F5E5A" }}>{reel.checkSubmitted ? "✓ 提出完了" : "未提出（下の④修正チェック欄で確認）"}</span>
+                <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>④修正チェック</span>
+                <span className="flex items-center gap-1 text-xs font-semibold" style={{ color: reel.checkSubmitted ? "#0E90B8" : "#A9A79C" }}>
+                  {reel.checkSubmitted ? <CircleCheck size={16} color="#0E90B8" /> : <Circle size={16} color="#A9A79C" />} {reel.checkSubmitted ? "完了" : "未完了（下の④修正チェック欄で担当者の指定・提出ができます）"}
+                </span>
               </div>
             </div>
           </div>
@@ -1368,7 +1366,22 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
 
           <div className="rounded-xl p-3 my-2" style={{ background: "#FAF8F3" }}>
             <p className="text-xs font-bold mb-2">投稿情報</p>
-            <Field label="投稿日"><TextInput type="date" value={draft.postedDate} onChange={e => { const v = e.target.value; set(v ? { postedDate: v, completedStages: Math.max(draft.completedStages, 5) } : { postedDate: v }); }} disabled={!canEdit} /></Field>
+            <Field label="投稿日">
+              <TextInput type="date" value={draft.postedDate} onChange={e => set({ postedDate: e.target.value })} disabled={!canEdit} />
+              {canEdit && (
+                reel.completedStages >= 5 ? (
+                  <span className="text-xs font-semibold flex items-center gap-1 mt-1.5" style={{ color: "#0E90B8" }}><CircleCheck size={13} /> 投稿完了（{reel.postedDate || "日付未設定"}）</span>
+                ) : (
+                  <button
+                    onClick={() => update({ postedDate: draft.postedDate || new Date().toISOString().slice(0, 10), completedStages: 5 })}
+                    className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white mt-1.5"
+                    style={{ background: "#0E90B8" }}
+                  >
+                    投稿完了にする
+                  </button>
+                )
+              )}
+            </Field>
             <div className="grid md:grid-cols-3 gap-x-4">
               {[
                 { key: "instagram", label: "Instagram" },
@@ -2810,10 +2823,7 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoClient }) {
                 </button>
                 <div className="mt-2 pt-2 space-y-1" style={{ borderTop: "1px dashed #DEDACD" }}>
                   <Field label="投稿日">
-                    <TextInput type="date" value={r.postedDate || ""} onChange={e => {
-                      const v = e.target.value;
-                      updateReelField(v ? { postedDate: v, completedStages: Math.max(r.completedStages, 5) } : { postedDate: v });
-                    }} />
+                    <TextInput type="date" value={r.postedDate || ""} onChange={e => updateReelField({ postedDate: e.target.value })} />
                   </Field>
                   <Field label="Instagram投稿URL"><TextInput value={r.instagramUrl || ""} onChange={e => updateReelField({ instagramUrl: e.target.value })} placeholder="https://instagram.com/..." /></Field>
                   <Field label="TikTok投稿URL"><TextInput value={r.tiktokUrl || ""} onChange={e => updateReelField({ tiktokUrl: e.target.value })} placeholder="https://tiktok.com/..." /></Field>
