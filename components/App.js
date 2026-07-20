@@ -34,6 +34,14 @@ const EDIT_ROLE_FIELDS = [
   { key: "telopEditorId", label: "②テロップ" },
   { key: "sfxEditorId", label: "③効果音" },
 ];
+const EDIT_TYPE_OPTIONS = [
+  { key: "telop", label: "フルテロップ編集（カット＋テロップのみ）", roles: ["cutEditorId", "telopEditorId"] },
+  { key: "direction", label: "演出編集（カット＋テロップ＋効果音）", roles: ["cutEditorId", "telopEditorId", "sfxEditorId"] },
+];
+const editRolesForReel = (reel) => {
+  const opt = EDIT_TYPE_OPTIONS.find(o => o.key === reel?.editType) || EDIT_TYPE_OPTIONS[1];
+  return EDIT_ROLE_FIELDS.filter(f => opt.roles.includes(f.key));
+};
 
 const CONTRACT_TYPES = ["正社員", "業務委託", "アルバイト", "その他"];
 const WORK_STATUSES = ["稼働中", "休止中", "退職"];
@@ -143,6 +151,7 @@ const emptyChecklist = () => ({ c1: false, c2: false, c3: false, c4: false, c5: 
 const emptyReel = (clientId, ym) => ({
   id: uid("reel"), clientId, yearMonth: ym,
   assignedStaffId: "",
+  editType: "direction",
   cutEditorId: "", telopEditorId: "", sfxEditorId: "", editorSecondaryId: "",
   cutDone: false, telopDone: false, sfxDone: false,
   editStartDate: "", editEndDate: "", editWorkload: "", deadline: "",
@@ -971,18 +980,22 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
         </div>
         <div className="mt-3"><Pipeline compact completedStages={reel.completedStages} onAdvance={canEdit ? (i) => update({ completedStages: i + 1 }) : null} onRegress={canEdit ? (i) => update({ completedStages: i }) : null} /></div>
 
-        <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+        <div className="rounded-lg mt-2 p-1.5 flex items-center gap-1.5 flex-wrap" style={{ background: "#F4F2EA" }}>
+          <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background: "#EDEBE4", color: "#5F5E5A" }}>
+            {EDIT_TYPE_OPTIONS.find(o => o.key === (reel.editType || "direction"))?.key === "telop" ? "フルテロップ編集" : "演出編集"}
+          </span>
           {[
-            { label: "①カット", assigneeId: reel.cutEditorId, done: reel.cutDone },
-            { label: "②テロップ", assigneeId: reel.telopEditorId, done: reel.telopDone },
-            { label: "③効果音", assigneeId: reel.sfxEditorId, done: reel.sfxDone },
+            { label: "①カット", key: "cutEditorId", assigneeId: reel.cutEditorId, done: reel.cutDone },
+            { label: "②テロップ", key: "telopEditorId", assigneeId: reel.telopEditorId, done: reel.telopDone },
+            { label: "③効果音", key: "sfxEditorId", assigneeId: reel.sfxEditorId, done: reel.sfxDone },
+          ].filter(t => editRolesForReel(reel).some(f => f.key === t.key)).concat([
             { label: "④修正チェック", assigneeId: reel.editorSecondaryId, done: reel.checkSubmitted },
-          ].map(t => {
+          ]).map(t => {
             const person = users.find(u => u.id === t.assigneeId);
             const tone = t.done ? "teal" : person ? "amber" : "gray";
             return (
               <Badge key={t.label} tone={tone}>
-                {t.label}：{person ? person.name : "未割当"}{t.done ? "・完了" : ""}
+                {t.done ? "✓ " : ""}{t.label}：{person ? person.name : "未割当"}
               </Badge>
             );
           })}
@@ -1033,6 +1046,11 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
 
           <div className="grid md:grid-cols-2 gap-x-4">
             <Field label="テーマ"><TextInput value={draft.theme} onChange={e => set({ theme: e.target.value })} disabled={!canEdit} /></Field>
+            <Field label="編集タイプ">
+              <select value={draft.editType || "direction"} onChange={e => set({ editType: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
+                {EDIT_TYPE_OPTIONS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+              </select>
+            </Field>
             <Field label="担当撮影者">
               <select value={draft.assignedStaffId || ""} onChange={e => set({ assignedStaffId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
                 <option value="">未割り当て</option>
@@ -1047,39 +1065,6 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             </Field>
             <Field label="編集指示"><TextArea rows={2} value={draft.editInstructions} onChange={e => set({ editInstructions: e.target.value })} disabled={!canEdit} /></Field>
             <Field label="台本（任意）"><TextArea rows={2} value={draft.script} onChange={e => set({ script: e.target.value })} disabled={!canEdit} /></Field>
-            <Field label="①カット担当">
-              <div className="flex items-center gap-2">
-                <select value={draft.cutEditorId || ""} onChange={e => set({ cutEditorId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
-                  <option value="">未割り当て</option>
-                  {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                </select>
-                <label className="flex items-center gap-1 text-xs shrink-0" style={{ color: "#5F5E5A" }}>
-                  <input type="checkbox" checked={!!reel.cutDone} onChange={() => canEdit && update({ cutDone: !reel.cutDone })} disabled={!canEdit} /> 完了
-                </label>
-              </div>
-            </Field>
-            <Field label="②テロップ担当">
-              <div className="flex items-center gap-2">
-                <select value={draft.telopEditorId || ""} onChange={e => set({ telopEditorId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
-                  <option value="">未割り当て</option>
-                  {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                </select>
-                <label className="flex items-center gap-1 text-xs shrink-0" style={{ color: "#5F5E5A" }}>
-                  <input type="checkbox" checked={!!reel.telopDone} onChange={() => canEdit && update({ telopDone: !reel.telopDone })} disabled={!canEdit} /> 完了
-                </label>
-              </div>
-            </Field>
-            <Field label="③効果音担当">
-              <div className="flex items-center gap-2">
-                <select value={draft.sfxEditorId || ""} onChange={e => set({ sfxEditorId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
-                  <option value="">未割り当て</option>
-                  {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                </select>
-                <label className="flex items-center gap-1 text-xs shrink-0" style={{ color: "#5F5E5A" }}>
-                  <input type="checkbox" checked={!!reel.sfxDone} onChange={() => canEdit && update({ sfxDone: !reel.sfxDone })} disabled={!canEdit} /> 完了
-                </label>
-              </div>
-            </Field>
             <Field label="編集期限（投稿予定日）"><TextInput type="date" value={draft.deadline || ""} onChange={e => set({ deadline: e.target.value })} disabled={!canEdit} /></Field>
             <Field label="編集予定日（カレンダーと連動）">
               <div className="flex items-center gap-1">
@@ -1094,6 +1079,42 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                 {EDIT_WORKLOAD_OPTIONS.map(v => <option key={v} value={v}>{v}</option>)}
               </select>
             </Field>
+          </div>
+
+          <div className="rounded-xl p-3 my-2" style={{ background: "#FAF8F3" }}>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-bold flex items-center gap-1.5"><Scissors size={13} color="#0E90B8" /> 編集進行管理</p>
+              <Badge tone="gray">{EDIT_TYPE_OPTIONS.find(o => o.key === (draft.editType || "direction"))?.key === "telop" ? "フルテロップ編集" : "演出編集"}</Badge>
+            </div>
+            <div className="space-y-2">
+              {[
+                { key: "cutEditorId", doneKey: "cutDone", label: "①カット担当" },
+                { key: "telopEditorId", doneKey: "telopDone", label: "②テロップ担当" },
+                { key: "sfxEditorId", doneKey: "sfxDone", label: "③効果音担当" },
+              ].filter(f => editRolesForReel(draft).some(r => r.key === f.key)).map(f => {
+                const done = !!reel[f.doneKey];
+                return (
+                  <div key={f.key} className="rounded-lg p-2 flex items-center gap-2 flex-wrap" style={{ background: "#fff", border: done ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
+                    <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>{f.label}</span>
+                    <select value={draft[f.key] || ""} onChange={e => set({ [f.key]: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
+                      <option value="">未割り当て</option>
+                      {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    </select>
+                    <label className="flex items-center gap-1 text-xs shrink-0 font-semibold" style={{ color: done ? "#0E90B8" : "#5F5E5A" }}>
+                      <input type="checkbox" checked={done} onChange={() => canEdit && update({ [f.doneKey]: !reel[f.doneKey] })} disabled={!canEdit} /> {done ? "✓ 完了" : "完了"}
+                    </label>
+                  </div>
+                );
+              })}
+              <div className="rounded-lg p-2 flex items-center gap-2 flex-wrap" style={{ background: "#fff", border: reel.checkSubmitted ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
+                <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>④修正チェック担当</span>
+                <select value={reel.editorSecondaryId || ""} onChange={e => update({ editorSecondaryId: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
+                  <option value="">未割り当て</option>
+                  {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+                <span className="text-xs font-semibold shrink-0" style={{ color: reel.checkSubmitted ? "#0E90B8" : "#5F5E5A" }}>{reel.checkSubmitted ? "✓ 提出完了" : "未提出（下の④修正チェック欄で確認）"}</span>
+              </div>
+            </div>
           </div>
 
           <div className="rounded-xl p-3 my-2" style={{ background: "#FAF8F3" }}>
@@ -1262,7 +1283,7 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
   const [selectedClientId, setSelectedClientId] = useState(initialClientId || "");
   const client = clients.find(c => c.id === selectedClientId);
   const existingReels = allReels.filter(r => r.clientId === selectedClientId);
-  const [form, setForm] = useState({ theme: "", editInstructions: "", script: "", driveUrl: "", assignedStaffId: "", deadline: "" });
+  const [form, setForm] = useState({ theme: "", editInstructions: "", script: "", driveUrl: "", assignedStaffId: "", deadline: "", editType: "direction" });
   const [dupSource, setDupSource] = useState("");
 
   const applyDuplicate = (id) => {
@@ -1270,7 +1291,7 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
     if (!id) return;
     const src = existingReels.find(r => r.id === id);
     if (!src) return;
-    setForm({ theme: src.theme, editInstructions: src.editInstructions, script: src.script, driveUrl: "", assignedStaffId: src.assignedStaffId || "", deadline: "" });
+    setForm({ theme: src.theme, editInstructions: src.editInstructions, script: src.script, driveUrl: "", assignedStaffId: src.assignedStaffId || "", deadline: "", editType: src.editType || "direction" });
   };
 
   const submit = () => {
@@ -1309,6 +1330,11 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
             )}
 
             <Field label="テーマ"><TextInput value={form.theme} onChange={e => setForm(f => ({ ...f, theme: e.target.value }))} placeholder="今月のリールテーマ" /></Field>
+            <Field label="編集タイプ">
+              <select value={form.editType} onChange={e => setForm(f => ({ ...f, editType: e.target.value }))} className={inputCls} style={inputStyle}>
+                {EDIT_TYPE_OPTIONS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+              </select>
+            </Field>
             <Field label="編集指示"><TextArea rows={3} value={form.editInstructions} onChange={e => setForm(f => ({ ...f, editInstructions: e.target.value }))} placeholder="テロップの雰囲気、使う素材、尺の目安など" /></Field>
             <Field label="台本（任意）"><TextArea rows={2} value={form.script} onChange={e => setForm(f => ({ ...f, script: e.target.value }))} /></Field>
             <Field label="Google Drive 保存先URL（任意）"><TextInput value={form.driveUrl} onChange={e => setForm(f => ({ ...f, driveUrl: e.target.value }))} placeholder="https://drive.google.com/..." /></Field>
@@ -1827,7 +1853,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
 
   // 編集指示が記入され、カット・テロップ・効果音のいずれかが未割当の動画
   const pickupList = reels.filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions
-    && (!r.cutEditorId || !r.telopEditorId || !r.sfxEditorId))
+    && editRolesForReel(r).some(f => !r[f.key]))
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
   const [pickupChoice, setPickupChoice] = useState({});
   const getPickup = (reelId) => pickupChoice[reelId] || { editorId: "", roles: [], date: "", startTime: "", endTime: "" };
@@ -1852,7 +1878,16 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
   };
 
   // 一括でチェック担当者を指定（カット・テロップ・効果音がすべて完了した動画）
-  const needsChecker = reels.filter(r => r.cutEditorId && r.telopEditorId && r.sfxEditorId && !r.editorSecondaryId && r.completedStages < 5);
+  const needsChecker = reels.filter(r => editRolesForReel(r).every(f => r[f.key]) && !r.editorSecondaryId && r.completedStages < 5);
+
+  // テロップ編集・効果音編集・修正チェックそれぞれの「やるべき一覧」
+  const telopTodoList = reels.filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions && !r.telopDone)
+    .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
+  const sfxTodoList = reels.filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions && !r.sfxDone
+    && editRolesForReel(r).some(f => f.key === "sfxEditorId"))
+    .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
+  const checkTodoList = reels.filter(r => r.completedStages < 5 && editRolesForReel(r).every(f => r[f.key]) && !r.checkSubmitted)
+    .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
   const [selectedForBulk, setSelectedForBulk] = useState([]);
   const [bulkChecker, setBulkChecker] = useState("");
   const toggleBulk = (id) => setSelectedForBulk(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -1991,7 +2026,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
           <div className="space-y-2">
             {pickupList.map(r => {
               const c = clients.find(x => x.id === r.clientId);
-              const openRoles = EDIT_ROLE_FIELDS.filter(f => !r[f.key]);
+              const openRoles = editRolesForReel(r).filter(f => !r[f.key]);
               const choice = getPickup(r.id);
               return (
                 <div key={r.id} className="rounded-xl p-3" style={{ background: "#FAF8F3" }}>
@@ -2002,7 +2037,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                   </div>
                   <p className="text-xs mt-1" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>
                   <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                    {EDIT_ROLE_FIELDS.map(f => {
+                    {editRolesForReel(r).map(f => {
                       const assigned = !!r[f.key];
                       const doneKey = f.key === "cutEditorId" ? "cutDone" : f.key === "telopEditorId" ? "telopDone" : "sfxDone";
                       const done = !!r[doneKey];
@@ -2036,6 +2071,36 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
               );
             })}
           </div>
+        </div>
+      )}
+
+      {((currentUser.roles || []).includes("editor") || (currentUser.roles || []).includes("admin")) && (
+        <div className="grid md:grid-cols-3 gap-4 mb-6">
+          {[
+            { title: "テロップ編集すべき一覧", list: telopTodoList, roleKey: "telopEditorId", doneKey: "telopDone", icon: MessageCircle },
+            { title: "効果音を編集すべき一覧", list: sfxTodoList, roleKey: "sfxEditorId", doneKey: "sfxDone", icon: Megaphone },
+            { title: "修正チェックをすべき一覧", list: checkTodoList, roleKey: "editorSecondaryId", doneKey: null, icon: ClipboardList },
+          ].map(section => (
+            <div key={section.title} className="rounded-2xl p-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
+              <p className="font-bold mb-2 text-sm flex items-center gap-1.5"><section.icon size={14} color="#0E90B8" /> {section.title}（{section.list.length}）</p>
+              {section.list.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>対象の動画はありません。</p>}
+              <div className="space-y-1.5">
+                {section.list.map(r => {
+                  const c = clients.find(x => x.id === r.clientId);
+                  const person = users.find(u => u.id === r[section.roleKey]);
+                  return (
+                    <button key={r.id} onClick={() => onGoReels(r.clientId)} className="w-full text-left text-xs p-2 rounded-lg hover:bg-black/5" style={{ background: "#FAF8F3" }}>
+                      <p className="font-semibold truncate">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
+                      <p style={{ color: "#8B897F" }}>
+                        {person ? `担当：${person.name}` : "担当未割当"}
+                        {r.deadline ? ` ・ 投稿予定 ${r.deadline}` : ""}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -2489,7 +2554,7 @@ function TasksPage({ clients, reels, users, onGoReels, onGoClient }) {
           {editItems.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>編集待ちの動画はありません。</p>}
           {editItems.map(r => {
             const c = clients.find(x => x.id === r.clientId);
-            const openRoles = r.completedStages === 2 ? EDIT_ROLE_FIELDS.filter(f => !r[f.key]).map(f => f.label) : [];
+            const openRoles = r.completedStages === 2 ? editRolesForReel(r).filter(f => !r[f.key]).map(f => f.label) : [];
             const checker = users.find(u => u.id === r.editorSecondaryId);
             return (
               <button key={r.id} onClick={() => onGoReels(r.clientId)} className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-black/5" style={{ background: "#FAF8F3" }}>
