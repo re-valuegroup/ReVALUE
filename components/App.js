@@ -169,7 +169,7 @@ const emptyReel = (clientId, ym) => ({
   editStartDate: "", editEndDate: "", editWorkload: "", deadline: "",
   checklist: emptyChecklist(), checkSubmitted: false, checkSubmittedAt: null,
   theme: "", script: "", editInstructions: "", driveUrl: "",
-  transcript: "", memo: "", caption: "",
+  transcript: "", memo: "", caption: "", captionDone: false,
   captionHistory: [], trendSearches: [],
   completedStages: 0, stageVersion: 2, postedDate: "",
   instagramUrl: "", instagramViews: "", instagramLikes: "",
@@ -1007,8 +1007,8 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             { label: "③効果音", key: "sfxEditorId", doneKey: "sfxDone", assigneeId: reel.sfxEditorId, done: reel.sfxDone },
           ].filter(t => editRolesForReel(reel).some(f => f.key === t.key)).concat([
             { label: "④修正チェック", doneKey: null, assigneeId: reel.editorSecondaryId, done: reel.checkSubmitted },
-            { label: "⑤キャプション作成", readOnly: true, done: !!(reel.caption && reel.caption.trim()) },
-            { label: "⑥投稿", readOnly: true, done: reel.completedStages >= 5 },
+            { label: "⑤キャプション作成", readOnly: true, done: !!reel.captionDone },
+            { label: "⑥投稿", readOnly: true, done: reel.completedStages >= 5, extra: reel.completedStages >= 5 && reel.postedDate ? reel.postedDate : "" },
           ]).map((t, i, arr) => {
             const person = users.find(u => u.id === t.assigneeId);
             const tone = t.done ? "teal" : person ? "amber" : "gray";
@@ -1042,7 +1042,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   className="text-[11px] font-semibold px-2 py-1 rounded-full flex items-center gap-1"
                   style={{ ...toneStyle, cursor: !t.readOnly && canEdit && canToggle ? "pointer" : "default", opacity: t.readOnly ? 1 : !canEdit || (!t.done && !canToggle) ? 0.5 : 1 }}
                 >
-                  {t.done ? <CircleCheck size={12} /> : <Circle size={12} />} {t.label}{person ? `：${person.name}` : t.readOnly ? "" : "：未割当"}
+                  {t.done ? <CircleCheck size={12} /> : <Circle size={12} />} {t.label}{person ? `：${person.name}` : t.readOnly ? "" : "：未割当"}{t.extra ? `（${t.extra}）` : ""}
                 </button>
                 {i < arr.length - 1 && <span style={{ color: "#C4C2B8", fontSize: 11 }}>→</span>}
               </React.Fragment>
@@ -1236,13 +1236,13 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                 <span className="text-xs font-semibold shrink-0" style={{ color: reel.checkSubmitted ? "#0E90B8" : "#5F5E5A" }}>{reel.checkSubmitted ? "✓ 提出完了" : "未提出（下の④修正チェック欄で確認）"}</span>
               </div>
               {[
-                { label: "⑤キャプション作成", done: !!(reel.caption && reel.caption.trim()) },
-                { label: "⑥投稿", done: reel.completedStages >= 5 },
+                { label: "⑤キャプション作成", done: !!reel.captionDone, note: "上の「キャプションの作成を完了する」ボタンで反映" },
+                { label: "⑥投稿", done: reel.completedStages >= 5, note: "投稿日の入力で自動反映", extra: reel.completedStages >= 5 && reel.postedDate ? reel.postedDate : "" },
               ].map(t => (
                 <div key={t.label} className="rounded-lg p-2 flex items-center gap-2" style={{ background: "#fff", border: t.done ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
                   <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>{t.label}</span>
                   <span className="flex items-center gap-1 text-xs font-semibold" style={{ color: t.done ? "#0E90B8" : "#A9A79C" }}>
-                    {t.done ? <CircleCheck size={16} color="#0E90B8" /> : <Circle size={16} color="#A9A79C" />} {t.done ? "完了（自動反映）" : "未完了（自動反映）"}
+                    {t.done ? <CircleCheck size={16} color="#0E90B8" /> : <Circle size={16} color="#A9A79C" />} {t.done ? `完了${t.extra ? `（${t.extra}）` : ""}` : `未完了（${t.note}）`}
                   </span>
                 </div>
               ))}
@@ -1321,11 +1321,24 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             {genError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{genError}</p>}
             <Field label="キャプション">
               <TextArea rows={4} value={draft.caption} onChange={e => set({ caption: e.target.value })} disabled={!canEdit} />
-              {draft.caption && (
-                <button onClick={copyCaption} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 mt-1.5" style={{ background: copied ? "#0E90B8" : "#16171B" }}>
-                  {copied ? <CircleCheck size={12} /> : <Copy size={12} />} {copied ? "コピーしました" : "キャプションをコピー"}
-                </button>
-              )}
+              <div className="flex items-center gap-2 flex-wrap mt-1.5">
+                {draft.caption && (
+                  <button onClick={copyCaption} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5" style={{ background: copied ? "#0E90B8" : "#16171B" }}>
+                    {copied ? <CircleCheck size={12} /> : <Copy size={12} />} {copied ? "コピーしました" : "キャプションをコピー"}
+                  </button>
+                )}
+                {canEdit && (
+                  reel.captionDone ? (
+                    <button onClick={() => update({ captionDone: false })} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5" style={{ background: "#0E90B8" }}>
+                      <CircleCheck size={12} /> ⑤キャプション作成完了（クリックで編集し直す）
+                    </button>
+                  ) : (
+                    <button onClick={() => update({ captionDone: true })} disabled={!draft.caption?.trim()} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#16171B" }}>
+                      キャプションの作成を完了する
+                    </button>
+                  )
+                )}
+              </div>
             </Field>
             {(draft.captionHistory || []).length > 0 && (
               <button onClick={() => setShowHistory(s => !s)} className="text-xs font-semibold" style={{ color: "#5F5E5A" }}>
@@ -2617,7 +2630,7 @@ function ResearchPage({ clients, reels, setReels }) {
   );
 }
 
-function TasksPage({ clients, reels, users, onGoReels, onGoClient }) {
+function TasksPage({ clients, reels, setReels, users, onGoReels, onGoClient }) {
   const ym = currentYearMonth();
   const editors = users.filter(u => (u.roles || []).includes("editor"));
   const [editorFilter, setEditorFilter] = useState("");
@@ -2652,11 +2665,11 @@ function TasksPage({ clients, reels, users, onGoReels, onGoClient }) {
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
 
   // ⑤キャプション作成待ち：④修正チェックまで完了し、キャプションがまだ作られていない動画
-  const captionWaitList = reels.filter(r => r.completedStages >= 4 && r.completedStages < 5 && !(r.caption && r.caption.trim()))
+  const captionWaitList = reels.filter(r => r.completedStages >= 4 && r.completedStages < 5 && !r.captionDone)
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
 
   // ⑥投稿待ち：キャプションは完成しているが、まだ投稿されていない動画（コピーしてすぐ使える）
-  const postWaitList = reels.filter(r => r.caption && r.caption.trim() && r.completedStages < 5)
+  const postWaitList = reels.filter(r => r.captionDone && r.completedStages < 5)
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
   const [copiedId, setCopiedId] = useState("");
   const copyCaption = async (r) => {
@@ -2802,6 +2815,7 @@ function TasksPage({ clients, reels, users, onGoReels, onGoClient }) {
           {postWaitList.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>投稿待ちの動画はありません。</p>}
           {postWaitList.map(r => {
             const c = clients.find(x => x.id === r.clientId);
+            const updateReelField = (patch) => setReels(prev => prev.map(x => x.id === r.id ? { ...x, ...patch } : x));
             return (
               <div key={r.id} className="rounded-lg p-2.5" style={{ background: "#FAF8F3" }}>
                 <button onClick={() => onGoReels(r.clientId)} className="w-full text-left">
@@ -2810,6 +2824,17 @@ function TasksPage({ clients, reels, users, onGoReels, onGoClient }) {
                 <button onClick={() => copyCaption(r)} className="text-xs font-semibold px-2.5 py-1 rounded-lg text-white flex items-center gap-1 mt-1.5" style={{ background: copiedId === r.id ? "#0E90B8" : "#16171B" }}>
                   {copiedId === r.id ? <CircleCheck size={12} /> : <Copy size={12} />} {copiedId === r.id ? "コピーしました" : "キャプションをコピー"}
                 </button>
+                <div className="mt-2 pt-2 space-y-1" style={{ borderTop: "1px dashed #DEDACD" }}>
+                  <Field label="投稿日">
+                    <TextInput type="date" value={r.postedDate || ""} onChange={e => {
+                      const v = e.target.value;
+                      updateReelField(v ? { postedDate: v, completedStages: Math.max(r.completedStages, 5) } : { postedDate: v });
+                    }} />
+                  </Field>
+                  <Field label="Instagram投稿URL"><TextInput value={r.instagramUrl || ""} onChange={e => updateReelField({ instagramUrl: e.target.value })} placeholder="https://instagram.com/..." /></Field>
+                  <Field label="TikTok投稿URL"><TextInput value={r.tiktokUrl || ""} onChange={e => updateReelField({ tiktokUrl: e.target.value })} placeholder="https://tiktok.com/..." /></Field>
+                  <Field label="YouTube投稿URL"><TextInput value={r.youtubeUrl || ""} onChange={e => updateReelField({ youtubeUrl: e.target.value })} placeholder="https://youtube.com/..." /></Field>
+                </div>
               </div>
             );
           })}
@@ -3561,7 +3586,7 @@ function AppInner() {
       case "clients": return <ClientsPage clients={clients} setClients={setClients} finance={finance} setFinance={setFinance} currentUser={currentUser} onOpenClient={setOpenClientId} />;
       case "reels": return <ReelsPage clients={clients} reels={reels} setReels={setReels} users={users} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} currentUser={currentUser} focusClientId={reelsFocusClient} />;
       case "research": return <ResearchPage clients={clients} reels={reels} setReels={setReels} />;
-      case "tasks": return <TasksPage clients={clients} reels={reels} users={users} onGoReels={goReels} onGoClient={goClientDetail} />;
+      case "tasks": return <TasksPage clients={clients} reels={reels} setReels={setReels} users={users} onGoReels={goReels} onGoClient={goClientDetail} />;
       case "analytics": return <AnalyticsPage clients={clients} reels={reels} users={users} />;
       case "finance": return (currentUser.roles || []).includes("admin") ? <FinancePage clients={clients} finance={finance} setFinance={setFinance} reels={reels} users={users} /> : null;
       case "users": return (currentUser.roles || []).includes("admin") ? <UsersPage users={users} setUsers={setUsers} currentUser={currentUser} /> : null;
