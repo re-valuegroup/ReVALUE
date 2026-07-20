@@ -736,7 +736,7 @@ function timeAgo(ts) {
   return d.toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onChange, onDelete, onDuplicate, canEdit, currentUser, showClient, pastCaptions, number }) {
+function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onChange, onDelete, onDuplicate, canEdit, currentUser, showClient, pastCaptions, pastInstructions, number }) {
   const [expanded, setExpanded] = useState(false);
   const [genLoading, setGenLoading] = useState(false);
   const [genError, setGenError] = useState("");
@@ -979,7 +979,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             <ChevronRight size={16} style={{ transform: expanded ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
           </div>
         </div>
-        <div className="mt-3"><Pipeline compact completedStages={reel.completedStages} onAdvance={canEdit ? (i) => update({ completedStages: i + 1 }) : null} onRegress={canEdit ? (i) => update({ completedStages: i }) : null} /></div>
+        <div className="mt-3"><Pipeline compact completedStages={reel.completedStages} onAdvance={null} onRegress={null} /></div>
 
         <div className="rounded-lg mt-2 p-1.5 flex items-center gap-1.5 flex-wrap" style={{ background: "#F4F2EA" }}>
           <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background: "#EDEBE4", color: "#5F5E5A" }}>
@@ -1004,13 +1004,25 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                 onClick={(e) => {
                   e.stopPropagation();
                   if (!canEdit) return;
-                  if (t.doneKey) update({ [t.doneKey]: !t.done });
-                  else submitCheck();
+                  if (t.doneKey) {
+                    const nextDone = !t.done;
+                    const patch = { [t.doneKey]: nextDone };
+                    if (nextDone) {
+                      const stillNeeded = editRolesForReel(reel).some(f => {
+                        const dk = f.key === "cutEditorId" ? "cutDone" : f.key === "telopEditorId" ? "telopDone" : "sfxDone";
+                        return dk === t.doneKey ? false : !reel[dk];
+                      });
+                      if (!stillNeeded) patch.completedStages = Math.max(reel.completedStages, 3);
+                    }
+                    update(patch);
+                  } else {
+                    submitCheck();
+                  }
                 }}
                 className="text-[11px] font-semibold px-2 py-1 rounded-full flex items-center gap-1"
                 style={{ ...toneStyle, cursor: canEdit ? "pointer" : "default" }}
               >
-                {t.done ? "✓ " : ""}{t.label}：{person ? person.name : "未割当"}
+                {t.done ? <CircleCheck size={12} /> : <Circle size={12} />} {t.label}：{person ? person.name : "未割当"}
               </button>
             );
           })}
@@ -1067,10 +1079,23 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
               </select>
             </Field>
             <Field label="担当撮影者">
-              <select value={draft.assignedStaffId || ""} onChange={e => set({ assignedStaffId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
-                <option value="">未割り当て</option>
-                {shooters.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
+              <div className="flex items-center gap-2">
+                <select value={draft.assignedStaffId || ""} onChange={e => set({ assignedStaffId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
+                  <option value="">未割り当て</option>
+                  {shooters.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => update({ completedStages: reel.completedStages >= 1 ? Math.min(reel.completedStages, 0) : Math.max(reel.completedStages, 1) })}
+                    className="flex items-center gap-1 text-xs shrink-0 font-semibold"
+                    style={{ color: reel.completedStages >= 1 ? "#0E90B8" : "#5F5E5A" }}
+                    title="撮影完了の切り替え"
+                  >
+                    {reel.completedStages >= 1 ? <CircleCheck size={16} color="#0E90B8" /> : <Circle size={16} color="#A9A79C" />} 撮影完了
+                  </button>
+                )}
+              </div>
             </Field>
             <Field label="Google Drive 保存先URL">
               <div className="flex gap-1">
@@ -1078,7 +1103,46 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                 {draft.driveUrl && <a href={draft.driveUrl} target="_blank" rel="noreferrer" className="shrink-0 flex items-center justify-center w-9 rounded-lg border" style={{ borderColor: "#DEDACD" }}><Link2 size={14} /></a>}
               </div>
             </Field>
-            <Field label="編集指示"><TextArea rows={2} value={draft.editInstructions} onChange={e => set({ editInstructions: e.target.value })} disabled={!canEdit} /></Field>
+            <Field label="編集指示">
+              <TextArea rows={2} value={draft.editInstructions} onChange={e => set({ editInstructions: e.target.value })} disabled={!canEdit || reel.completedStages >= 2} />
+              {canEdit && reel.completedStages < 2 && pastInstructions && pastInstructions.length > 0 && (
+                <select
+                  value=""
+                  onChange={e => { if (e.target.value) set({ editInstructions: e.target.value }); }}
+                  className={inputCls}
+                  style={{ ...inputStyle, marginTop: 4, fontSize: 11 }}
+                >
+                  <option value="">過去の編集指示から選んで入力（直近{pastInstructions.length}件）</option>
+                  {pastInstructions.map((text, i) => (
+                    <option key={i} value={text}>{text.length > 40 ? text.slice(0, 40) + "…" : text}</option>
+                  ))}
+                </select>
+              )}
+              {canEdit && (
+                <div className="flex justify-end mt-1">
+                  {reel.completedStages < 2 ? (
+                    <button
+                      onClick={() => update({ completedStages: Math.max(reel.completedStages, 2) })}
+                      disabled={!draft.editInstructions?.trim()}
+                      className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-40"
+                      style={{ background: "#16171B" }}
+                    >
+                      編集指示をする
+                    </button>
+                  ) : reel.completedStages === 2 ? (
+                    <button
+                      onClick={() => update({ completedStages: 1 })}
+                      className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1"
+                      style={{ background: "#0E90B8" }}
+                    >
+                      <CircleCheck size={13} /> 編集指示完了（クリックで編集し直す）
+                    </button>
+                  ) : (
+                    <Badge tone="teal">編集指示完了</Badge>
+                  )}
+                </div>
+              )}
+            </Field>
             <Field label="台本（任意）"><TextArea rows={2} value={draft.script} onChange={e => set({ script: e.target.value })} disabled={!canEdit} /></Field>
             <Field label="編集期限（投稿予定日）"><TextInput type="date" value={draft.deadline || ""} onChange={e => set({ deadline: e.target.value })} disabled={!canEdit} /></Field>
             <Field label="編集予定日（カレンダーと連動）">
@@ -1115,9 +1179,27 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                       <option value="">未割り当て</option>
                       {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                     </select>
-                    <label className="flex items-center gap-1 text-xs shrink-0 font-semibold" style={{ color: done ? "#0E90B8" : "#5F5E5A" }}>
-                      <input type="checkbox" checked={done} onChange={() => canEdit && update({ [f.doneKey]: !reel[f.doneKey] })} disabled={!canEdit} /> {done ? "✓ 完了" : "完了"}
-                    </label>
+                    <button
+                      type="button"
+                      disabled={!canEdit}
+                      onClick={() => {
+                        if (!canEdit) return;
+                        const nextDone = !reel[f.doneKey];
+                        const patch = { [f.doneKey]: nextDone };
+                        if (nextDone) {
+                          const stillNeeded = editRolesForReel(reel).some(rf => {
+                            const dk = rf.key === "cutEditorId" ? "cutDone" : rf.key === "telopEditorId" ? "telopDone" : "sfxDone";
+                            return dk === f.doneKey ? false : !reel[dk];
+                          });
+                          if (!stillNeeded) patch.completedStages = Math.max(reel.completedStages, 3);
+                        }
+                        update(patch);
+                      }}
+                      className="flex items-center gap-1 text-xs shrink-0 font-semibold"
+                      style={{ color: done ? "#0E90B8" : "#5F5E5A" }}
+                    >
+                      {done ? <CircleCheck size={16} color="#0E90B8" /> : <Circle size={16} color="#A9A79C" />} {done ? "完了" : "未完了（クリックで完了）"}
+                    </button>
                   </div>
                 );
               })}
@@ -1235,7 +1317,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
 
           <div className="rounded-xl p-3 my-2" style={{ background: "#FAF8F3" }}>
             <p className="text-xs font-bold mb-2">投稿情報</p>
-            <Field label="投稿日"><TextInput type="date" value={draft.postedDate} onChange={e => set({ postedDate: e.target.value })} disabled={!canEdit} /></Field>
+            <Field label="投稿日"><TextInput type="date" value={draft.postedDate} onChange={e => { const v = e.target.value; set(v ? { postedDate: v, completedStages: Math.max(draft.completedStages, 5) } : { postedDate: v }); }} disabled={!canEdit} /></Field>
             <div className="grid md:grid-cols-3 gap-x-4">
               {[
                 { key: "instagram", label: "Instagram" },
@@ -1300,6 +1382,7 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
   const existingReels = allReels.filter(r => r.clientId === selectedClientId);
   const [form, setForm] = useState({ theme: "", editInstructions: "", script: "", driveUrl: "", assignedStaffId: "", deadline: "", editType: "direction" });
   const [dupSource, setDupSource] = useState("");
+  const [instructionsSubmitted, setInstructionsSubmitted] = useState(false);
 
   const applyDuplicate = (id) => {
     setDupSource(id);
@@ -1307,12 +1390,13 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
     const src = existingReels.find(r => r.id === id);
     if (!src) return;
     setForm({ theme: src.theme, editInstructions: src.editInstructions, script: src.script, driveUrl: "", assignedStaffId: src.assignedStaffId || "", deadline: "", editType: src.editType || "direction" });
+    setInstructionsSubmitted(false);
   };
 
   const submit = () => {
     const base = emptyReel(client.id, ym);
-    // 編集指示を入力したうえで登録するため、撮影・編集指示は完了済みとして扱う
-    onCreate({ ...base, ...form, completedStages: 2 });
+    // 撮影は完了済みとして扱う。編集指示は「編集指示をする」を押していれば完了扱いにする
+    onCreate({ ...base, ...form, completedStages: instructionsSubmitted ? 2 : 1 });
   };
 
   return (
@@ -1350,7 +1434,38 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
                 {EDIT_TYPE_OPTIONS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
               </select>
             </Field>
-            <Field label="編集指示"><TextArea rows={3} value={form.editInstructions} onChange={e => setForm(f => ({ ...f, editInstructions: e.target.value }))} placeholder="テロップの雰囲気、使う素材、尺の目安など" /></Field>
+            <Field label="編集指示">
+              <TextArea rows={3} value={form.editInstructions} onChange={e => setForm(f => ({ ...f, editInstructions: e.target.value }))} placeholder="テロップの雰囲気、使う素材、尺の目安など" disabled={instructionsSubmitted} />
+              {!instructionsSubmitted && existingReels.some(r => r.editInstructions) && (
+                <select
+                  value=""
+                  onChange={e => { if (e.target.value) setForm(f => ({ ...f, editInstructions: e.target.value })); }}
+                  className={inputCls}
+                  style={{ ...inputStyle, marginTop: 4, fontSize: 11 }}
+                >
+                  <option value="">過去の編集指示から選んで入力</option>
+                  {[...new Set(existingReels.filter(r => r.editInstructions).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(r => r.editInstructions))].slice(0, 10).map((text, i) => (
+                    <option key={i} value={text}>{text.length > 40 ? text.slice(0, 40) + "…" : text}</option>
+                  ))}
+                </select>
+              )}
+              <div className="flex justify-end mt-1">
+                {!instructionsSubmitted ? (
+                  <button
+                    onClick={() => setInstructionsSubmitted(true)}
+                    disabled={!form.editInstructions.trim()}
+                    className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-40"
+                    style={{ background: "#16171B" }}
+                  >
+                    編集指示をする
+                  </button>
+                ) : (
+                  <button onClick={() => setInstructionsSubmitted(false)} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1" style={{ background: "#0E90B8" }}>
+                    <CircleCheck size={13} /> 編集指示完了（クリックで編集し直す）
+                  </button>
+                )}
+              </div>
+            </Field>
             <Field label="台本（任意）"><TextArea rows={2} value={form.script} onChange={e => setForm(f => ({ ...f, script: e.target.value }))} /></Field>
             <Field label="Google Drive 保存先URL（任意）"><TextInput value={form.driveUrl} onChange={e => setForm(f => ({ ...f, driveUrl: e.target.value }))} placeholder="https://drive.google.com/..." /></Field>
             <Field label="担当撮影者（任意）">
@@ -1450,7 +1565,7 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
       {clientId && list.length === 0 && <div className="text-center py-16 rounded-2xl border border-dashed" style={{ borderColor: "#DEDACD", color: "#8B897F" }}>該当する動画はまだありません。「動画を追加」から作成できます。</div>}
 
       <div className="space-y-3">
-        {list.map(r => <ReelCard key={r.id} reel={r} client={clients.find(c => c.id === r.clientId)} users={users} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} currentUser={currentUser} onChange={updateReel} onDelete={deleteReel} onDuplicate={duplicateReelInPlace} canEdit={true} showClient={allClientsMode || showAllMonths} pastCaptions={reels.filter(x => x.clientId === r.clientId && x.id !== r.id && x.caption).map(x => x.caption)} number={numberMap.get(r.id)} />)}
+        {list.map(r => <ReelCard key={r.id} reel={r} client={clients.find(c => c.id === r.clientId)} users={users} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} currentUser={currentUser} onChange={updateReel} onDelete={deleteReel} onDuplicate={duplicateReelInPlace} canEdit={true} showClient={allClientsMode || showAllMonths} pastCaptions={reels.filter(x => x.clientId === r.clientId && x.id !== r.id && x.caption).map(x => x.caption)} pastInstructions={[...new Set(reels.filter(x => x.clientId === r.clientId && x.id !== r.id && x.editInstructions).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(x => x.editInstructions))].slice(0, 10)} number={numberMap.get(r.id)} />)}
       </div>
 
       {showNew && (
