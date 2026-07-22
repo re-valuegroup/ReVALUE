@@ -1206,7 +1206,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                       <option value="">未割り当て</option>
                       {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                     </select>
-                    <select value={draft[wlKey] || ""} onChange={e => set({ [wlKey]: e.target.value })} disabled={!isAdmin} title="工数（統括管理者のみ設定可）" className={inputCls} style={{ ...inputStyle, width: 90 }}>
+                    <select value={reel[wlKey] || ""} onChange={e => update({ [wlKey]: e.target.value })} disabled={!isAdmin} title="工数（統括管理者のみ設定可）" className={inputCls} style={{ ...inputStyle, width: 90 }}>
                       <option value="">工数―</option>
                       {EDIT_WORKLOAD_OPTIONS.map(v => <option key={v} value={v}>工数{v}</option>)}
                     </select>
@@ -1240,7 +1240,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                 <span className="flex items-center gap-1 text-xs font-semibold" style={{ color: reel.checkSubmitted ? "#0E90B8" : "#A9A79C" }}>
                   {reel.checkSubmitted ? <CircleCheck size={16} color="#0E90B8" /> : <Circle size={16} color="#A9A79C" />} {reel.checkSubmitted ? "完了" : "未完了（下の④修正チェック欄で担当者の指定・提出ができます）"}
                 </span>
-                <select value={draft.checkWorkload || ""} onChange={e => set({ checkWorkload: e.target.value })} disabled={!isAdmin} title="工数（統括管理者のみ設定可）" className={inputCls} style={{ ...inputStyle, width: 90 }}>
+                <select value={reel.checkWorkload || ""} onChange={e => update({ checkWorkload: e.target.value })} disabled={!isAdmin} title="工数（統括管理者のみ設定可）" className={inputCls} style={{ ...inputStyle, width: 90 }}>
                   <option value="">工数―</option>
                   {EDIT_WORKLOAD_OPTIONS.map(v => <option key={v} value={v}>工数{v}</option>)}
                 </select>
