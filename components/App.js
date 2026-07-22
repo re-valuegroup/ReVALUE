@@ -28,7 +28,7 @@ const ROLES = [
   { key: "designer", label: "画像作成者", color: "purple", icon: ImageIcon },
 ];
 const SELECTABLE_ROLES = ROLES.filter(r => r.key !== "admin");
-const EDIT_WORKLOAD_OPTIONS = [1, 1.5, 2, 2.5, 3];
+const EDIT_WORKLOAD_OPTIONS = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4];
 const EDIT_ROLE_FIELDS = [
   { key: "cutEditorId", label: "①カット" },
   { key: "telopEditorId", label: "②テロップ" },
@@ -1477,12 +1477,13 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(22,23,27,0.55)" }}>
-      <div className="w-full max-w-lg rounded-2xl p-5" style={{ background: "#fff" }} onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-3">
+      <div className="w-full max-w-lg rounded-2xl p-5 flex flex-col" style={{ background: "#fff", maxHeight: "90vh" }} onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3 shrink-0">
           <p className="font-bold text-lg" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>新規動画登録</p>
           <button onClick={onClose}><X size={18} /></button>
         </div>
 
+        <div className="overflow-y-auto -mx-1 px-1" style={{ minHeight: 0 }}>
         {!initialClientId && (
           <Field label="クライアント">
             <select value={selectedClientId} onChange={e => { setSelectedClientId(e.target.value); setDupSource(""); setForm({ theme: "", editInstructions: "", script: "", driveUrl: "", assignedStaffId: "" }); }} className={inputCls} style={inputStyle}>
@@ -1554,8 +1555,9 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
             <p className="text-[11px]" style={{ color: "#A9A79C" }}>登録すると、この動画は自動的に「編集指示完了」の状態で登録されます。</p>
           </>
         )}
+        </div>
 
-        <div className="flex justify-end gap-2 mt-2">
+        <div className="flex justify-end gap-2 mt-2 pt-2 shrink-0" style={{ borderTop: "1px solid #EFEDE4" }}>
           <button onClick={onClose} className="text-sm font-semibold px-4 py-2 rounded-lg border" style={{ borderColor: "#DEDACD" }}>キャンセル</button>
           <button onClick={submit} disabled={!client || !form.theme.trim()} className="text-sm font-semibold px-4 py-2 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>登録する</button>
         </div>
@@ -1628,6 +1630,10 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
 
       {bulkWorkloadMode && (
         <div className="rounded-xl p-3 mb-4 flex items-center gap-2 flex-wrap" style={{ background: "#FBE4F1" }}>
+          <label className="flex items-center gap-1 text-xs font-semibold cursor-pointer" style={{ color: "#96185E" }}>
+            <input type="checkbox" checked={list.length > 0 && list.every(r => selectedWlIds.includes(r.id))} onChange={e => setSelectedWlIds(e.target.checked ? list.map(r => r.id) : [])} />
+            すべてを選択
+          </label>
           <span className="text-xs font-semibold" style={{ color: "#96185E" }}>選択した動画（{selectedWlIds.length}件）に工数を一括設定：</span>
           <select value={bulkWlRole} onChange={e => setBulkWlRole(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 140 }}>
             <option value="cutEditorId">①カット</option>
