@@ -761,6 +761,23 @@ function ClientDetail({ client, clients, setClients, finance, setFinance, reels,
   );
 }
 
+// 文章中のURLをリンク化して表示する
+function Linkify({ text }) {
+  if (!text) return null;
+  const urlPattern = /(https?:\/\/[^\s]+)/g;
+  const parts = text.split(urlPattern);
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (part.match(urlPattern)) {
+          return <a key={i} href={part} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={{ color: "#0E90B8", textDecoration: "underline", wordBreak: "break-all" }}>{part}</a>;
+        }
+        return <span key={i}>{part}</span>;
+      })}
+    </>
+  );
+}
+
 function timeAgo(ts) {
   const d = new Date(ts);
   return d.toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -2164,7 +2181,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
   };
 
   // 編集中：カットが割り当て済みで未完了、またはカット完了後にテロップ・効果音が割り当て済みで未完了の動画
-  const inProgressReels = reels.filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions
+  const inProgressReels = reels.filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions && !r.checkSubmitted
     && (r.cutEditorId || r.telopEditorId || r.sfxEditorId || r.editorSecondaryId))
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
 
@@ -2378,7 +2395,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                   )}
                 </div>
               </div>
-              <p className="text-sm mt-1 whitespace-pre-wrap">{p.content}</p>
+              <p className="text-sm mt-1 whitespace-pre-wrap"><Linkify text={p.content} /></p>
             </div>
           ))}
         </div>
@@ -2420,7 +2437,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                             className="text-[11px] font-semibold px-2 py-1 rounded-full flex items-center gap-1"
                             style={{ ...tone, cursor: canToggle ? "pointer" : "default", opacity: !done && !canToggle ? 0.5 : 1 }}
                           >
-                            {done ? <CircleCheck size={11} /> : <Circle size={11} />} {t.label}{person ? `：${person.name}` : ""}
+                            {done ? <CircleCheck size={11} /> : <Circle size={11} />} {t.label}{person ? `：${person.name}` : "：募集中"}
                           </button>
                           {i < rows.length - 1 && <span style={{ color: "#C4A876", fontSize: 10 }}>→</span>}
                         </React.Fragment>
