@@ -2164,27 +2164,32 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
   };
 
   // 編集中：カットが割り当て済みで未完了、またはカット完了後にテロップ・効果音が割り当て済みで未完了の動画
-  const inProgressList = [];
-  reels.filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions).forEach(r => {
-    if (r.cutEditorId && !r.cutDone) {
-      inProgressList.push({ reel: r, task: "①カット編集中", assigneeId: r.cutEditorId });
-    } else if (r.cutDone) {
-      const telopPending = r.telopEditorId && !r.telopDone;
-      const sfxRequired = editRolesForReel(r).some(f => f.key === "sfxEditorId");
-      const sfxPending = sfxRequired && r.sfxEditorId && !r.sfxDone;
-      if (telopPending && sfxPending && r.telopEditorId === r.sfxEditorId) {
-        // ②テロップと③効果音を同じ人が兼任している場合はまとめて表示
-        inProgressList.push({ reel: r, task: "②③テロップ・効果音編集中", assigneeId: r.telopEditorId });
-      } else {
-        if (telopPending) inProgressList.push({ reel: r, task: "②テロップ編集中", assigneeId: r.telopEditorId });
-        if (sfxPending) inProgressList.push({ reel: r, task: "③効果音編集中", assigneeId: r.sfxEditorId });
-      }
-      if (editRolesForReel(r).every(f => r[DONE_KEY_FOR_ROLE[f.key]]) && r.editorSecondaryId && !r.checkSubmitted) {
-        inProgressList.push({ reel: r, task: "④修正チェック中", assigneeId: r.editorSecondaryId });
-      }
+  const inProgressReels = reels.filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions
+    && (r.cutEditorId || r.telopEditorId || r.sfxEditorId || r.editorSecondaryId))
+    .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
+
+  const updateReelField = (reelId, patch) => setReels(prev => prev.map(r => r.id === reelId ? { ...r, ...patch } : r));
+  const toggleRoleDoneInline = (r, doneKey) => {
+    if (!canToggleRoleDone(r, doneKey)) return;
+    const nextDone = !r[doneKey];
+    const patch = { [doneKey]: nextDone };
+    if (nextDone) {
+      const stillNeeded = editRolesForReel(r).some(f => {
+        const dk = DONE_KEY_FOR_ROLE[f.key];
+        return dk === doneKey ? false : !r[dk];
+      });
+      if (!stillNeeded) patch.completedStages = Math.max(r.completedStages, 3);
     }
-  });
-  inProgressList.sort((a, b) => (a.reel.deadline || "9999-99-99").localeCompare(b.reel.deadline || "9999-99-99"));
+    updateReelField(r.id, patch);
+  };
+  const submitCheckInline = (r) => {
+    if (r.checkSubmitted) {
+      updateReelField(r.id, { checkSubmitted: false, checkSubmittedAt: null, completedStages: Math.min(r.completedStages, 3) });
+      return;
+    }
+    if (!canSubmitCheck(r)) return;
+    updateReelField(r.id, { checkSubmitted: true, checkSubmittedAt: new Date().toISOString(), completedStages: Math.max(r.completedStages, 4) });
+  };
 
   // テロップ・効果音を編集すべき一覧：カットが完了し、テロップ・効果音のいずれかがまだ割り当てられていない動画
   const nextEditRoleList = reels.filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions && r.cutDone
@@ -2381,19 +2386,49 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
 
       {(["editor", "shooter", "designer", "admin"].some(r => (currentUser.roles || []).includes(r))) && (
         <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
-          <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><Clock size={16} color="#F6934B" /> 編集中（{inProgressList.length}）</p>
-          {inProgressList.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>現在編集中の動画はありません。</p>}
-          <div className="flex flex-wrap gap-2">
-            {inProgressList.map(({ reel: r, task, assigneeId }) => {
+          <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><Clock size={16} color="#F6934B" /> 編集中（{inProgressReels.length}）</p>
+          {inProgressReels.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>現在編集中の動画はありません。</p>}
+          <div className="grid md:grid-cols-2 gap-3">
+            {inProgressReels.map(r => {
               const c = clients.find(x => x.id === r.clientId);
-              const person = users.find(u => u.id === assigneeId);
+              const rows = [
+                { label: "①カット", key: "cutEditorId", doneKey: "cutDone", assigneeId: r.cutEditorId },
+                { label: "②テロップ", key: "telopEditorId", doneKey: "telopDone", assigneeId: r.telopEditorId },
+                { label: "③効果音", key: "sfxEditorId", doneKey: "sfxDone", assigneeId: r.sfxEditorId },
+              ].filter(t => editRolesForReel(r).some(f => f.key === t.key)).concat([
+                { label: "④修正チェック", doneKey: null, assigneeId: r.editorSecondaryId, done: r.checkSubmitted },
+              ]);
               return (
-                <button key={r.id + task} onClick={() => onGoReelDetail(r.clientId, r.id)} className="text-left text-xs p-2.5 rounded-xl hover:bg-black/5" style={{ background: "#FCEEDB", minWidth: 200, maxWidth: 260 }}>
-                  <p className="font-semibold" style={{ color: "#854F0B" }}>{task}</p>
-                  <p className="font-semibold truncate">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
-                  <p style={{ color: "#8B897F" }}>{person ? `担当：${person.name}` : ""}{r.deadline ? ` ・ 投稿予定 ${r.deadline}` : ""}</p>
-                  {r.editInstructions && <p className="mt-1 line-clamp-2" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>}
-                </button>
+                <div key={r.id} className="rounded-xl p-3" style={{ background: "#FCEEDB" }}>
+                  <button onClick={() => onGoReelDetail(r.clientId, r.id)} className="w-full text-left mb-2">
+                    <p className="font-semibold text-sm truncate">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
+                    <p className="text-[11px]" style={{ color: "#8B897F" }}>{r.deadline ? `投稿予定 ${r.deadline}` : "投稿予定日未設定"}</p>
+                  </button>
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {rows.map((t, i) => {
+                      const done = t.doneKey ? !!r[t.doneKey] : !!r.checkSubmitted;
+                      const person = users.find(u => u.id === t.assigneeId);
+                      const canToggle = t.doneKey ? (done || canToggleRoleDone(r, t.doneKey)) : (done || canSubmitCheck(r));
+                      const tone = done ? { background: "#D6F0EA", color: "#0E6B57" } : person ? { background: "#FCEEDB", color: "#854F0B", border: "1px solid #F0C98A" } : { background: "#F0EEE7", color: "#8B897F" };
+                      return (
+                        <React.Fragment key={t.label}>
+                          <button
+                            type="button"
+                            disabled={!canToggle}
+                            title={!person ? "担当者未割当" : !done && !canToggle ? "前の工程がまだ完了していません" : "クリックで完了・未完了を切り替え"}
+                            onClick={() => t.doneKey ? toggleRoleDoneInline(r, t.doneKey) : submitCheckInline(r)}
+                            className="text-[11px] font-semibold px-2 py-1 rounded-full flex items-center gap-1"
+                            style={{ ...tone, cursor: canToggle ? "pointer" : "default", opacity: !done && !canToggle ? 0.5 : 1 }}
+                          >
+                            {done ? <CircleCheck size={11} /> : <Circle size={11} />} {t.label}{person ? `：${person.name}` : ""}
+                          </button>
+                          {i < rows.length - 1 && <span style={{ color: "#C4A876", fontSize: 10 }}>→</span>}
+                        </React.Fragment>
+                      );
+                    })}
+                  </div>
+                  {r.editInstructions && <p className="text-[11px] mt-2 line-clamp-2" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>}
+                </div>
               );
             })}
           </div>
@@ -2402,10 +2437,12 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
 
       {(["editor", "shooter", "designer", "admin"].some(r => (currentUser.roles || []).includes(r))) && (
         <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
-          <p className="font-bold mb-1 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><MessageSquare size={16} color="#D6248A" /> 編集指示一覧</p>
-          <p className="text-[11px] mb-3" style={{ color: "#A9A79C" }}>編集の工程は ①カット → ②テロップ・③効果音 → ④修正チェック の順番で進みます。</p>
+          <p className="font-bold mb-2 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><MessageSquare size={16} color="#D6248A" /> 編集指示一覧</p>
+          <div className="rounded-xl px-3 py-2 mb-4 text-center" style={{ background: "#FBE4F1" }}>
+            <span className="text-sm font-bold" style={{ color: "#96185E" }}>編集の工程は ①カット → ②テロップ・③効果音 → ④修正チェック の順番で進みます</span>
+          </div>
 
-          <p className="text-xs font-bold mb-2" style={{ color: "#96185E" }}>①カット編集者募集中</p>
+          <p className="text-base font-bold mb-2" style={{ color: "#96185E" }}>①カット編集者募集中</p>
           {pickupList.length === 0 && <p className="text-xs mb-4" style={{ color: "#8B897F" }}>担当者待ちの編集指示はありません。</p>}
           <div className="space-y-2 mb-5">
             {pickupList.map(r => {
@@ -2440,7 +2477,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
             })}
           </div>
 
-          <p className="text-xs font-bold mb-2 pt-3" style={{ color: "#96185E", borderTop: "1px dashed #DEDACD" }}>②テロップ・③効果音の編集者募集（①カット完了済み）</p>
+          <p className="text-base font-bold mb-2 pt-3" style={{ color: "#96185E", borderTop: "1px dashed #DEDACD" }}>②テロップ・③効果音の編集者募集（①カット完了済み）</p>
           {nextEditRoleList.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>対象の動画はありません。</p>}
           <div className="space-y-2">
             {nextEditRoleList.map(r => {
@@ -2481,34 +2518,39 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
               );
             })}
           </div>
-        </div>
-      )}
 
-      {(currentUser.roles || []).includes("admin") && needsChecker.length > 0 && (
-        <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
-          <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><UserCheck size={16} color="#D6248A" /> 修正チェック担当の指定</p>
-          <div className="space-y-1.5 mb-3">
-            {needsChecker.map(r => {
-              const c = clients.find(x => x.id === r.clientId);
-              const names = editRolesForReel(r).map(f => `${f.label}：${users.find(u => u.id === r[f.key])?.name || "未割当"}`).join(" ・ ");
-              return (
-                <label key={r.id} className="flex items-start gap-2 text-sm px-2 py-1.5 rounded-lg hover:bg-black/5 cursor-pointer">
-                  <input type="checkbox" checked={selectedForBulk.includes(r.id)} onChange={() => toggleBulk(r.id)} className="mt-1" />
-                  <span>
-                    {c?.companyName} ・ {r.theme || "（テーマ未設定）"} <span style={{ color: "#8B897F" }}>（{names}）</span>
-                    {r.editInstructions && <p className="text-xs mt-0.5" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>}
-                  </span>
-                </label>
-              );
-            })}
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <select value={bulkChecker} onChange={e => setBulkChecker(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 200 }}>
-              <option value="">チェック担当者を選択</option>
-              {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
-            <button onClick={applyBulkChecker} disabled={!bulkChecker || selectedForBulk.length === 0} className="text-xs font-semibold px-3 py-2 rounded-lg text-white disabled:opacity-40" style={{ background: "#16171B" }}>選択した{selectedForBulk.length}件に一括指定</button>
-          </div>
+          {(currentUser.roles || []).includes("admin") && (
+            <>
+              <p className="text-base font-bold mb-2 pt-3" style={{ color: "#96185E", borderTop: "1px dashed #DEDACD" }}>④修正チェック担当の指定（①②③完了済み）</p>
+              {needsChecker.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>対象の動画はありません。</p>}
+              {needsChecker.length > 0 && (
+                <>
+                  <div className="space-y-1.5 mb-3">
+                    {needsChecker.map(r => {
+                      const c = clients.find(x => x.id === r.clientId);
+                      const names = editRolesForReel(r).map(f => `${f.label}：${users.find(u => u.id === r[f.key])?.name || "未割当"}`).join(" ・ ");
+                      return (
+                        <label key={r.id} className="flex items-start gap-2 text-sm px-2 py-1.5 rounded-lg hover:bg-black/5 cursor-pointer">
+                          <input type="checkbox" checked={selectedForBulk.includes(r.id)} onChange={() => toggleBulk(r.id)} className="mt-1" />
+                          <span>
+                            {c?.companyName} ・ {r.theme || "（テーマ未設定）"} <span style={{ color: "#8B897F" }}>（{names}）</span>
+                            {r.editInstructions && <p className="text-xs mt-0.5" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <select value={bulkChecker} onChange={e => setBulkChecker(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 200 }}>
+                      <option value="">チェック担当者を選択</option>
+                      {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    </select>
+                    <button onClick={applyBulkChecker} disabled={!bulkChecker || selectedForBulk.length === 0} className="text-xs font-semibold px-3 py-2 rounded-lg text-white disabled:opacity-40" style={{ background: "#16171B" }}>選択した{selectedForBulk.length}件に一括指定</button>
+                  </div>
+                </>
+              )}
+            </>
+          )}
         </div>
       )}
 
