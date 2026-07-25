@@ -100,6 +100,22 @@ function syncReelEditCalendar(setCalendarEvents, reelId, startDate, endDate, sta
   });
 }
 
+// 工程（①カット・②テロップ・③効果音・④修正チェック）ごとに個別のカレンダー予定を登録・更新する
+function syncRoleCalendar(setCalendarEvents, reelId, editTask, staffId, startDate, endDate, startTime, endTime) {
+  if (!setCalendarEvents) return;
+  setCalendarEvents(prev => {
+    const existing = prev.find(e => e.type === "edit" && e.editTask === editTask && e.reelIds && e.reelIds.length === 1 && e.reelIds[0] === reelId);
+    if (!startDate) {
+      return existing ? prev.filter(e => e.id !== existing.id) : prev;
+    }
+    const end = endDate || startDate;
+    if (existing) {
+      return prev.map(e => e.id === existing.id ? { ...e, startDate, endDate: end, staffId: staffId || e.staffId, startTime: startTime || "", endTime: endTime || "" } : e);
+    }
+    return [...prev, { id: uid("event"), type: "edit", editTask, reelIds: [reelId], staffId: staffId || "", startDate, endDate: end, startTime: startTime || "", endTime: endTime || "", note: "", createdAt: new Date().toISOString() }];
+  });
+}
+
 function uid(prefix) {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
   return prefix + "_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -763,6 +779,8 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
   const [genError, setGenError] = useState("");
   const [transcriptCleanLoading, setTranscriptCleanLoading] = useState(false);
   const [transcriptFileError, setTranscriptFileError] = useState("");
+  const [roleSchedule, setRoleSchedule] = useState({});
+  const setRoleScheduleField = (roleKey, patch) => setRoleSchedule(prev => ({ ...prev, [roleKey]: { ...(prev[roleKey] || { date: "", startTime: "", endTime: "" }), ...patch } }));
   const [transcriptCleanError, setTranscriptCleanError] = useState("");
   const [showHistory, setShowHistory] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -1192,15 +1210,17 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             </div>
             <div className="space-y-2">
               {[
-                { key: "cutEditorId", doneKey: "cutDone", label: "①カット担当" },
-                { key: "telopEditorId", doneKey: "telopDone", label: "②テロップ担当" },
-                { key: "sfxEditorId", doneKey: "sfxDone", label: "③効果音担当" },
+                { key: "cutEditorId", doneKey: "cutDone", label: "①カット担当", task: "cut" },
+                { key: "telopEditorId", doneKey: "telopDone", label: "②テロップ担当", task: "telop" },
+                { key: "sfxEditorId", doneKey: "sfxDone", label: "③効果音担当", task: "sfx" },
               ].filter(f => editRolesForReel(draft).some(r => r.key === f.key)).map(f => {
                 const done = !!reel[f.doneKey];
                 const canToggle = done || canToggleRoleDone(reel, f.doneKey);
                 const wlKey = WORKLOAD_KEY_FOR_ROLE[f.key];
+                const sched = roleSchedule[f.key] || { date: "", startTime: "", endTime: "" };
                 return (
-                  <div key={f.key} className="rounded-lg p-2 flex items-center gap-2 flex-wrap" style={{ background: "#fff", border: done ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
+                  <div key={f.key} className="rounded-lg p-2" style={{ background: "#fff", border: done ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>{f.label}</span>
                     <select value={draft[f.key] || ""} onChange={e => set({ [f.key]: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
                       <option value="">未割り当て</option>
@@ -1232,6 +1252,28 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                     >
                       {done ? <CircleCheck size={16} color="#0E90B8" /> : <Circle size={16} color="#A9A79C" />} {done ? "完了" : !reel[f.key] ? "担当者未割当" : canToggle ? "未完了（クリックで完了）" : "前の工程待ち"}
                     </button>
+                  </div>
+                  {canEdit && reel[f.key] && (
+                    <div className="flex items-center gap-1.5 flex-wrap mt-1.5 pt-1.5" style={{ borderTop: "1px dashed #EFEDE4" }}>
+                      <span className="text-[10px] shrink-0" style={{ color: "#A9A79C" }}>稼働日時（カレンダー登録・再登録）</span>
+                      <TextInput type="date" value={sched.date} onChange={e => setRoleScheduleField(f.key, { date: e.target.value })} style={{ width: 130, fontSize: 11 }} />
+                      <TextInput type="time" step={600} value={sched.startTime} onChange={e => setRoleScheduleField(f.key, { startTime: e.target.value })} style={{ width: 95, fontSize: 11 }} />
+                      <span className="text-[10px]" style={{ color: "#8B897F" }}>〜</span>
+                      <TextInput type="time" step={600} value={sched.endTime} onChange={e => setRoleScheduleField(f.key, { endTime: e.target.value })} style={{ width: 95, fontSize: 11 }} />
+                      <button
+                        type="button"
+                        disabled={!sched.date}
+                        onClick={() => {
+                          syncRoleCalendar(setCalendarEvents, reel.id, f.task, reel[f.key], sched.date, sched.date, sched.startTime, sched.endTime);
+                          setRoleSchedule(prev => ({ ...prev, [f.key]: { date: "", startTime: "", endTime: "" } }));
+                        }}
+                        className="text-[11px] font-semibold px-2 py-1 rounded-lg text-white disabled:opacity-40"
+                        style={{ background: "#0E90B8" }}
+                      >
+                        予定を登録
+                      </button>
+                    </div>
+                  )}
                   </div>
                 );
               })}
@@ -2339,10 +2381,33 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
 
       {(["editor", "shooter", "designer", "admin"].some(r => (currentUser.roles || []).includes(r))) && (
         <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
-          <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><MessageSquare size={16} color="#D6248A" /> 編集指示一覧（①カット担当者募集中）</p>
-          <p className="text-[11px] mb-2" style={{ color: "#A9A79C" }}>まず①カットの担当者を決めてください。②テロップ・③効果音は、①カットが完了してから別の一覧で募集されます。</p>
-          {pickupList.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>担当者待ちの編集指示はありません。</p>}
-          <div className="space-y-2">
+          <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><Clock size={16} color="#F6934B" /> 編集中（{inProgressList.length}）</p>
+          {inProgressList.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>現在編集中の動画はありません。</p>}
+          <div className="flex flex-wrap gap-2">
+            {inProgressList.map(({ reel: r, task, assigneeId }) => {
+              const c = clients.find(x => x.id === r.clientId);
+              const person = users.find(u => u.id === assigneeId);
+              return (
+                <button key={r.id + task} onClick={() => onGoReelDetail(r.clientId, r.id)} className="text-left text-xs p-2.5 rounded-xl hover:bg-black/5" style={{ background: "#FCEEDB", minWidth: 200, maxWidth: 260 }}>
+                  <p className="font-semibold" style={{ color: "#854F0B" }}>{task}</p>
+                  <p className="font-semibold truncate">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
+                  <p style={{ color: "#8B897F" }}>{person ? `担当：${person.name}` : ""}{r.deadline ? ` ・ 投稿予定 ${r.deadline}` : ""}</p>
+                  {r.editInstructions && <p className="mt-1 line-clamp-2" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {(["editor", "shooter", "designer", "admin"].some(r => (currentUser.roles || []).includes(r))) && (
+        <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
+          <p className="font-bold mb-1 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><MessageSquare size={16} color="#D6248A" /> 編集指示一覧</p>
+          <p className="text-[11px] mb-3" style={{ color: "#A9A79C" }}>編集の工程は ①カット → ②テロップ・③効果音 → ④修正チェック の順番で進みます。</p>
+
+          <p className="text-xs font-bold mb-2" style={{ color: "#96185E" }}>①カット編集者募集中</p>
+          {pickupList.length === 0 && <p className="text-xs mb-4" style={{ color: "#8B897F" }}>担当者待ちの編集指示はありません。</p>}
+          <div className="space-y-2 mb-5">
             {pickupList.map(r => {
               const c = clients.find(x => x.id === r.clientId);
               const choice = getPickup(r.id);
@@ -2374,33 +2439,8 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
               );
             })}
           </div>
-        </div>
-      )}
 
-      {(["editor", "shooter", "designer", "admin"].some(r => (currentUser.roles || []).includes(r))) && (
-        <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
-          <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><Clock size={16} color="#F6934B" /> 編集中（{inProgressList.length}）</p>
-          {inProgressList.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>現在編集中の動画はありません。</p>}
-          <div className="flex flex-wrap gap-2">
-            {inProgressList.map(({ reel: r, task, assigneeId }) => {
-              const c = clients.find(x => x.id === r.clientId);
-              const person = users.find(u => u.id === assigneeId);
-              return (
-                <button key={r.id + task} onClick={() => onGoReelDetail(r.clientId, r.id)} className="text-left text-xs p-2.5 rounded-xl hover:bg-black/5" style={{ background: "#FCEEDB", minWidth: 200, maxWidth: 260 }}>
-                  <p className="font-semibold" style={{ color: "#854F0B" }}>{task}</p>
-                  <p className="font-semibold truncate">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
-                  <p style={{ color: "#8B897F" }}>{person ? `担当：${person.name}` : ""}{r.deadline ? ` ・ 投稿予定 ${r.deadline}` : ""}</p>
-                  {r.editInstructions && <p className="mt-1 line-clamp-2" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {(["editor", "shooter", "designer", "admin"].some(r => (currentUser.roles || []).includes(r))) && (
-        <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
-          <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><MessageCircle size={16} color="#D6248A" /> テロップ・効果音を編集すべき一覧（①カット完了済み）</p>
+          <p className="text-xs font-bold mb-2 pt-3" style={{ color: "#96185E", borderTop: "1px dashed #DEDACD" }}>②テロップ・③効果音の編集者募集（①カット完了済み）</p>
           {nextEditRoleList.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>対象の動画はありません。</p>}
           <div className="space-y-2">
             {nextEditRoleList.map(r => {
