@@ -28,6 +28,19 @@ const STAGE_FILTER_OPTIONS = [
   { key: "posted", label: "投稿未完了", test: r => r.completedStages < 5 },
 ];
 
+const TASK_SUBSECTIONS = [
+  { key: "", label: "全体表示" },
+  { key: "setup", label: "初期設定未完了一覧" },
+  { key: "shoot", label: "撮影待ち" },
+  { key: "cut", label: "①カット・基本テロップ待ち" },
+  { key: "telop", label: "②テロップ待ち" },
+  { key: "sfx", label: "③効果音待ち" },
+  { key: "check", label: "④修正チェック待ち" },
+  { key: "caption", label: "⑤キャプション作成待ち" },
+  { key: "post", label: "⑥投稿待ち" },
+  { key: "posted", label: "投稿完了一覧（直近1ヶ月）" },
+];
+
 const ROLES = [
   { key: "admin", label: "統括管理者", color: "coral", icon: UserCog },
   { key: "editor", label: "動画編集者", color: "teal", icon: Scissors },
@@ -2502,7 +2515,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
             <span className="text-sm font-bold" style={{ color: "#96185E" }}>編集の工程は ①カット・基本テロップ → ②テロップ・③効果音 → ④修正チェック の順番で進みます</span>
           </div>
 
-          <p className="text-base font-bold mb-2" style={{ color: "#96185E" }}>①カット・基本テロップ編集者募集中</p>
+          <p className="inline-block text-base font-bold mb-2 px-3 py-1.5 rounded-lg" style={{ color: "#96185E", background: "#FBE4F1" }}>①カット・基本テロップ編集者募集中</p>
           {pickupList.length === 0 && <p className="text-xs mb-4" style={{ color: "#8B897F" }}>担当者待ちの編集指示はありません。</p>}
           <div className="space-y-2 mb-5">
             {pickupList.map(r => {
@@ -2511,13 +2524,12 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
               return (
                 <div key={r.id} className="rounded-xl p-3" style={{ background: "#FAF8F3" }}>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-semibold text-sm">{c?.companyName} ・ {r.theme || "（テーマ未設定）"}</p>
+                    <button onClick={() => onGoReelDetail(r.clientId, r.id)} className="font-semibold text-sm hover:underline text-left">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "（テーマ未設定）"}</button>
                     {(() => {
                       const totalWl = [r.cutWorkload, r.telopWorkload, r.sfxWorkload, r.checkWorkload].reduce((s, v) => s + (parseFloat(v) || 0), 0);
                       return totalWl > 0 ? <Badge tone="amber">合計工数 {totalWl}</Badge> : null;
                     })()}
-                    {r.rush && <Badge tone="red">🔥 即納案件</Badge>}
-                    {r.deadline && <Badge tone={r.deadline < new Date().toISOString().slice(0, 10) ? "red" : "gray"}>投稿予定日 {r.deadline}</Badge>}
+                                        {r.deadline && <Badge tone={r.deadline < new Date().toISOString().slice(0, 10) ? "red" : "gray"}>投稿予定日 {r.deadline}</Badge>}
                   </div>
                   <p className="text-xs mt-1" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>
                   <div className="flex items-center gap-2 mt-2 flex-wrap">
@@ -2538,7 +2550,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
             })}
           </div>
 
-          <p className="text-base font-bold mb-2 pt-3" style={{ color: "#96185E", borderTop: "1px dashed #DEDACD" }}>②テロップ・③効果音の編集者募集（①カット・基本テロップ完了済み）</p>
+          <p className="inline-block text-base font-bold mb-2 mt-3 px-3 py-1.5 rounded-lg" style={{ color: "#854F0B", background: "#FCEEDB" }}>②テロップ・③効果音の編集者募集（①カット・基本テロップ完了済み）</p>
           {nextEditRoleList.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>対象の動画はありません。</p>}
           <div className="space-y-2">
             {nextEditRoleList.map(r => {
@@ -2548,13 +2560,12 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
               return (
                 <div key={r.id} className="rounded-xl p-3" style={{ background: "#FAF8F3" }}>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-semibold text-sm">{c?.companyName} ・ {r.theme || "（テーマ未設定）"}</p>
+                    <button onClick={() => onGoReelDetail(r.clientId, r.id)} className="font-semibold text-sm hover:underline text-left">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "（テーマ未設定）"}</button>
                     {(() => {
                       const totalWl = [r.cutWorkload, r.telopWorkload, r.sfxWorkload, r.checkWorkload].reduce((s, v) => s + (parseFloat(v) || 0), 0);
                       return totalWl > 0 ? <Badge tone="amber">合計工数 {totalWl}</Badge> : null;
                     })()}
-                    {r.rush && <Badge tone="red">🔥 即納案件</Badge>}
-                    {r.deadline && <Badge tone={r.deadline < new Date().toISOString().slice(0, 10) ? "red" : "gray"}>投稿予定日 {r.deadline}</Badge>}
+                                        {r.deadline && <Badge tone={r.deadline < new Date().toISOString().slice(0, 10) ? "red" : "gray"}>投稿予定日 {r.deadline}</Badge>}
                   </div>
                   <p className="text-xs mt-1" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>
                   <div className="flex items-center gap-2 mt-2 flex-wrap">
@@ -2583,7 +2594,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
 
           {(currentUser.roles || []).includes("admin") && (
             <>
-              <p className="text-base font-bold mb-2 pt-3" style={{ color: "#96185E", borderTop: "1px dashed #DEDACD" }}>④修正チェック担当の指定（①②③完了済み）</p>
+              <p className="inline-block text-base font-bold mb-2 mt-3 px-3 py-1.5 rounded-lg" style={{ color: "#0E6B57", background: "#D6F0EA" }}>④修正チェック担当の指定（①②③完了済み）</p>
               {needsChecker.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>対象の動画はありません。</p>}
               {needsChecker.length > 0 && (
                 <>
@@ -2595,13 +2606,12 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                         <div key={r.id} className="rounded-xl p-3" style={{ background: "#FAF8F3" }}>
                           <div className="flex items-center gap-2 flex-wrap">
                             <input type="checkbox" checked={selectedForBulk.includes(r.id)} onChange={() => toggleBulk(r.id)} title="一括指定に含める" />
-                            <p className="font-semibold text-sm">{c?.companyName} ・ {r.theme || "（テーマ未設定）"}</p>
+                            <button onClick={() => onGoReelDetail(r.clientId, r.id)} className="font-semibold text-sm hover:underline text-left">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "（テーマ未設定）"}</button>
                             {(() => {
                               const totalWl = [r.cutWorkload, r.telopWorkload, r.sfxWorkload, r.checkWorkload].reduce((s, v) => s + (parseFloat(v) || 0), 0);
                               return totalWl > 0 ? <Badge tone="amber">合計工数 {totalWl}</Badge> : null;
                             })()}
-                            {r.rush && <Badge tone="red">🔥 即納案件</Badge>}
-                    {r.deadline && <Badge tone={r.deadline < new Date().toISOString().slice(0, 10) ? "red" : "gray"}>投稿予定日 {r.deadline}</Badge>}
+                                                {r.deadline && <Badge tone={r.deadline < new Date().toISOString().slice(0, 10) ? "red" : "gray"}>投稿予定日 {r.deadline}</Badge>}
                           </div>
                           <p className="text-xs mt-1" style={{ color: "#8B897F" }}>{names}</p>
                           {r.editInstructions && <p className="text-xs mt-1" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>}
@@ -2857,7 +2867,9 @@ function ResearchPage({ clients, reels, setReels }) {
   );
 }
 
-function TasksPage({ clients, reels, setReels, users, onGoReels, onGoClient }) {
+function TasksPage({ clients, reels, setReels, users, onGoReels, onGoClient, section }) {
+  const showAll = !section;
+  const sectionTitle = TASK_SUBSECTIONS.find(s => s.key === section)?.label || "タスク管理";
   const ym = currentYearMonth();
   const editors = users.filter(u => (u.roles || []).includes("editor"));
   const [editorFilter, setEditorFilter] = useState("");
@@ -2949,17 +2961,19 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoClient }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <h2 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700 }}>タスク管理</h2>
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold" style={{ color: "#5F5E5A" }}>編集者ごとの進行状況</span>
-          <select value={editorFilter} onChange={e => setEditorFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 200 }}>
-            <option value="">編集者を選択</option>
-            {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-          </select>
-        </div>
+        <h2 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700 }}>{showAll ? "タスク管理" : sectionTitle}</h2>
+        {showAll && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold" style={{ color: "#5F5E5A" }}>編集者ごとの進行状況</span>
+            <select value={editorFilter} onChange={e => setEditorFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 200 }}>
+              <option value="">編集者を選択</option>
+              {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+          </div>
+        )}
       </div>
 
-      {editorFilter && (
+      {showAll && editorFilter && (
         <div className="rounded-2xl p-4 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm font-bold flex items-center gap-1.5"><Scissors size={15} color="#0E90B8" /> {selectedEditor?.name}さんが進めている案件</p>
@@ -2989,7 +3003,8 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoClient }) {
         </div>
       )}
 
-      <div className="grid md:grid-cols-2 gap-3 mb-3">
+      <div className={showAll ? "grid md:grid-cols-2 gap-3 mb-3" : ""}>
+        {(showAll || section === "setup") && (
         <TaskCard title="初期設定未完了一覧" icon={CircleCheck} tone="#6B3FA0" count={setupClients.length}>
           {setupClients.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>初期設定タスクはすべて完了しています。</p>}
           {setupClients.map(({ client, pending }) => (
@@ -3001,7 +3016,9 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoClient }) {
             </button>
           ))}
         </TaskCard>
+        )}
 
+        {(showAll || section === "shoot") && (
         <TaskCard title="撮影待ち" icon={Camera} tone="#854F0B" count={shootItems.length}>
           {shootItems.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>撮影待ちの動画はありません。</p>}
           {shootItems.map(r => {
@@ -3015,29 +3032,41 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoClient }) {
             );
           })}
         </TaskCard>
+        )}
       </div>
 
-      <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-3">
+      <div className={showAll ? "grid md:grid-cols-2 xl:grid-cols-4 gap-3" : ""}>
+        {(showAll || section === "cut") && (
         <TaskCard title="①カット・基本テロップ待ち" icon={Scissors} tone="#0E90B8" count={cutWaitList.length}>
           {simpleList(cutWaitList, r => `担当：${users.find(u => u.id === r.cutEditorId)?.name || "未割当"}`)}
         </TaskCard>
+        )}
 
+        {(showAll || section === "telop") && (
         <TaskCard title="②テロップ待ち" icon={MessageCircle} tone="#0E90B8" count={telopWaitList.length}>
           {simpleList(telopWaitList, r => `担当：${users.find(u => u.id === r.telopEditorId)?.name || "未割当"}`)}
         </TaskCard>
+        )}
 
+        {(showAll || section === "sfx") && (
         <TaskCard title="③効果音待ち" icon={Megaphone} tone="#0E90B8" count={sfxWaitList.length}>
           {simpleList(sfxWaitList, r => `担当：${users.find(u => u.id === r.sfxEditorId)?.name || "未割当"}`)}
         </TaskCard>
+        )}
 
+        {(showAll || section === "check") && (
         <TaskCard title="④修正チェック待ち" icon={ClipboardList} tone="#0E90B8" count={checkWaitList.length}>
           {simpleList(checkWaitList, r => `担当：${users.find(u => u.id === r.editorSecondaryId)?.name || "未割当"}`)}
         </TaskCard>
+        )}
 
+        {(showAll || section === "caption") && (
         <TaskCard title="⑤キャプション作成待ち" icon={Sparkles} tone="#F6934B" count={captionWaitList.length}>
           {simpleList(captionWaitList)}
         </TaskCard>
+        )}
 
+        {(showAll || section === "post") && (
         <TaskCard title="⑥投稿待ち" icon={Send} tone="#D6248A" count={postWaitList.length}>
           {postWaitList.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>投稿待ちの動画はありません。</p>}
           {postWaitList.map(r => {
@@ -3070,10 +3099,13 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoClient }) {
             );
           })}
         </TaskCard>
+        )}
 
+        {(showAll || section === "posted") && (
         <TaskCard title="投稿完了一覧（直近1ヶ月）" icon={CircleCheck} tone="#0E90B8" count={recentPostedList.length}>
           {simpleList(recentPostedList, r => `投稿日 ${r.postedDate}`)}
         </TaskCard>
+        )}
       </div>
     </div>
   );
@@ -3627,6 +3659,8 @@ function AppInner() {
   const [openClientId, setOpenClientId] = useState(null);
   const [reelsFocusClient, setReelsFocusClient] = useState(null);
   const [reelsFocusReelId, setReelsFocusReelId] = useState(null);
+  const [taskSection, setTaskSection] = useState("");
+  const [taskNavOpen, setTaskNavOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [pageHistory, setPageHistory] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -3826,7 +3860,7 @@ function AppInner() {
       case "clients": return <ClientsPage clients={clients} setClients={setClients} finance={finance} setFinance={setFinance} currentUser={currentUser} onOpenClient={setOpenClientId} />;
       case "reels": return <ReelsPage clients={clients} reels={reels} setReels={setReels} users={users} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} currentUser={currentUser} focusClientId={reelsFocusClient} focusReelId={reelsFocusReelId} />;
       case "research": return <ResearchPage clients={clients} reels={reels} setReels={setReels} />;
-      case "tasks": return <TasksPage clients={clients} reels={reels} setReels={setReels} users={users} onGoReels={goReels} onGoClient={goClientDetail} />;
+      case "tasks": return <TasksPage clients={clients} reels={reels} setReels={setReels} users={users} onGoReels={goReels} onGoClient={goClientDetail} section={taskSection} />;
       case "analytics": return <AnalyticsPage clients={clients} reels={reels} users={users} />;
       case "finance": return (currentUser.roles || []).includes("admin") ? <FinancePage clients={clients} finance={finance} setFinance={setFinance} reels={reels} users={users} /> : null;
       case "users": return (currentUser.roles || []).includes("admin") ? <UsersPage users={users} setUsers={setUsers} currentUser={currentUser} /> : null;
@@ -3856,13 +3890,53 @@ function AppInner() {
             <button className="md:hidden" onClick={() => setNavOpen(false)}><X size={18} color="#fff" /></button>
           </div>
           <nav className="px-3 mt-2 space-y-1">
-            {navItems.map(item => (
-              <button key={item.key} onClick={() => { navigateTo(item.key); setNavOpen(false); }}
-                className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition"
-                style={{ background: page === item.key ? "#D6248A" : "transparent", color: page === item.key ? "#fff" : "#B9B7AD" }}>
-                <item.icon size={17} /> {item.label}
-              </button>
-            ))}
+            {navItems.map(item => {
+              if (item.key === "tasks") {
+                const isOnTasks = page === "tasks";
+                return (
+                  <div key={item.key}>
+                    <button
+                      onClick={() => {
+                        if (isOnTasks) {
+                          setTaskNavOpen(s => !s);
+                        } else {
+                          navigateTo("tasks");
+                          setTaskSection("");
+                          setTaskNavOpen(true);
+                          setNavOpen(false);
+                        }
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition"
+                      style={{ background: isOnTasks ? "#D6248A" : "transparent", color: isOnTasks ? "#fff" : "#B9B7AD" }}
+                    >
+                      <item.icon size={17} /> {item.label}
+                      <ChevronRight size={14} className="ml-auto" style={{ transform: taskNavOpen ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+                    </button>
+                    {taskNavOpen && (
+                      <div className="mt-1 ml-3 pl-3 space-y-0.5" style={{ borderLeft: "1px solid #3A3B42" }}>
+                        {TASK_SUBSECTIONS.map(sub => (
+                          <button
+                            key={sub.key || "all"}
+                            onClick={() => { navigateTo("tasks"); setTaskSection(sub.key); setNavOpen(false); }}
+                            className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold transition"
+                            style={{ background: isOnTasks && taskSection === sub.key ? "#FBE4F1" : "transparent", color: isOnTasks && taskSection === sub.key ? "#D6248A" : "#8B897F" }}
+                          >
+                            {sub.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+              return (
+                <button key={item.key} onClick={() => { navigateTo(item.key); setNavOpen(false); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition"
+                  style={{ background: page === item.key ? "#D6248A" : "transparent", color: page === item.key ? "#fff" : "#B9B7AD" }}>
+                  <item.icon size={17} /> {item.label}
+                </button>
+              );
+            })}
           </nav>
           <div className="absolute bottom-0 left-0 w-full p-4">
             <div className="rounded-xl p-3" style={{ background: "#222329" }}>
