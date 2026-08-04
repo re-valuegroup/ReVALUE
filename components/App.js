@@ -20,6 +20,13 @@ const STAGES = [
   { key: "edit_done", label: "チェック完了", icon: CheckSquare },
   { key: "posted", label: "投稿完了", icon: Send },
 ];
+const STAGE_FILTER_OPTIONS = [
+  { key: "shoot", label: "撮影未完了", test: r => r.completedStages < 1 },
+  { key: "edit_request", label: "編集指示未完了", test: r => r.completedStages < 2 },
+  { key: "editing", label: "編集未完了", test: r => r.completedStages < 3 },
+  { key: "edit_done", label: "チェック未完了", test: r => r.completedStages < 4 },
+  { key: "posted", label: "投稿未完了", test: r => r.completedStages < 5 },
+];
 
 const ROLES = [
   { key: "admin", label: "統括管理者", color: "coral", icon: UserCog },
@@ -30,7 +37,7 @@ const ROLES = [
 const SELECTABLE_ROLES = ROLES.filter(r => r.key !== "admin");
 const EDIT_WORKLOAD_OPTIONS = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4];
 const EDIT_ROLE_FIELDS = [
-  { key: "cutEditorId", label: "①カット" },
+  { key: "cutEditorId", label: "①カット・基本テロップ" },
   { key: "telopEditorId", label: "②テロップ" },
   { key: "sfxEditorId", label: "③効果音" },
 ];
@@ -44,6 +51,7 @@ const editRolesForReel = (reel) => {
 };
 const DONE_KEY_FOR_ROLE = { cutEditorId: "cutDone", telopEditorId: "telopDone", sfxEditorId: "sfxDone" };
 const WORKLOAD_KEY_FOR_ROLE = { cutEditorId: "cutWorkload", telopEditorId: "telopWorkload", sfxEditorId: "sfxWorkload" };
+const COMMENT_KEY_FOR_ROLE = { cutEditorId: "cutComment", telopEditorId: "telopComment", sfxEditorId: "sfxComment" };
 // ①②③を順番通りにしか完了チェックできないようにする（かつ担当者が割り当てられていないとチェックできない）
 const canToggleRoleDone = (reel, doneKey) => {
   const roleKey = Object.keys(DONE_KEY_FOR_ROLE).find(k => DONE_KEY_FOR_ROLE[k] === doneKey);
@@ -100,7 +108,7 @@ function syncReelEditCalendar(setCalendarEvents, reelId, startDate, endDate, sta
   });
 }
 
-// 工程（①カット・②テロップ・③効果音・④修正チェック）ごとに個別のカレンダー予定を登録・更新する
+// 工程（①カット・基本テロップ・②テロップ・③効果音・④修正チェック）ごとに個別のカレンダー予定を登録・更新する
 function syncRoleCalendar(setCalendarEvents, reelId, editTask, staffId, startDate, endDate, startTime, endTime) {
   if (!setCalendarEvents) return;
   setCalendarEvents(prev => {
@@ -180,11 +188,12 @@ const emptyChecklist = () => ({ c1: false, c2: false, c3: false, c4: false, c5: 
 const emptyReel = (clientId, ym) => ({
   id: uid("reel"), clientId, yearMonth: ym,
   assignedStaffId: "",
-  editType: "direction",
+  editType: "direction", rush: false,
   cutEditorId: "", telopEditorId: "", sfxEditorId: "", editorSecondaryId: "",
   cutDone: false, telopDone: false, sfxDone: false,
   editStartDate: "", editEndDate: "", deadline: "",
   cutWorkload: "", telopWorkload: "", sfxWorkload: "", checkWorkload: "",
+  cutComment: "", telopComment: "", sfxComment: "", checkComment: "",
   checklist: emptyChecklist(), checkSubmitted: false, checkSubmittedAt: null,
   theme: "", script: "", editInstructions: "", driveUrl: "",
   transcript: "", memo: "", caption: "", captionDone: false,
@@ -1030,10 +1039,11 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             {showClient && <p className="text-[11px] font-semibold truncate" style={{ color: "#D6248A" }}>{client?.companyName || "クライアント不明"} ・ {monthLabel(reel.yearMonth)}</p>}
-            <p className="font-bold truncate">{number ? `No.${number} ・ ` : ""}{reel.theme || "（テーマ未設定）"}</p>
+            <p className="font-bold truncate">{number ? `No.${number} ・ ` : ""}{reel.rush && "🔥 "}{reel.theme || "（テーマ未設定）"}</p>
             <p className="text-xs mt-0.5 truncate" style={{ color: "#8B897F" }}>{reel.editInstructions || "編集指示未入力"}</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {reel.rush && <Badge tone="red">🔥 即納案件</Badge>}
             {reel.assignedStaffId && <Badge tone="gray">{users.find(u => u.id === reel.assignedStaffId)?.name || "担当者"}</Badge>}
             {reel.completedStages >= 5 && <Badge tone="teal">投稿済み</Badge>}
             <ChevronRight size={16} style={{ transform: expanded ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
@@ -1046,7 +1056,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             {EDIT_TYPE_OPTIONS.find(o => o.key === (reel.editType || "direction"))?.key === "telop" ? "フルテロップ編集" : "演出編集"}
           </span>
           {[
-            { label: "①カット", key: "cutEditorId", doneKey: "cutDone", assigneeId: reel.cutEditorId, done: reel.cutDone },
+            { label: "①カット・基本テロップ", key: "cutEditorId", doneKey: "cutDone", assigneeId: reel.cutEditorId, done: reel.cutDone },
             { label: "②テロップ", key: "telopEditorId", doneKey: "telopDone", assigneeId: reel.telopEditorId, done: reel.telopDone },
             { label: "③効果音", key: "sfxEditorId", doneKey: "sfxDone", assigneeId: reel.sfxEditorId, done: reel.sfxDone },
           ].filter(t => editRolesForReel(reel).some(f => f.key === t.key)).concat([
@@ -1211,6 +1221,12 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             </Field>
             <Field label="台本（任意）"><TextArea rows={2} value={draft.script} onChange={e => set({ script: e.target.value })} disabled={!canEdit} /></Field>
             <Field label="編集期限（投稿予定日）"><TextInput type="date" value={draft.deadline || ""} onChange={e => set({ deadline: e.target.value })} disabled={!canEdit} /></Field>
+            <Field label="即納案件">
+              <label className="flex items-center gap-2 text-sm font-semibold px-3 py-2 rounded-lg cursor-pointer" style={{ background: reel.rush ? "#FCEBEB" : "#F4F2EA", color: reel.rush ? "#A32D2D" : "#5F5E5A", border: reel.rush ? "1px solid #F0A5A5" : "1px solid transparent" }}>
+                <input type="checkbox" checked={!!reel.rush} onChange={e => canEdit && update({ rush: e.target.checked })} disabled={!canEdit} />
+                🔥 即納案件（納期が短い）
+              </label>
+            </Field>
             <Field label="編集予定日（カレンダーと連動）">
               <div className="flex items-center gap-1">
                 <TextInput type="date" value={draft.editStartDate || ""} onChange={e => set({ editStartDate: e.target.value })} disabled={!canEdit} />
@@ -1227,7 +1243,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             </div>
             <div className="space-y-2">
               {[
-                { key: "cutEditorId", doneKey: "cutDone", label: "①カット担当", task: "cut" },
+                { key: "cutEditorId", doneKey: "cutDone", label: "①カット・基本テロップ担当", task: "cut" },
                 { key: "telopEditorId", doneKey: "telopDone", label: "②テロップ担当", task: "telop" },
                 { key: "sfxEditorId", doneKey: "sfxDone", label: "③効果音担当", task: "sfx" },
               ].filter(f => editRolesForReel(draft).some(r => r.key === f.key)).map(f => {
@@ -1291,18 +1307,28 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                       </button>
                     </div>
                   )}
+                  <div className="mt-1.5 pt-1.5" style={{ borderTop: "1px dashed #EFEDE4" }}>
+                    <p className="text-[10px] mb-0.5" style={{ color: "#A9A79C" }}>コメント・申し送り（次の工程担当者にも表示されます）</p>
+                    <TextArea rows={2} value={draft[COMMENT_KEY_FOR_ROLE[f.key]] || ""} onChange={e => set({ [COMMENT_KEY_FOR_ROLE[f.key]]: e.target.value })} disabled={!canEdit} placeholder="意図・注意点・引き継ぎ事項など" style={{ fontSize: 12 }} />
+                  </div>
                   </div>
                 );
               })}
-              <div className="rounded-lg p-2 flex items-center gap-2 flex-wrap" style={{ background: "#fff", border: reel.checkSubmitted ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
-                <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>④修正チェック</span>
-                <span className="flex items-center gap-1 text-xs font-semibold" style={{ color: reel.checkSubmitted ? "#0E90B8" : "#A9A79C" }}>
-                  {reel.checkSubmitted ? <CircleCheck size={16} color="#0E90B8" /> : <Circle size={16} color="#A9A79C" />} {reel.checkSubmitted ? "完了" : "未完了（下の④修正チェック欄で担当者の指定・提出ができます）"}
-                </span>
-                <select value={reel.checkWorkload || ""} onChange={e => update({ checkWorkload: e.target.value })} disabled={!isAdmin} title="工数（統括管理者のみ設定可）" className={inputCls} style={{ ...inputStyle, width: 90 }}>
-                  <option value="">工数―</option>
-                  {EDIT_WORKLOAD_OPTIONS.map(v => <option key={v} value={v}>工数{v}</option>)}
-                </select>
+              <div className="rounded-lg p-2" style={{ background: "#fff", border: reel.checkSubmitted ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>④修正チェック</span>
+                  <span className="flex items-center gap-1 text-xs font-semibold" style={{ color: reel.checkSubmitted ? "#0E90B8" : "#A9A79C" }}>
+                    {reel.checkSubmitted ? <CircleCheck size={16} color="#0E90B8" /> : <Circle size={16} color="#A9A79C" />} {reel.checkSubmitted ? "完了" : "未完了（下の④修正チェック欄で担当者の指定・提出ができます）"}
+                  </span>
+                  <select value={reel.checkWorkload || ""} onChange={e => update({ checkWorkload: e.target.value })} disabled={!isAdmin} title="工数（統括管理者のみ設定可）" className={inputCls} style={{ ...inputStyle, width: 90 }}>
+                    <option value="">工数―</option>
+                    {EDIT_WORKLOAD_OPTIONS.map(v => <option key={v} value={v}>工数{v}</option>)}
+                  </select>
+                </div>
+                <div className="mt-1.5 pt-1.5" style={{ borderTop: "1px dashed #EFEDE4" }}>
+                  <p className="text-[10px] mb-0.5" style={{ color: "#A9A79C" }}>コメント・申し送り</p>
+                  <TextArea rows={2} value={draft.checkComment || ""} onChange={e => set({ checkComment: e.target.value })} disabled={!canEdit} placeholder="意図・注意点・引き継ぎ事項など" style={{ fontSize: 12 }} />
+                </div>
               </div>
             </div>
           </div>
@@ -1515,7 +1541,7 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
   const [selectedClientId, setSelectedClientId] = useState(initialClientId || "");
   const client = clients.find(c => c.id === selectedClientId);
   const existingReels = allReels.filter(r => r.clientId === selectedClientId);
-  const [form, setForm] = useState({ theme: "", editInstructions: "", script: "", driveUrl: "", assignedStaffId: "", deadline: "", editType: "direction" });
+  const [form, setForm] = useState({ theme: "", editInstructions: "", script: "", driveUrl: "", assignedStaffId: "", deadline: "", editType: "direction", rush: false });
   const [dupSource, setDupSource] = useState("");
   const [instructionsSubmitted, setInstructionsSubmitted] = useState(false);
 
@@ -1611,6 +1637,10 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
               </select>
             </Field>
             <Field label="編集期限（投稿予定日・任意）"><TextInput type="date" value={form.deadline} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} /></Field>
+            <label className="flex items-center gap-2 text-sm font-semibold px-3 py-2 rounded-lg cursor-pointer mb-2" style={{ background: form.rush ? "#FCEBEB" : "#F4F2EA", color: form.rush ? "#A32D2D" : "#5F5E5A", border: form.rush ? "1px solid #F0A5A5" : "1px solid transparent" }}>
+              <input type="checkbox" checked={form.rush} onChange={e => setForm(f => ({ ...f, rush: e.target.checked }))} />
+              🔥 即納案件（納期が短い）
+            </label>
             <p className="text-[11px]" style={{ color: "#A9A79C" }}>登録すると、この動画は自動的に「編集指示完了」の状態で登録されます。</p>
           </>
         )}
@@ -1629,7 +1659,8 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
   const [clientId, setClientId] = useState(focusClientId || "__all__");
   const [ym, setYm] = useState(currentYearMonth());
   const [staffFilter, setStaffFilter] = useState("");
-  const [showAllMonths, setShowAllMonths] = useState(false);
+  const [stageFilter, setStageFilter] = useState("");
+  const [showAllMonths, setShowAllMonths] = useState(!focusClientId);
   const canEdit = true;
   const isAdmin = (currentUser.roles || []).includes("admin");
   const client = clients.find(c => c.id === clientId);
@@ -1652,13 +1683,14 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
     return new Map(sorted.map((r, i) => [r.id, i + 1]));
   }, [reels]);
 
-  useEffect(() => { if (focusClientId) setClientId(focusClientId); }, [focusClientId]);
+  useEffect(() => { if (focusClientId) { setClientId(focusClientId); setShowAllMonths(false); } }, [focusClientId]);
 
   const [showNew, setShowNew] = useState(false);
   const list = reels
     .filter(r => allClientsMode || r.clientId === clientId)
     .filter(r => showAllMonths || r.yearMonth === ym)
     .filter(r => !staffFilter || r.assignedStaffId === staffFilter)
+    .filter(r => !stageFilter || STAGE_FILTER_OPTIONS.find(o => o.key === stageFilter)?.test(r))
     .sort((a, b) => b.yearMonth.localeCompare(a.yearMonth));
 
   const addReel = () => {
@@ -1695,7 +1727,7 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
           </label>
           <span className="text-xs font-semibold" style={{ color: "#96185E" }}>選択した動画（{selectedWlIds.length}件）に工数を一括設定：</span>
           <select value={bulkWlRole} onChange={e => setBulkWlRole(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 140 }}>
-            <option value="cutEditorId">①カット</option>
+            <option value="cutEditorId">①カット・基本テロップ</option>
             <option value="telopEditorId">②テロップ</option>
             <option value="sfxEditorId">③効果音</option>
             <option value="editorSecondaryId">④修正チェック</option>
@@ -1726,6 +1758,10 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
         <select value={staffFilter} onChange={e => setStaffFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 180 }}>
           <option value="">担当撮影者（全員）</option>
           {users.filter(u => (u.roles || []).includes("shooter")).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+        </select>
+        <select value={stageFilter} onChange={e => setStageFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 160 }}>
+          <option value="">進行状況（絞り込みなし）</option>
+          {STAGE_FILTER_OPTIONS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
         </select>
         {clientId && (
           <button onClick={addReel} className="flex items-center gap-1 text-sm font-semibold px-3 py-2 rounded-lg text-white ml-auto" style={{ background: "#D6248A" }}>
@@ -1787,7 +1823,7 @@ const EVENT_TYPES = [
 ];
 const EDIT_TASK_OPTIONS = [
   { key: "all", label: "①②③まとめて" },
-  { key: "cut", label: "①カット" },
+  { key: "cut", label: "①カット・基本テロップ" },
   { key: "telop", label: "②テロップ" },
   { key: "sfx", label: "③効果音" },
 ];
@@ -2161,7 +2197,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
   ];
 
   // 編集指示が記入され、カット・テロップ・効果音のいずれかが未割当の動画
-  // 編集指示一覧：①カットがまだ割り当てられていない動画（最初の入り口）
+  // 編集指示一覧：①カット・基本テロップがまだ割り当てられていない動画（最初の入り口）
   const pickupList = reels.filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions && !r.cutEditorId)
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
   const [pickupChoice, setPickupChoice] = useState({});
@@ -2239,6 +2275,13 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
 
   const [selectedForBulk, setSelectedForBulk] = useState([]);
   const [bulkChecker, setBulkChecker] = useState("");
+  const [checkerChoice, setCheckerChoice] = useState({});
+  const confirmIndividualChecker = (reelId) => {
+    const editorId = checkerChoice[reelId];
+    if (!editorId) return;
+    setReels(prev => prev.map(r => r.id === reelId ? { ...r, editorSecondaryId: editorId } : r));
+    setCheckerChoice(prev => ({ ...prev, [reelId]: "" }));
+  };
   const toggleBulk = (id) => setSelectedForBulk(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   const applyBulkChecker = () => {
     if (!bulkChecker || selectedForBulk.length === 0) return;
@@ -2409,7 +2452,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
             {inProgressReels.map(r => {
               const c = clients.find(x => x.id === r.clientId);
               const rows = [
-                { label: "①カット", key: "cutEditorId", doneKey: "cutDone", assigneeId: r.cutEditorId },
+                { label: "①カット・基本テロップ", key: "cutEditorId", doneKey: "cutDone", assigneeId: r.cutEditorId },
                 { label: "②テロップ", key: "telopEditorId", doneKey: "telopDone", assigneeId: r.telopEditorId },
                 { label: "③効果音", key: "sfxEditorId", doneKey: "sfxDone", assigneeId: r.sfxEditorId },
               ].filter(t => editRolesForReel(r).some(f => f.key === t.key)).concat([
@@ -2418,7 +2461,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
               return (
                 <div key={r.id} className="rounded-xl p-3" style={{ background: "#FCEEDB" }}>
                   <button onClick={() => onGoReelDetail(r.clientId, r.id)} className="w-full text-left mb-2">
-                    <p className="font-semibold text-sm truncate">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
+                    <p className="font-semibold text-sm truncate">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
                     <p className="text-[11px]" style={{ color: "#8B897F" }}>{r.deadline ? `投稿予定 ${r.deadline}` : "投稿予定日未設定"}</p>
                   </button>
                   <div className="flex items-center gap-1 flex-wrap">
@@ -2456,10 +2499,10 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
         <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
           <p className="font-bold mb-2 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><MessageSquare size={16} color="#D6248A" /> 編集指示一覧</p>
           <div className="rounded-xl px-3 py-2 mb-4 text-center" style={{ background: "#FBE4F1" }}>
-            <span className="text-sm font-bold" style={{ color: "#96185E" }}>編集の工程は ①カット → ②テロップ・③効果音 → ④修正チェック の順番で進みます</span>
+            <span className="text-sm font-bold" style={{ color: "#96185E" }}>編集の工程は ①カット・基本テロップ → ②テロップ・③効果音 → ④修正チェック の順番で進みます</span>
           </div>
 
-          <p className="text-base font-bold mb-2" style={{ color: "#96185E" }}>①カット編集者募集中</p>
+          <p className="text-base font-bold mb-2" style={{ color: "#96185E" }}>①カット・基本テロップ編集者募集中</p>
           {pickupList.length === 0 && <p className="text-xs mb-4" style={{ color: "#8B897F" }}>担当者待ちの編集指示はありません。</p>}
           <div className="space-y-2 mb-5">
             {pickupList.map(r => {
@@ -2473,6 +2516,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                       const totalWl = [r.cutWorkload, r.telopWorkload, r.sfxWorkload, r.checkWorkload].reduce((s, v) => s + (parseFloat(v) || 0), 0);
                       return totalWl > 0 ? <Badge tone="amber">合計工数 {totalWl}</Badge> : null;
                     })()}
+                    {r.rush && <Badge tone="red">🔥 即納案件</Badge>}
                     {r.deadline && <Badge tone={r.deadline < new Date().toISOString().slice(0, 10) ? "red" : "gray"}>投稿予定日 {r.deadline}</Badge>}
                   </div>
                   <p className="text-xs mt-1" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>
@@ -2486,7 +2530,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                     <span className="text-xs shrink-0" style={{ color: "#8B897F" }}>〜</span>
                     <TextInput type="time" step={600} value={choice.endTime} onChange={e => setPickup(r.id, { endTime: e.target.value })} title="終了時刻（10分刻み・任意）" style={{ width: 110 }} />
                     <button onClick={() => confirmPickup(r.id)} disabled={!choice.editorId} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>
-                      ①カットを担当する
+                      ①カット・基本テロップを担当する
                     </button>
                   </div>
                 </div>
@@ -2494,7 +2538,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
             })}
           </div>
 
-          <p className="text-base font-bold mb-2 pt-3" style={{ color: "#96185E", borderTop: "1px dashed #DEDACD" }}>②テロップ・③効果音の編集者募集（①カット完了済み）</p>
+          <p className="text-base font-bold mb-2 pt-3" style={{ color: "#96185E", borderTop: "1px dashed #DEDACD" }}>②テロップ・③効果音の編集者募集（①カット・基本テロップ完了済み）</p>
           {nextEditRoleList.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>対象の動画はありません。</p>}
           <div className="space-y-2">
             {nextEditRoleList.map(r => {
@@ -2509,6 +2553,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                       const totalWl = [r.cutWorkload, r.telopWorkload, r.sfxWorkload, r.checkWorkload].reduce((s, v) => s + (parseFloat(v) || 0), 0);
                       return totalWl > 0 ? <Badge tone="amber">合計工数 {totalWl}</Badge> : null;
                     })()}
+                    {r.rush && <Badge tone="red">🔥 即納案件</Badge>}
                     {r.deadline && <Badge tone={r.deadline < new Date().toISOString().slice(0, 10) ? "red" : "gray"}>投稿予定日 {r.deadline}</Badge>}
                   </div>
                   <p className="text-xs mt-1" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>
@@ -2542,22 +2587,39 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
               {needsChecker.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>対象の動画はありません。</p>}
               {needsChecker.length > 0 && (
                 <>
-                  <div className="space-y-1.5 mb-3">
+                  <div className="space-y-2 mb-3">
                     {needsChecker.map(r => {
                       const c = clients.find(x => x.id === r.clientId);
                       const names = editRolesForReel(r).map(f => `${f.label}：${users.find(u => u.id === r[f.key])?.name || "未割当"}`).join(" ・ ");
                       return (
-                        <label key={r.id} className="flex items-start gap-2 text-sm px-2 py-1.5 rounded-lg hover:bg-black/5 cursor-pointer">
-                          <input type="checkbox" checked={selectedForBulk.includes(r.id)} onChange={() => toggleBulk(r.id)} className="mt-1" />
-                          <span>
-                            {c?.companyName} ・ {r.theme || "（テーマ未設定）"} <span style={{ color: "#8B897F" }}>（{names}）</span>
-                            {r.editInstructions && <p className="text-xs mt-0.5" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>}
-                          </span>
-                        </label>
+                        <div key={r.id} className="rounded-xl p-3" style={{ background: "#FAF8F3" }}>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <input type="checkbox" checked={selectedForBulk.includes(r.id)} onChange={() => toggleBulk(r.id)} title="一括指定に含める" />
+                            <p className="font-semibold text-sm">{c?.companyName} ・ {r.theme || "（テーマ未設定）"}</p>
+                            {(() => {
+                              const totalWl = [r.cutWorkload, r.telopWorkload, r.sfxWorkload, r.checkWorkload].reduce((s, v) => s + (parseFloat(v) || 0), 0);
+                              return totalWl > 0 ? <Badge tone="amber">合計工数 {totalWl}</Badge> : null;
+                            })()}
+                            {r.rush && <Badge tone="red">🔥 即納案件</Badge>}
+                    {r.deadline && <Badge tone={r.deadline < new Date().toISOString().slice(0, 10) ? "red" : "gray"}>投稿予定日 {r.deadline}</Badge>}
+                          </div>
+                          <p className="text-xs mt-1" style={{ color: "#8B897F" }}>{names}</p>
+                          {r.editInstructions && <p className="text-xs mt-1" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>}
+                          <div className="flex items-center gap-2 mt-2 flex-wrap">
+                            <select value={checkerChoice[r.id] || ""} onChange={e => setCheckerChoice(prev => ({ ...prev, [r.id]: e.target.value }))} className={inputCls} style={{ ...inputStyle, width: 160 }}>
+                              <option value="">動画編集者を選択</option>
+                              {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                            </select>
+                            <button onClick={() => confirmIndividualChecker(r.id)} disabled={!checkerChoice[r.id]} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>
+                              ④修正チェックを担当する
+                            </button>
+                          </div>
+                        </div>
                       );
                     })}
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs" style={{ color: "#8B897F" }}>チェックを入れた動画をまとめて指定：</span>
                     <select value={bulkChecker} onChange={e => setBulkChecker(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 200 }}>
                       <option value="">チェック担当者を選択</option>
                       {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
@@ -2813,7 +2875,7 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoClient }) {
     return { client: c, pending };
   }).filter(Boolean);
 
-  // ①カット待ち：カットがまだ完了していない動画
+  // ①カット・基本テロップ待ち：カットがまだ完了していない動画
   const cutWaitList = activeReels.filter(r => !r.cutDone)
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
 
@@ -2908,7 +2970,7 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoClient }) {
             {editorCases.map(r => {
               const c = clients.find(x => x.id === r.clientId);
               const roleNames = [];
-              if (r.cutEditorId === editorFilter) roleNames.push("①カット");
+              if (r.cutEditorId === editorFilter) roleNames.push("①カット・基本テロップ");
               if (r.telopEditorId === editorFilter) roleNames.push("②テロップ");
               if (r.sfxEditorId === editorFilter) roleNames.push("③効果音");
               if (r.editorSecondaryId === editorFilter) roleNames.push("④修正チェック");
@@ -2956,7 +3018,7 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoClient }) {
       </div>
 
       <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-3">
-        <TaskCard title="①カット待ち" icon={Scissors} tone="#0E90B8" count={cutWaitList.length}>
+        <TaskCard title="①カット・基本テロップ待ち" icon={Scissors} tone="#0E90B8" count={cutWaitList.length}>
           {simpleList(cutWaitList, r => `担当：${users.find(u => u.id === r.cutEditorId)?.name || "未割当"}`)}
         </TaskCard>
 
