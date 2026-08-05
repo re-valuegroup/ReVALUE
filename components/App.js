@@ -980,7 +980,6 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
         clientBusiness: client?.business,
         theme: draft.theme,
         transcript: draft.transcript,
-        memo: draft.memo,
         instruction: draft.captionInstruction,
         pastCaptions,
       });
@@ -1399,18 +1398,15 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
 
           <div className="rounded-xl p-3 my-2" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
             <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-bold flex items-center gap-1.5"><Sparkles size={13} color="#D6248A" /> ⑤キャプション作成</p>
+              <p className="text-xs font-bold flex items-center gap-1.5"><Sparkles size={13} color="#D6248A" /> ⑤キャプション作成担当</p>
               {reel.captionDone && <Badge tone="teal">完了</Badge>}
             </div>
-            <Field label="⑤キャプション作成担当">
+            <Field label="担当者">
               <select value={draft.captionAssigneeId || ""} onChange={e => set({ captionAssigneeId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
                 <option value="">未割り当て</option>
                 {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             </Field>
-            <div className="grid md:grid-cols-2 gap-x-4">
-              <Field label="動画概要メモ"><TextArea rows={3} value={draft.memo} onChange={e => set({ memo: e.target.value })} placeholder="動画の要点・伝えたいことのメモ" disabled={!canEdit} /></Field>
-            </div>
             <Field label="指示文（キャプション生成時にAIに伝える指示）">
               <TextArea rows={2} value={draft.captionInstruction || ""} onChange={e => set({ captionInstruction: e.target.value })} placeholder="例：親しみやすい口調で、絵文字を多めに使ってください" disabled={!canEdit} />
               {canEdit && pastCaptionInstructions && pastCaptionInstructions.length > 0 && (
@@ -1458,7 +1454,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                     </button>
                   ) : (
                     <button onClick={() => update({ captionDone: true })} disabled={!draft.caption?.trim()} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#16171B" }}>
-                      キャプションの作成を完了する
+                      キャプション作成未完了（クリックで完了）
                     </button>
                   )
                 )}
@@ -1489,10 +1485,10 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
 
           <div className="rounded-xl p-3 my-2" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
             <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-bold flex items-center gap-1.5"><Send size={13} color="#D6248A" /> ⑥投稿</p>
+              <p className="text-xs font-bold flex items-center gap-1.5"><Send size={13} color="#D6248A" /> ⑥投稿担当</p>
               {reel.completedStages >= 5 && <Badge tone="teal">投稿完了</Badge>}
             </div>
-            <Field label="⑥投稿担当">
+            <Field label="担当者">
               <select value={draft.postAssigneeId || ""} onChange={e => set({ postAssigneeId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
                 <option value="">未割り当て</option>
                 {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
@@ -1798,18 +1794,6 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
   const client = clients.find(c => c.id === clientId);
   const allClientsMode = clientId === "__all__";
 
-  const [bulkWorkloadMode, setBulkWorkloadMode] = useState(false);
-  const [selectedWlIds, setSelectedWlIds] = useState([]);
-  const [bulkWlRole, setBulkWlRole] = useState("cutEditorId");
-  const [bulkWlValue, setBulkWlValue] = useState("");
-  const toggleWlSelect = (id) => setSelectedWlIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-  const applyBulkWorkload = () => {
-    if (!bulkWlValue || selectedWlIds.length === 0) return;
-    const wlKey = bulkWlRole === "editorSecondaryId" ? "checkWorkload" : WORKLOAD_KEY_FOR_ROLE[bulkWlRole];
-    setReels(prev => prev.map(r => selectedWlIds.includes(r.id) ? { ...r, [wlKey]: bulkWlValue } : r));
-    setSelectedWlIds([]);
-  };
-
   const numberMap = useMemo(() => {
     const sorted = [...reels].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
     return new Map(sorted.map((r, i) => [r.id, i + 1]));
@@ -1867,35 +1851,7 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
     <div>
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <h2 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700 }}>動画制作管理</h2>
-        {isAdmin && (
-          <button onClick={() => { setBulkWorkloadMode(s => !s); setSelectedWlIds([]); }} className="text-xs font-semibold px-3 py-1.5 rounded-lg border" style={{ borderColor: bulkWorkloadMode ? "#D6248A" : "#DEDACD", background: bulkWorkloadMode ? "#FBE4F1" : "#fff", color: bulkWorkloadMode ? "#D6248A" : "#5F5E5A" }}>
-            工数を一括設定{bulkWorkloadMode ? "（終了）" : ""}
-          </button>
-        )}
       </div>
-
-      {bulkWorkloadMode && (
-        <div className="rounded-xl p-3 mb-4 flex items-center gap-2 flex-wrap" style={{ background: "#FBE4F1" }}>
-          <label className="flex items-center gap-1 text-xs font-semibold cursor-pointer" style={{ color: "#96185E" }}>
-            <input type="checkbox" checked={list.length > 0 && list.every(r => selectedWlIds.includes(r.id))} onChange={e => setSelectedWlIds(e.target.checked ? list.map(r => r.id) : [])} />
-            すべてを選択
-          </label>
-          <span className="text-xs font-semibold" style={{ color: "#96185E" }}>選択した動画（{selectedWlIds.length}件）に工数を一括設定：</span>
-          <select value={bulkWlRole} onChange={e => setBulkWlRole(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 140 }}>
-            <option value="cutEditorId">①カット・基本テロップ</option>
-            <option value="telopEditorId">②テロップ</option>
-            <option value="sfxEditorId">③効果音</option>
-            <option value="editorSecondaryId">④修正チェック</option>
-          </select>
-          <select value={bulkWlValue} onChange={e => setBulkWlValue(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 100 }}>
-            <option value="">工数を選択</option>
-            {EDIT_WORKLOAD_OPTIONS.map(v => <option key={v} value={v}>{v}</option>)}
-          </select>
-          <button onClick={applyBulkWorkload} disabled={!bulkWlValue || selectedWlIds.length === 0} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>
-            適用する
-          </button>
-        </div>
-      )}
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <select value={clientId} onChange={e => setClientId(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 220 }}>
@@ -1941,14 +1897,7 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
 
       <div className="space-y-3">
         {list.map(r => (
-          <div key={r.id} className="flex items-start gap-2">
-            {bulkWorkloadMode && (
-              <input type="checkbox" className="mt-4" checked={selectedWlIds.includes(r.id)} onChange={() => toggleWlSelect(r.id)} />
-            )}
-            <div className="flex-1 min-w-0">
-              <ReelCard reel={r} client={clients.find(c => c.id === r.clientId)} users={users} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} currentUser={currentUser} onChange={updateReel} onDelete={deleteReel} onDuplicate={duplicateReelInPlace} canEdit={true} showClient={allClientsMode || showAllMonths} pastCaptions={reels.filter(x => x.clientId === r.clientId && x.id !== r.id && x.caption).map(x => x.caption)} pastInstructions={[...new Set(reels.filter(x => x.clientId === r.clientId && x.id !== r.id && x.editInstructions).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(x => x.editInstructions))].slice(0, 10)} pastCaptionInstructions={[...new Set(reels.filter(x => x.clientId === r.clientId && x.id !== r.id && x.captionInstruction).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(x => x.captionInstruction))].slice(0, 10)} number={numberMap.get(r.id)} startExpanded={r.id === focusReelId} />
-            </div>
-          </div>
+          <ReelCard key={r.id} reel={r} client={clients.find(c => c.id === r.clientId)} users={users} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} currentUser={currentUser} onChange={updateReel} onDelete={deleteReel} onDuplicate={duplicateReelInPlace} canEdit={true} showClient={allClientsMode || showAllMonths} pastCaptions={reels.filter(x => x.clientId === r.clientId && x.id !== r.id && x.caption && x.captionDone).map(x => x.caption)} pastInstructions={[...new Set(reels.filter(x => x.clientId === r.clientId && x.id !== r.id && x.editInstructions).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(x => x.editInstructions))].slice(0, 10)} pastCaptionInstructions={[...new Set(reels.filter(x => x.clientId === r.clientId && x.id !== r.id && x.captionInstruction).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(x => x.captionInstruction))].slice(0, 10)} number={numberMap.get(r.id)} startExpanded={r.id === focusReelId} />
         ))}
       </div>
 
@@ -1985,6 +1934,7 @@ const EDIT_TASK_OPTIONS = [
   { key: "cut", label: "①カット・基本テロップ" },
   { key: "telop", label: "②テロップ" },
   { key: "sfx", label: "③効果音" },
+  { key: "check", label: "④修正チェック" },
 ];
 
 function emptyCalendarEvent() {
@@ -2435,11 +2385,14 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
   const [selectedForBulk, setSelectedForBulk] = useState([]);
   const [bulkChecker, setBulkChecker] = useState("");
   const [checkerChoice, setCheckerChoice] = useState({});
+  const getCheckerChoice = (reelId) => checkerChoice[reelId] || { editorId: "", date: "", startTime: "", endTime: "" };
+  const setCheckerChoiceField = (reelId, patch) => setCheckerChoice(prev => ({ ...prev, [reelId]: { ...getCheckerChoice(reelId), ...patch } }));
   const confirmIndividualChecker = (reelId) => {
-    const editorId = checkerChoice[reelId];
-    if (!editorId) return;
-    setReels(prev => prev.map(r => r.id === reelId ? { ...r, editorSecondaryId: editorId } : r));
-    setCheckerChoice(prev => ({ ...prev, [reelId]: "" }));
+    const choice = getCheckerChoice(reelId);
+    if (!choice.editorId) return;
+    setReels(prev => prev.map(r => r.id === reelId ? { ...r, editorSecondaryId: choice.editorId } : r));
+    if (choice.date) syncRoleCalendar(setCalendarEvents, reelId, "check", choice.editorId, choice.date, choice.date, choice.startTime, choice.endTime);
+    setCheckerChoice(prev => ({ ...prev, [reelId]: { editorId: "", date: "", startTime: "", endTime: "" } }));
   };
   const toggleBulk = (id) => setSelectedForBulk(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   const applyBulkChecker = () => {
@@ -2765,11 +2718,15 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                           <p className="text-xs mt-1" style={{ color: "#8B897F" }}>{names}</p>
                           {r.editInstructions && <p className="text-xs mt-1" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>}
                           <div className="flex items-center gap-2 mt-2 flex-wrap">
-                            <select value={checkerChoice[r.id] || ""} onChange={e => setCheckerChoice(prev => ({ ...prev, [r.id]: e.target.value }))} className={inputCls} style={{ ...inputStyle, width: 160 }}>
+                            <select value={getCheckerChoice(r.id).editorId} onChange={e => setCheckerChoiceField(r.id, { editorId: e.target.value })} className={inputCls} style={{ ...inputStyle, width: 160 }}>
                               <option value="">動画編集者を選択</option>
                               {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                             </select>
-                            <button onClick={() => confirmIndividualChecker(r.id)} disabled={!checkerChoice[r.id]} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>
+                            <TextInput type="date" value={getCheckerChoice(r.id).date} onChange={e => setCheckerChoiceField(r.id, { date: e.target.value })} title="チェックする日（カレンダーに反映されます）" style={{ width: 150 }} />
+                            <TextInput type="time" step={600} value={getCheckerChoice(r.id).startTime} onChange={e => setCheckerChoiceField(r.id, { startTime: e.target.value })} title="開始時刻（任意）" style={{ width: 110 }} />
+                            <span className="text-xs shrink-0" style={{ color: "#8B897F" }}>〜</span>
+                            <TextInput type="time" step={600} value={getCheckerChoice(r.id).endTime} onChange={e => setCheckerChoiceField(r.id, { endTime: e.target.value })} title="終了時刻（任意）" style={{ width: 110 }} />
+                            <button onClick={() => confirmIndividualChecker(r.id)} disabled={!getCheckerChoice(r.id).editorId} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>
                               ④修正チェックを担当する
                             </button>
                           </div>
@@ -2894,7 +2851,7 @@ function ResearchPage({ clients, reels, setReels }) {
     setRegisterStatus("");
     setSelectedReelId("");
     try {
-      const pastCaptions = clientReels.filter(r => r.caption).map(r => r.caption);
+      const pastCaptions = clientReels.filter(r => r.caption && r.captionDone).map(r => r.caption);
       const text = await callApi("/api/caption", {
         clientName: captionClient.companyName,
         clientBusiness: captionClient.business,
