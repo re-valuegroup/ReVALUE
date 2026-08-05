@@ -1071,12 +1071,20 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
           {[
             { label: "①カット・基本テロップ", key: "cutEditorId", doneKey: "cutDone", assigneeId: reel.cutEditorId, done: reel.cutDone },
             { label: "②テロップ", key: "telopEditorId", doneKey: "telopDone", assigneeId: reel.telopEditorId, done: reel.telopDone },
-            { label: "③効果音", key: "sfxEditorId", doneKey: "sfxDone", assigneeId: reel.sfxEditorId, done: reel.sfxDone },
-          ].filter(t => editRolesForReel(reel).some(f => f.key === t.key)).concat([
+            { label: "③効果音", key: "sfxEditorId", doneKey: "sfxDone", assigneeId: reel.sfxEditorId, done: reel.sfxDone, notRequired: !editRolesForReel(reel).some(f => f.key === "sfxEditorId") },
+          ].concat([
             { label: "④修正チェック", doneKey: null, assigneeId: reel.editorSecondaryId, done: reel.checkSubmitted },
             { label: "⑤キャプション作成", readOnly: true, done: !!reel.captionDone },
             { label: "⑥投稿", readOnly: true, done: reel.completedStages >= 5, extra: reel.completedStages >= 5 && reel.postedDate ? reel.postedDate : "" },
           ]).map((t, i, arr) => {
+            if (t.notRequired) {
+              return (
+                <React.Fragment key={t.label}>
+                  <span className="text-[11px] font-semibold px-2 py-1 rounded-full" style={{ background: "#F0EEE7", color: "#A9A79C" }}>{t.label}：効果音なし</span>
+                  {i < arr.length - 1 && <span style={{ color: "#C4C2B8", fontSize: 11 }}>→</span>}
+                </React.Fragment>
+              );
+            }
             const person = users.find(u => u.id === t.assigneeId);
             const tone = t.done ? "teal" : person ? "amber" : "gray";
             const toneStyle = { teal: { background: "#D6F0EA", color: "#0E6B57" }, amber: { background: "#FCEEDB", color: "#854F0B" }, gray: { background: "#F0EEE7", color: "#8B897F" } }[tone];
@@ -1259,7 +1267,16 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                 { key: "cutEditorId", doneKey: "cutDone", label: "①カット・基本テロップ担当", task: "cut" },
                 { key: "telopEditorId", doneKey: "telopDone", label: "②テロップ担当", task: "telop" },
                 { key: "sfxEditorId", doneKey: "sfxDone", label: "③効果音担当", task: "sfx" },
-              ].filter(f => editRolesForReel(draft).some(r => r.key === f.key)).map(f => {
+              ].map(f => {
+                const required = editRolesForReel(draft).some(r => r.key === f.key);
+                if (!required) {
+                  return (
+                    <div key={f.key} className="rounded-lg p-2 flex items-center gap-2" style={{ background: "#F4F2EA", border: "1px solid #EFEDE4" }}>
+                      <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#A9A79C" }}>{f.label}</span>
+                      <span className="text-xs font-semibold" style={{ color: "#A9A79C" }}>効果音なし（フルテロップ編集のため不要）</span>
+                    </div>
+                  );
+                }
                 const done = !!reel[f.doneKey];
                 const canToggle = done || canToggleRoleDone(reel, f.doneKey);
                 const wlKey = WORKLOAD_KEY_FOR_ROLE[f.key];
@@ -1327,26 +1344,6 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   </div>
                 );
               })}
-              <div className="rounded-lg p-2" style={{ background: "#fff", border: reel.checkSubmitted ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>④修正チェック担当</span>
-                  <select value={draft.editorSecondaryId || ""} onChange={e => set({ editorSecondaryId: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
-                    <option value="">未割り当て</option>
-                    {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                  </select>
-                  <select value={reel.checkWorkload || ""} onChange={e => update({ checkWorkload: e.target.value })} disabled={!isAdmin} title="工数（統括管理者のみ設定可）" className={inputCls} style={{ ...inputStyle, width: 90 }}>
-                    <option value="">工数―</option>
-                    {EDIT_WORKLOAD_OPTIONS.map(v => <option key={v} value={v}>工数{v}</option>)}
-                  </select>
-                  <span className="flex items-center gap-1 text-xs font-semibold shrink-0" style={{ color: reel.checkSubmitted ? "#0E90B8" : "#A9A79C" }}>
-                    {reel.checkSubmitted ? <CircleCheck size={16} color="#0E90B8" /> : <Circle size={16} color="#A9A79C" />} {reel.checkSubmitted ? "完了" : "未完了"}
-                  </span>
-                </div>
-                <div className="mt-1.5 pt-1.5" style={{ borderTop: "1px dashed #EFEDE4" }}>
-                  <p className="text-[10px] mb-0.5" style={{ color: "#A9A79C" }}>コメント・申し送り</p>
-                  <TextArea rows={2} value={draft.checkComment || ""} onChange={e => set({ checkComment: e.target.value })} disabled={!canEdit} placeholder="意図・注意点・引き継ぎ事項など" style={{ fontSize: 12 }} />
-                </div>
-              </div>
             </div>
           </div>
 
@@ -1355,7 +1352,22 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
               <p className="text-xs font-bold flex items-center gap-1.5"><ClipboardList size={13} color="#0E90B8" /> ④修正チェック</p>
               {reel.checkSubmitted && <Badge tone="teal">提出済み ・ {timeAgo(reel.checkSubmittedAt)}</Badge>}
             </div>
-            <p className="text-[11px] mb-2" style={{ color: "#A9A79C" }}>チェック担当者は上の「編集進行管理」欄で指定できます。</p>
+            <div className="rounded-lg p-2 mb-2" style={{ background: "#fff", border: reel.checkSubmitted ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>④修正チェック担当</span>
+                <select value={draft.editorSecondaryId || ""} onChange={e => set({ editorSecondaryId: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
+                  <option value="">未割り当て</option>
+                  {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+                <select value={reel.checkWorkload || ""} onChange={e => update({ checkWorkload: e.target.value })} disabled={!isAdmin} title="工数（統括管理者のみ設定可）" className={inputCls} style={{ ...inputStyle, width: 90 }}>
+                  <option value="">工数―</option>
+                  {EDIT_WORKLOAD_OPTIONS.map(v => <option key={v} value={v}>工数{v}</option>)}
+                </select>
+                <span className="flex items-center gap-1 text-xs font-semibold shrink-0" style={{ color: reel.checkSubmitted ? "#0E90B8" : "#A9A79C" }}>
+                  {reel.checkSubmitted ? <CircleCheck size={16} color="#0E90B8" /> : <Circle size={16} color="#A9A79C" />} {reel.checkSubmitted ? "完了" : "未完了"}
+                </span>
+              </div>
+            </div>
             <div className="space-y-1.5">
               {CHECKLIST_ITEMS.map((item, i) => (
                 <label key={item.key} className="flex items-start gap-2 text-xs cursor-pointer">
@@ -1381,6 +1393,9 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
               )}
               {transcriptFileError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{transcriptFileError}</p>}
               {transcriptCleanError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{transcriptCleanError}</p>}
+            </Field>
+            <Field label="コメント・申し送り">
+              <TextArea rows={2} value={draft.checkComment || ""} onChange={e => set({ checkComment: e.target.value })} disabled={!canEdit} placeholder="意図・注意点・引き継ぎ事項など" />
             </Field>
             <div className="flex items-center justify-between flex-wrap gap-2">
               <span className="text-[11px]" style={{ color: "#8B897F" }}>チェック済み {checkedCount}/{CHECKLIST_ITEMS.length}</span>
@@ -2457,8 +2472,8 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
               const rows = [
                 { label: "①カット・基本テロップ", key: "cutEditorId", doneKey: "cutDone", assigneeId: r.cutEditorId },
                 { label: "②テロップ", key: "telopEditorId", doneKey: "telopDone", assigneeId: r.telopEditorId },
-                { label: "③効果音", key: "sfxEditorId", doneKey: "sfxDone", assigneeId: r.sfxEditorId },
-              ].filter(t => editRolesForReel(r).some(f => f.key === t.key)).concat([
+                { label: "③効果音", key: "sfxEditorId", doneKey: "sfxDone", assigneeId: r.sfxEditorId, notRequired: !editRolesForReel(r).some(f => f.key === "sfxEditorId") },
+              ].concat([
                 { label: "④修正チェック", doneKey: null, assigneeId: r.editorSecondaryId, done: r.checkSubmitted },
               ]);
               return (
@@ -2469,6 +2484,9 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                   </button>
                   <div className="flex items-center gap-1 flex-wrap">
                     {rows.map((t, i) => {
+                      if (t.notRequired) {
+                        return <span key={t.label} className="text-[11px] font-semibold px-2 py-1 rounded-full" style={{ background: "#F0EEE7", color: "#A9A79C" }}>{t.label}：効果音なし</span>;
+                      }
                       const done = t.doneKey ? !!r[t.doneKey] : !!r.checkSubmitted;
                       const person = users.find(u => u.id === t.assigneeId);
                       const canToggle = t.doneKey ? (done || canToggleRoleDone(r, t.doneKey)) : (done || canSubmitCheck(r));
