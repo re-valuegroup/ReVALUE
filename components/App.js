@@ -209,7 +209,8 @@ const emptyReel = (clientId, ym) => ({
   cutComment: "", telopComment: "", sfxComment: "", checkComment: "",
   checklist: emptyChecklist(), checkSubmitted: false, checkSubmittedAt: null,
   theme: "", script: "", editInstructions: "", driveUrl: "",
-  transcript: "", memo: "", caption: "", captionDone: false,
+  transcript: "", memo: "", caption: "", captionDone: false, captionInstruction: "",
+  captionAssigneeId: "", postAssigneeId: "",
   captionHistory: [], trendSearches: [],
   completedStages: 0, stageVersion: 2, postedDate: "",
   instagramUrl: "", instagramViews: "", instagramLikes: "",
@@ -805,7 +806,7 @@ function timeAgo(ts) {
   return d.toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onChange, onDelete, onDuplicate, canEdit, currentUser, showClient, pastCaptions, pastInstructions, number, startExpanded }) {
+function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onChange, onDelete, onDuplicate, canEdit, currentUser, showClient, pastCaptions, pastInstructions, pastCaptionInstructions, number, startExpanded }) {
   const [expanded, setExpanded] = useState(!!startExpanded);
   const cardRef = useRef(null);
   useEffect(() => {
@@ -980,6 +981,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
         theme: draft.theme,
         transcript: draft.transcript,
         memo: draft.memo,
+        instruction: draft.captionInstruction,
         pastCaptions,
       });
       let clean = text.trim();
@@ -1074,8 +1076,8 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             { label: "③効果音", key: "sfxEditorId", doneKey: "sfxDone", assigneeId: reel.sfxEditorId, done: reel.sfxDone, notRequired: !editRolesForReel(reel).some(f => f.key === "sfxEditorId") },
           ].concat([
             { label: "④修正チェック", doneKey: null, assigneeId: reel.editorSecondaryId, done: reel.checkSubmitted },
-            { label: "⑤キャプション作成", readOnly: true, done: !!reel.captionDone },
-            { label: "⑥投稿", readOnly: true, done: reel.completedStages >= 5, extra: reel.completedStages >= 5 && reel.postedDate ? reel.postedDate : "" },
+            { label: "⑤キャプション作成", readOnly: true, done: !!reel.captionDone, assigneeId: reel.captionAssigneeId },
+            { label: "⑥投稿", readOnly: true, done: reel.completedStages >= 5, assigneeId: reel.postAssigneeId, extra: reel.completedStages >= 5 && reel.postedDate ? reel.postedDate : "" },
           ]).map((t, i, arr) => {
             if (t.notRequired) {
               return (
@@ -1284,10 +1286,6 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                       <option value="">未割り当て</option>
                       {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                     </select>
-                    <select value={reel[wlKey] || ""} onChange={e => update({ [wlKey]: e.target.value })} disabled={!isAdmin} title="工数（統括管理者のみ設定可）" className={inputCls} style={{ ...inputStyle, width: 90 }}>
-                      <option value="">工数―</option>
-                      {EDIT_WORKLOAD_OPTIONS.map(v => <option key={v} value={v}>工数{v}</option>)}
-                    </select>
                     <button
                       type="button"
                       disabled={!canEdit || !canToggle}
@@ -1354,10 +1352,6 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   <option value="">未割り当て</option>
                   {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                 </select>
-                <select value={reel.checkWorkload || ""} onChange={e => update({ checkWorkload: e.target.value })} disabled={!isAdmin} title="工数（統括管理者のみ設定可）" className={inputCls} style={{ ...inputStyle, width: 90 }}>
-                  <option value="">工数―</option>
-                  {EDIT_WORKLOAD_OPTIONS.map(v => <option key={v} value={v}>工数{v}</option>)}
-                </select>
                 <span className="flex items-center gap-1 text-xs font-semibold shrink-0" style={{ color: reel.checkSubmitted ? "#0E90B8" : "#A9A79C" }}>
                   {reel.checkSubmitted ? <CircleCheck size={16} color="#0E90B8" /> : <Circle size={16} color="#A9A79C" />} {reel.checkSubmitted ? "完了" : "未完了"}
                 </span>
@@ -1396,7 +1390,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
               <span className="text-[11px]" style={{ color: "#8B897F" }}>チェック済み {checkedCount}/{CHECKLIST_ITEMS.length}</span>
               {canEdit && (
                 <button onClick={submitCheck} disabled={!reel.checkSubmitted && !canSubmitCheck(reel)} title={reel.checkSubmitted ? "もう一度押すとチェック中に戻せます" : !canSubmitCheck(reel) ? "①②③（必要な工程）がすべて完了してから提出できます" : ""} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 disabled:opacity-40" style={{ background: reel.checkSubmitted ? "#0E90B8" : "#16171B" }}>
-                  {reel.checkSubmitted && <CircleCheck size={13} />} {reel.checkSubmitted ? "修正チェック完了" : "修正チェック完了にする"}
+                  {reel.checkSubmitted && <CircleCheck size={13} />} {reel.checkSubmitted ? "修正チェック完了" : "修正チェック未完了（クリックで完了）"}
                 </button>
               )}
             </div>
@@ -1408,9 +1402,31 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
               <p className="text-xs font-bold flex items-center gap-1.5"><Sparkles size={13} color="#D6248A" /> ⑤キャプション作成</p>
               {reel.captionDone && <Badge tone="teal">完了</Badge>}
             </div>
+            <Field label="⑤キャプション作成担当">
+              <select value={draft.captionAssigneeId || ""} onChange={e => set({ captionAssigneeId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
+                <option value="">未割り当て</option>
+                {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </Field>
             <div className="grid md:grid-cols-2 gap-x-4">
               <Field label="動画概要メモ"><TextArea rows={3} value={draft.memo} onChange={e => set({ memo: e.target.value })} placeholder="動画の要点・伝えたいことのメモ" disabled={!canEdit} /></Field>
             </div>
+            <Field label="指示文（キャプション生成時にAIに伝える指示）">
+              <TextArea rows={2} value={draft.captionInstruction || ""} onChange={e => set({ captionInstruction: e.target.value })} placeholder="例：親しみやすい口調で、絵文字を多めに使ってください" disabled={!canEdit} />
+              {canEdit && pastCaptionInstructions && pastCaptionInstructions.length > 0 && (
+                <select
+                  value=""
+                  onChange={e => { if (e.target.value) set({ captionInstruction: e.target.value }); }}
+                  className={inputCls}
+                  style={{ ...inputStyle, marginTop: 4, fontSize: 11 }}
+                >
+                  <option value="">過去の指示文から選んで入力（直近{pastCaptionInstructions.length}件）</option>
+                  {pastCaptionInstructions.map((text, i) => (
+                    <option key={i} value={text}>{text.length > 40 ? text.slice(0, 40) + "…" : text}</option>
+                  ))}
+                </select>
+              )}
+            </Field>
             <p className="text-[11px] mb-2" style={{ color: "#A9A79C" }}>
               指定ハッシュタグ：{[client?.hashtag1, client?.hashtag2, client?.hashtag3].filter(Boolean).join(" ") || "未設定（クライアント情報の編集画面から設定できます）"}
             </p>
@@ -1476,6 +1492,12 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
               <p className="text-xs font-bold flex items-center gap-1.5"><Send size={13} color="#D6248A" /> ⑥投稿</p>
               {reel.completedStages >= 5 && <Badge tone="teal">投稿完了</Badge>}
             </div>
+            <Field label="⑥投稿担当">
+              <select value={draft.postAssigneeId || ""} onChange={e => set({ postAssigneeId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
+                <option value="">未割り当て</option>
+                {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </Field>
             <Field label="投稿日">
               <TextInput type="date" value={draft.postedDate} onChange={e => set({ postedDate: e.target.value })} disabled={!canEdit} />
               {canEdit && (
@@ -1558,6 +1580,72 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
   const [dupSource, setDupSource] = useState("");
   const [instructionsSubmitted, setInstructionsSubmitted] = useState(false);
 
+  const [recording, setRecording] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState("");
+  const [voiceLoading, setVoiceLoading] = useState(false);
+  const [voiceError, setVoiceError] = useState("");
+  const [voiceFilledFields, setVoiceFilledFields] = useState(null);
+  const recognitionRef = useRef(null);
+  const voiceSupported = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
+
+  const startRecording = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setVoiceError("お使いのブラウザは音声入力に対応していません（Chromeでのご利用を推奨します）。");
+      return;
+    }
+    setVoiceError("");
+    setVoiceFilledFields(null);
+    setVoiceTranscript("");
+    const recognition = new SpeechRecognition();
+    recognition.lang = "ja-JP";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.onresult = (event) => {
+      let finalText = "";
+      for (let i = 0; i < event.results.length; i++) {
+        finalText += event.results[i][0].transcript;
+      }
+      setVoiceTranscript(finalText);
+    };
+    recognition.onerror = () => {
+      setVoiceError("音声の認識中にエラーが発生しました。もう一度お試しください。");
+      setRecording(false);
+    };
+    recognition.onend = () => {
+      setRecording(false);
+    };
+    recognitionRef.current = recognition;
+    recognition.start();
+    setRecording(true);
+  };
+
+  const stopRecording = () => {
+    recognitionRef.current?.stop();
+    setRecording(false);
+  };
+
+  const applyVoiceInput = async () => {
+    if (!voiceTranscript.trim()) return;
+    setVoiceLoading(true);
+    setVoiceError("");
+    try {
+      const res = await fetch("/api/voice-fill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript: voiceTranscript }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || "振り分けに失敗しました");
+      setForm(f => ({ ...f, ...data.fields }));
+      setVoiceFilledFields(Object.keys(data.fields || {}));
+    } catch (e) {
+      setVoiceError("振り分けに失敗しました：" + (e.message || "不明なエラー"));
+    } finally {
+      setVoiceLoading(false);
+    }
+  };
+
   const applyDuplicate = (id) => {
     setDupSource(id);
     if (!id) return;
@@ -1594,6 +1682,37 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
 
         {client && (
           <>
+            <div className="rounded-xl p-3 my-2" style={{ background: "#FBE4F1" }}>
+              <p className="text-xs font-bold mb-1 flex items-center gap-1.5" style={{ color: "#96185E" }}><Sparkles size={13} /> 音声で入力する</p>
+              <p className="text-[11px] mb-2" style={{ color: "#96185E" }}>マイクに向かって話すと、内容をAIが読み取り「テーマ」「編集指示」「台本」に自動で振り分けます（対応ブラウザ：Chrome推奨）。</p>
+              <div className="flex items-center gap-2 flex-wrap">
+                {!recording ? (
+                  <button onClick={startRecording} disabled={!voiceSupported} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 disabled:opacity-50" style={{ background: "#D6248A" }}>
+                    🎙️ 録音を開始
+                  </button>
+                ) : (
+                  <button onClick={stopRecording} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 animate-pulse" style={{ background: "#A32D2D" }}>
+                    ⏹ 録音を停止（話し終えたら押してください）
+                  </button>
+                )}
+                {voiceTranscript && !recording && (
+                  <button onClick={applyVoiceInput} disabled={voiceLoading} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 disabled:opacity-50" style={{ background: "#16171B" }}>
+                    {voiceLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {voiceLoading ? "振り分け中..." : "内容を各項目に反映"}
+                  </button>
+                )}
+              </div>
+              {!voiceSupported && <p className="text-[11px] mt-1" style={{ color: "#A32D2D" }}>お使いのブラウザは音声入力に対応していません。Chromeでのご利用をお試しください。</p>}
+              {voiceTranscript && (
+                <div className="mt-2 p-2 rounded-lg text-xs" style={{ background: "#fff", color: "#5F5E5A", lineHeight: 1.6 }}>
+                  {voiceTranscript}
+                </div>
+              )}
+              {voiceError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{voiceError}</p>}
+              {voiceFilledFields && (
+                <p className="text-[11px] mt-1" style={{ color: "#96185E" }}>反映しました（{voiceFilledFields.join("・")}）。内容を確認してください。</p>
+              )}
+            </div>
+
             {existingReels.length > 0 && (
               <Field label="過去の動画を複製して作成（任意）">
                 <select value={dupSource} onChange={e => applyDuplicate(e.target.value)} className={inputCls} style={inputStyle}>
@@ -1827,7 +1946,7 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
               <input type="checkbox" className="mt-4" checked={selectedWlIds.includes(r.id)} onChange={() => toggleWlSelect(r.id)} />
             )}
             <div className="flex-1 min-w-0">
-              <ReelCard reel={r} client={clients.find(c => c.id === r.clientId)} users={users} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} currentUser={currentUser} onChange={updateReel} onDelete={deleteReel} onDuplicate={duplicateReelInPlace} canEdit={true} showClient={allClientsMode || showAllMonths} pastCaptions={reels.filter(x => x.clientId === r.clientId && x.id !== r.id && x.caption).map(x => x.caption)} pastInstructions={[...new Set(reels.filter(x => x.clientId === r.clientId && x.id !== r.id && x.editInstructions).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(x => x.editInstructions))].slice(0, 10)} number={numberMap.get(r.id)} startExpanded={r.id === focusReelId} />
+              <ReelCard reel={r} client={clients.find(c => c.id === r.clientId)} users={users} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} currentUser={currentUser} onChange={updateReel} onDelete={deleteReel} onDuplicate={duplicateReelInPlace} canEdit={true} showClient={allClientsMode || showAllMonths} pastCaptions={reels.filter(x => x.clientId === r.clientId && x.id !== r.id && x.caption).map(x => x.caption)} pastInstructions={[...new Set(reels.filter(x => x.clientId === r.clientId && x.id !== r.id && x.editInstructions).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(x => x.editInstructions))].slice(0, 10)} pastCaptionInstructions={[...new Set(reels.filter(x => x.clientId === r.clientId && x.id !== r.id && x.captionInstruction).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(x => x.captionInstruction))].slice(0, 10)} number={numberMap.get(r.id)} startExpanded={r.id === focusReelId} />
             </div>
           </div>
         ))}
