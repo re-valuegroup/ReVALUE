@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 
 export async function POST(req) {
   try {
-    const { clientName, clientBusiness, theme, transcript, memo, genre, purpose, pastCaptions } = await req.json();
+    const { clientName, clientBusiness, theme, transcript, memo, genre, purpose, instruction, pastCaptions } = await req.json();
 
     const hasPast = Array.isArray(pastCaptions) && pastCaptions.length > 0;
     const pastCaptionsText = hasPast
@@ -17,6 +17,7 @@ export async function POST(req) {
 動画テーマ: ${theme || "未設定"}
 動画の文字起こし: ${transcript || "（なし）"}
 動画の概要メモ: ${memo || "（なし）"}
+${instruction ? `\nこのキャプション作成にあたっての指示：${instruction}\n（この指示を最優先で反映してください）` : ""}
 ${hasPast ? `\nこのクライアントの過去のキャプションの文体・トーン・言葉選びの傾向を読み取り、一貫性のある提案にしてください。\n\n${pastCaptionsText}` : ""}`;
 
     const res = await fetch("https://api.anthropic.com/v1/messages", {
