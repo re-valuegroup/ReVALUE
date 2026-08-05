@@ -1329,14 +1329,18 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
               })}
               <div className="rounded-lg p-2" style={{ background: "#fff", border: reel.checkSubmitted ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>④修正チェック</span>
-                  <span className="flex items-center gap-1 text-xs font-semibold" style={{ color: reel.checkSubmitted ? "#0E90B8" : "#A9A79C" }}>
-                    {reel.checkSubmitted ? <CircleCheck size={16} color="#0E90B8" /> : <Circle size={16} color="#A9A79C" />} {reel.checkSubmitted ? "完了" : "未完了（下の④修正チェック欄で担当者の指定・提出ができます）"}
-                  </span>
+                  <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>④修正チェック担当</span>
+                  <select value={draft.editorSecondaryId || ""} onChange={e => set({ editorSecondaryId: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
+                    <option value="">未割り当て</option>
+                    {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  </select>
                   <select value={reel.checkWorkload || ""} onChange={e => update({ checkWorkload: e.target.value })} disabled={!isAdmin} title="工数（統括管理者のみ設定可）" className={inputCls} style={{ ...inputStyle, width: 90 }}>
                     <option value="">工数―</option>
                     {EDIT_WORKLOAD_OPTIONS.map(v => <option key={v} value={v}>工数{v}</option>)}
                   </select>
+                  <span className="flex items-center gap-1 text-xs font-semibold shrink-0" style={{ color: reel.checkSubmitted ? "#0E90B8" : "#A9A79C" }}>
+                    {reel.checkSubmitted ? <CircleCheck size={16} color="#0E90B8" /> : <Circle size={16} color="#A9A79C" />} {reel.checkSubmitted ? "完了" : "未完了"}
+                  </span>
                 </div>
                 <div className="mt-1.5 pt-1.5" style={{ borderTop: "1px dashed #EFEDE4" }}>
                   <p className="text-[10px] mb-0.5" style={{ color: "#A9A79C" }}>コメント・申し送り</p>
@@ -1351,12 +1355,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
               <p className="text-xs font-bold flex items-center gap-1.5"><ClipboardList size={13} color="#0E90B8" /> ④修正チェック</p>
               {reel.checkSubmitted && <Badge tone="teal">提出済み ・ {timeAgo(reel.checkSubmittedAt)}</Badge>}
             </div>
-            <Field label="チェック担当者">
-              <select value={reel.editorSecondaryId || ""} onChange={e => update({ editorSecondaryId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
-                <option value="">未割り当て</option>
-                {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
-            </Field>
+            <p className="text-[11px] mb-2" style={{ color: "#A9A79C" }}>チェック担当者は上の「編集進行管理」欄で指定できます。</p>
             <div className="space-y-1.5">
               {CHECKLIST_ITEMS.map((item, i) => (
                 <label key={item.key} className="flex items-start gap-2 text-xs cursor-pointer">
@@ -1383,7 +1382,6 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
               {transcriptFileError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{transcriptFileError}</p>}
               {transcriptCleanError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{transcriptCleanError}</p>}
             </Field>
-            <Field label="メモ欄"><TextArea rows={2} value={checklist.memo} onChange={e => setCheckMemo(e.target.value)} disabled={!canEdit} /></Field>
             <div className="flex items-center justify-between flex-wrap gap-2">
               <span className="text-[11px]" style={{ color: "#8B897F" }}>チェック済み {checkedCount}/{CHECKLIST_ITEMS.length}</span>
               {canEdit && (
@@ -1395,22 +1393,11 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             {checkSubmitError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{checkSubmitError}</p>}
           </div>
 
-          <div className="rounded-xl p-3 my-2 space-y-1.5" style={{ background: "#FAF8F3" }}>
-            {[
-              { label: "⑤キャプション作成", done: !!reel.captionDone, note: "下の「キャプションの作成を完了する」ボタンで反映" },
-              { label: "⑥投稿", done: reel.completedStages >= 5, note: "投稿日の入力で自動反映", extra: reel.completedStages >= 5 && reel.postedDate ? reel.postedDate : "" },
-            ].map(t => (
-              <div key={t.label} className="rounded-lg p-2 flex items-center gap-2" style={{ background: "#fff", border: t.done ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
-                <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>{t.label}</span>
-                <span className="flex items-center gap-1 text-xs font-semibold" style={{ color: t.done ? "#0E90B8" : "#A9A79C" }}>
-                  {t.done ? <CircleCheck size={16} color="#0E90B8" /> : <Circle size={16} color="#A9A79C" />} {t.done ? `完了${t.extra ? `（${t.extra}）` : ""}` : `未完了（${t.note}）`}
-                </span>
-              </div>
-            ))}
-          </div>
-
           <div className="rounded-xl p-3 my-2" style={{ background: "#FAF8F3" }}>
-            <p className="text-xs font-bold mb-2 flex items-center gap-1.5"><Sparkles size={13} color="#D6248A" /> AIキャプション作成</p>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-bold flex items-center gap-1.5"><Sparkles size={13} color="#D6248A" /> ⑤キャプション作成</p>
+              {reel.captionDone && <Badge tone="teal">完了</Badge>}
+            </div>
             <div className="grid md:grid-cols-2 gap-x-4">
               <Field label="動画概要メモ"><TextArea rows={3} value={draft.memo} onChange={e => set({ memo: e.target.value })} placeholder="動画の要点・伝えたいことのメモ" disabled={!canEdit} /></Field>
             </div>
@@ -1475,7 +1462,10 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
           </div>
 
           <div className="rounded-xl p-3 my-2" style={{ background: "#FAF8F3" }}>
-            <p className="text-xs font-bold mb-2">投稿情報</p>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-bold flex items-center gap-1.5"><Send size={13} color="#D6248A" /> ⑥投稿</p>
+              {reel.completedStages >= 5 && <Badge tone="teal">投稿完了</Badge>}
+            </div>
             <Field label="投稿日">
               <TextInput type="date" value={draft.postedDate} onChange={e => set({ postedDate: e.target.value })} disabled={!canEdit} />
               {canEdit && (
