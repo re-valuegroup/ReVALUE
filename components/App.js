@@ -1696,7 +1696,19 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
     return new Map(sorted.map((r, i) => [r.id, i + 1]));
   }, [reels]);
 
-  useEffect(() => { if (focusClientId) { setClientId(focusClientId); setShowAllMonths(false); } }, [focusClientId]);
+  useEffect(() => {
+    if (focusClientId) {
+      setClientId(focusClientId);
+      if (focusReelId) {
+        // 特定の動画を開く場合は、月やその他の絞り込みでその動画が隠れてしまわないようにする
+        setShowAllMonths(true);
+        setStageFilter("");
+        setStaffFilter("");
+      } else {
+        setShowAllMonths(false);
+      }
+    }
+  }, [focusClientId, focusReelId]);
 
   const [showNew, setShowNew] = useState(false);
   const list = reels
