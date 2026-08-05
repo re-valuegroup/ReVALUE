@@ -1175,6 +1175,17 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                 {EDIT_TYPE_OPTIONS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
               </select>
             </Field>
+            <Field label="Google Drive 保存先URL">
+              <div className="flex gap-1">
+                <TextInput value={draft.driveUrl} onChange={e => set({ driveUrl: e.target.value })} placeholder="https://drive.google.com/..." disabled={!canEdit} />
+                {draft.driveUrl && <a href={draft.driveUrl} target="_blank" rel="noreferrer" className="shrink-0 flex items-center justify-center w-9 rounded-lg border" style={{ borderColor: "#DEDACD" }}><Link2 size={14} /></a>}
+              </div>
+            </Field>
+            <Field label="編集期限（投稿予定日）"><TextInput type="date" value={draft.deadline || ""} onChange={e => set({ deadline: e.target.value })} disabled={!canEdit} /></Field>
+          </div>
+
+          <div className="rounded-xl p-3 my-2" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
+            <p className="text-xs font-bold mb-2 flex items-center gap-1.5"><Camera size={13} color="#854F0B" /> 撮影・編集指示</p>
             <Field label="担当撮影者">
               <div className="flex items-center gap-2">
                 <select value={draft.assignedStaffId || ""} onChange={e => set({ assignedStaffId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
@@ -1192,12 +1203,6 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                     {reel.completedStages >= 1 ? <CircleCheck size={16} color="#0E90B8" /> : <Circle size={16} color="#A9A79C" />} 撮影完了
                   </button>
                 )}
-              </div>
-            </Field>
-            <Field label="Google Drive 保存先URL">
-              <div className="flex gap-1">
-                <TextInput value={draft.driveUrl} onChange={e => set({ driveUrl: e.target.value })} placeholder="https://drive.google.com/..." disabled={!canEdit} />
-                {draft.driveUrl && <a href={draft.driveUrl} target="_blank" rel="noreferrer" className="shrink-0 flex items-center justify-center w-9 rounded-lg border" style={{ borderColor: "#DEDACD" }}><Link2 size={14} /></a>}
               </div>
             </Field>
             <Field label="編集指示">
@@ -1241,20 +1246,10 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
               )}
             </Field>
             <Field label="台本（任意）"><TextArea rows={2} value={draft.script} onChange={e => set({ script: e.target.value })} disabled={!canEdit} /></Field>
-            <Field label="編集期限（投稿予定日）"><TextInput type="date" value={draft.deadline || ""} onChange={e => set({ deadline: e.target.value })} disabled={!canEdit} /></Field>
-            <Field label="即納案件">
-              <label className="flex items-center gap-2 text-sm font-semibold px-3 py-2 rounded-lg cursor-pointer" style={{ background: reel.rush ? "#FCEBEB" : "#F4F2EA", color: reel.rush ? "#A32D2D" : "#5F5E5A", border: reel.rush ? "1px solid #F0A5A5" : "1px solid transparent" }}>
-                <input type="checkbox" checked={!!reel.rush} onChange={e => canEdit && update({ rush: e.target.checked })} disabled={!canEdit} />
-                🔥 即納案件（納期が短い）
-              </label>
-            </Field>
-            <Field label="編集予定日（カレンダーと連動）">
-              <div className="flex items-center gap-1">
-                <TextInput type="date" value={draft.editStartDate || ""} onChange={e => set({ editStartDate: e.target.value })} disabled={!canEdit} />
-                <span className="text-xs shrink-0" style={{ color: "#8B897F" }}>〜</span>
-                <TextInput type="date" value={draft.editEndDate || ""} onChange={e => set({ editEndDate: e.target.value })} disabled={!canEdit} />
-              </div>
-            </Field>
+            <label className="flex items-center gap-2 text-sm font-semibold px-3 py-2 rounded-lg cursor-pointer" style={{ background: reel.rush ? "#FCEBEB" : "#F4F2EA", color: reel.rush ? "#A32D2D" : "#5F5E5A", border: reel.rush ? "1px solid #F0A5A5" : "1px solid transparent" }}>
+              <input type="checkbox" checked={!!reel.rush} onChange={e => canEdit && update({ rush: e.target.checked })} disabled={!canEdit} />
+              🔥 即納案件（納期が短い）
+            </label>
           </div>
 
           <div className="rounded-xl p-3 my-2" style={{ background: "#FAF8F3" }}>
@@ -1347,7 +1342,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             </div>
           </div>
 
-          <div className="rounded-xl p-3 my-2" style={{ background: "#FAF8F3" }}>
+          <div className="rounded-xl p-3 my-2" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
             <div className="flex items-center justify-between mb-2">
               <p className="text-xs font-bold flex items-center gap-1.5"><ClipboardList size={13} color="#0E90B8" /> ④修正チェック</p>
               {reel.checkSubmitted && <Badge tone="teal">提出済み ・ {timeAgo(reel.checkSubmittedAt)}</Badge>}
@@ -1408,7 +1403,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             {checkSubmitError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{checkSubmitError}</p>}
           </div>
 
-          <div className="rounded-xl p-3 my-2" style={{ background: "#FAF8F3" }}>
+          <div className="rounded-xl p-3 my-2" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
             <div className="flex items-center justify-between mb-2">
               <p className="text-xs font-bold flex items-center gap-1.5"><Sparkles size={13} color="#D6248A" /> ⑤キャプション作成</p>
               {reel.captionDone && <Badge tone="teal">完了</Badge>}
@@ -1476,7 +1471,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             )}
           </div>
 
-          <div className="rounded-xl p-3 my-2" style={{ background: "#FAF8F3" }}>
+          <div className="rounded-xl p-3 my-2" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
             <div className="flex items-center justify-between mb-2">
               <p className="text-xs font-bold flex items-center gap-1.5"><Send size={13} color="#D6248A" /> ⑥投稿</p>
               {reel.completedStages >= 5 && <Badge tone="teal">投稿完了</Badge>}
@@ -1726,6 +1721,17 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
     setYm(d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"));
   };
 
+  const fiscalMonths = useMemo(() => {
+    const now = new Date();
+    const startYear = now.getMonth() + 1 >= 4 ? now.getFullYear() : now.getFullYear() - 1;
+    const months = [];
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(startYear, 3 + i, 1);
+      months.push(d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"));
+    }
+    return months;
+  }, []);
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
@@ -1765,14 +1771,18 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
           <option value="__all__">すべてのクライアントを表示</option>
           {clients.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
         </select>
-        <div className="flex items-center gap-1 rounded-lg border px-1" style={{ borderColor: "#DEDACD", opacity: showAllMonths ? 0.4 : 1 }}>
-          <button onClick={() => shiftMonth(-1)} className="p-1.5" disabled={showAllMonths}><ChevronLeft size={15} /></button>
-          <span className="text-sm font-semibold px-1 w-24 text-center">{monthLabel(ym)}</span>
-          <button onClick={() => shiftMonth(1)} className="p-1.5" disabled={showAllMonths}><ChevronRight size={15} /></button>
-        </div>
-        <button onClick={() => setShowAllMonths(s => !s)} className="text-sm font-semibold px-3 py-2 rounded-lg border" style={{ borderColor: showAllMonths ? "#D6248A" : "#DEDACD", background: showAllMonths ? "#FBE4F1" : "#fff", color: showAllMonths ? "#D6248A" : "#5F5E5A" }}>
-          全ての動画
-        </button>
+        <select
+          value={showAllMonths ? "__all__" : ym}
+          onChange={e => {
+            if (e.target.value === "__all__") { setShowAllMonths(true); }
+            else { setShowAllMonths(false); setYm(e.target.value); }
+          }}
+          className={inputCls}
+          style={{ ...inputStyle, width: 180 }}
+        >
+          <option value="__all__">すべての動画</option>
+          {fiscalMonths.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
+        </select>
         <select value={staffFilter} onChange={e => setStaffFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 180 }}>
           <option value="">担当撮影者（全員）</option>
           {users.filter(u => (u.roles || []).includes("shooter")).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
@@ -2658,7 +2668,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
             {overdue.slice(0, 5).map(r => {
               const c = clients.find(x => x.id === r.clientId);
               return (
-                <button key={r.id} onClick={() => onGoReels(r.clientId)} className="w-full text-left text-sm flex items-center justify-between px-3 py-2 rounded-lg bg-white/60 hover:bg-white">
+                <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="w-full text-left text-sm flex items-center justify-between px-3 py-2 rounded-lg bg-white/60 hover:bg-white">
                   <span>{c?.companyName} ・ {r.theme || "（テーマ未設定）"}</span>
                   <Badge tone="amber">{STAGES[r.completedStages]?.label}待ち</Badge>
                 </button>
@@ -2875,7 +2885,7 @@ function ResearchPage({ clients, reels, setReels }) {
   );
 }
 
-function TasksPage({ clients, reels, setReels, users, onGoReels, onGoClient, section }) {
+function TasksPage({ clients, reels, setReels, users, onGoReels, onGoReelDetail, onGoClient, section }) {
   const showAll = !section;
   const sectionTitle = TASK_SUBSECTIONS.find(s => s.key === section)?.label || "タスク管理";
   const ym = currentYearMonth();
@@ -2957,7 +2967,7 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoClient, sec
       {list.map(r => {
         const c = clients.find(x => x.id === r.clientId);
         return (
-          <button key={r.id} onClick={() => onGoReels(r.clientId)} className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-black/5" style={{ background: "#FAF8F3" }}>
+          <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-black/5" style={{ background: "#FAF8F3" }}>
             <p className="font-semibold">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
             <p style={{ color: "#8B897F" }}>{extra ? extra(r) : (r.deadline ? `投稿予定 ${r.deadline}` : "投稿予定日未設定")}</p>
           </button>
@@ -2998,7 +3008,7 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoClient, sec
               if (r.editorSecondaryId === editorFilter) roleNames.push("④修正チェック");
               const role = roleNames.join("＋");
               return (
-                <button key={r.id} onClick={() => onGoReels(r.clientId)} className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-black/5" style={{ background: "#FAF8F3" }}>
+                <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-black/5" style={{ background: "#FAF8F3" }}>
                   <p className="font-semibold">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
                   <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                     <Badge tone="teal">{role}</Badge>
@@ -3033,7 +3043,7 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoClient, sec
             const c = clients.find(x => x.id === r.clientId);
             const shooter = users.find(u => u.id === r.assignedStaffId);
             return (
-              <button key={r.id} onClick={() => onGoReels(r.clientId)} className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-black/5" style={{ background: "#FAF8F3" }}>
+              <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-black/5" style={{ background: "#FAF8F3" }}>
                 <p className="font-semibold">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
                 <p style={{ color: "#8B897F" }}>{monthLabel(r.yearMonth)}{shooter ? ` ・ 担当: ${shooter.name}` : " ・ 担当者未割り当て"}</p>
               </button>
@@ -3082,7 +3092,7 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoClient, sec
             const updateReelField = (patch) => setReels(prev => prev.map(x => x.id === r.id ? { ...x, ...patch } : x));
             return (
               <div key={r.id} className="rounded-lg p-2.5" style={{ background: "#FAF8F3" }}>
-                <button onClick={() => onGoReels(r.clientId)} className="w-full text-left">
+                <button onClick={() => onGoReelDetail(r.clientId, r.id)} className="w-full text-left">
                   <p className="font-semibold text-xs">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
                 </button>
                 <button onClick={() => copyCaption(r)} className="text-xs font-semibold px-2.5 py-1 rounded-lg text-white flex items-center gap-1 mt-1.5" style={{ background: copiedId === r.id ? "#0E90B8" : "#16171B" }}>
@@ -3868,7 +3878,7 @@ function AppInner() {
       case "clients": return <ClientsPage clients={clients} setClients={setClients} finance={finance} setFinance={setFinance} currentUser={currentUser} onOpenClient={setOpenClientId} />;
       case "reels": return <ReelsPage clients={clients} reels={reels} setReels={setReels} users={users} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} currentUser={currentUser} focusClientId={reelsFocusClient} focusReelId={reelsFocusReelId} />;
       case "research": return <ResearchPage clients={clients} reels={reels} setReels={setReels} />;
-      case "tasks": return <TasksPage clients={clients} reels={reels} setReels={setReels} users={users} onGoReels={goReels} onGoClient={goClientDetail} section={taskSection} />;
+      case "tasks": return <TasksPage clients={clients} reels={reels} setReels={setReels} users={users} onGoReels={goReels} onGoReelDetail={goReelDetail} onGoClient={goClientDetail} section={taskSection} />;
       case "analytics": return <AnalyticsPage clients={clients} reels={reels} users={users} />;
       case "finance": return (currentUser.roles || []).includes("admin") ? <FinancePage clients={clients} finance={finance} setFinance={setFinance} reels={reels} users={users} /> : null;
       case "users": return (currentUser.roles || []).includes("admin") ? <UsersPage users={users} setUsers={setUsers} currentUser={currentUser} /> : null;
