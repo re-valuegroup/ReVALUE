@@ -77,6 +77,16 @@ const canToggleRoleDone = (reel, doneKey) => {
 // ④修正チェックを提出できるのは、必要な①②③がすべて完了している場合のみ
 const canSubmitCheck = (reel) => editRolesForReel(reel).every(f => reel[DONE_KEY_FOR_ROLE[f.key]]) && !!reel.editorSecondaryId;
 
+// カレンダーの投稿予定表示用：どの工程まで進んでいるかを判定し、色とラベルを返す
+const POST_DEADLINE_STAGES = [
+  { key: "cut", label: "①カット・基本テロップ待ち", color: "#D6248A", test: r => !r.cutDone },
+  { key: "editing", label: "②③テロップ・効果音 編集中", color: "#F6934B", test: r => r.cutDone && !editRolesForReel(r).every(f => r[DONE_KEY_FOR_ROLE[f.key]]) },
+  { key: "check", label: "④修正チェック待ち", color: "#6B3FA0", test: r => editRolesForReel(r).every(f => r[DONE_KEY_FOR_ROLE[f.key]]) && !r.checkSubmitted },
+  { key: "caption", label: "⑤キャプション作成待ち", color: "#0E6B57", test: r => r.checkSubmitted && !r.captionDone },
+  { key: "post", label: "⑥投稿待ち", color: "#0E90B8", test: r => !!r.captionDone },
+];
+const postDeadlineStage = (r) => POST_DEADLINE_STAGES.find(s => s.test(r)) || POST_DEADLINE_STAGES[0];
+
 const CONTRACT_TYPES = ["正社員", "業務委託", "アルバイト", "その他"];
 const WORK_STATUSES = ["稼働中", "休止中", "退職"];
 const workStatusTone = { "稼働中": "teal", "休止中": "amber", "退職": "gray" };
@@ -2032,6 +2042,18 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients, on
   const [editForm, setEditForm] = useState(null);
   const [confirmDeleteEventId, setConfirmDeleteEventId] = useState(null);
 
+  const postDeadlineColor = (r) => postDeadlineStage(r).color;
+  const postDeadlineStageLabel = (r) => postDeadlineStage(r).label;
+  const goToReelStage = (r) => {
+    if (r.captionDone) {
+      onGoTaskSection && onGoTaskSection("post");
+      return;
+    }
+    const targetId = (r.cutEditorId || r.telopEditorId || r.sfxEditorId || r.editorSecondaryId) ? "dashboard-inprogress" : "dashboard-pickup";
+    const el = document.getElementById(targetId);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   const [y, m] = month.split("-").map(Number);
   const firstDay = new Date(y, m - 1, 1);
   const daysInMonth = new Date(y, m, 0).getDate();
@@ -2233,6 +2255,29 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients, on
               </div>
             );
           })()}
+          {(() => {
+            const dueReels = reels.filter(r => r.deadline === selectedDate && r.completedStages < 5);
+            if (dueReels.length === 0) return null;
+            return (
+              <div className="mt-3 pt-2" style={{ borderTop: "1px dashed #D7C7F0" }}>
+                <p className="text-xs font-bold mb-1.5" style={{ color: "#6B3FA0" }}>投稿する案件（{dueReels.length}件）</p>
+                <div className="space-y-1.5">
+                  {dueReels.map(r => {
+                    const c = clients.find(x => x.id === r.clientId);
+                    return (
+                      <button key={r.id} onClick={() => goToReelStage(r)} className="w-full text-left flex items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-black/5" style={{ background: "#fff" }}>
+                        <span className="rounded-full shrink-0" style={{ width: 10, height: 10, background: postDeadlineColor(r) }} />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-semibold truncate">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
+                          <p className="text-[11px]" style={{ color: "#8B897F" }}>{postDeadlineStageLabel(r)}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -2326,6 +2371,14 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients, on
         <span className="text-sm font-semibold">{monthLabel(month)}</span>
         <button onClick={() => shiftMonth(1)}><ChevronRight size={16} /></button>
       </div>
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 mb-2 p-2 rounded-lg" style={{ background: "#FAF8F3" }}>
+        <span className="text-[10px] font-semibold" style={{ color: "#8B897F" }}>投稿予定の色分け：</span>
+        {POST_DEADLINE_STAGES.map(s => (
+          <span key={s.key} className="flex items-center gap-1 text-[10px] font-semibold" style={{ color: s.color }}>
+            <span className="rounded-full shrink-0" style={{ width: 8, height: 8, background: s.color }} /> {s.label}
+          </span>
+        ))}
+      </div>
       <div className="grid grid-cols-7 gap-1 mb-1">
         {["日", "月", "火", "水", "木", "金", "土"].map(w => <div key={w} className="text-center text-[11px] font-semibold" style={{ color: "#8B897F" }}>{w}</div>)}
       </div>
@@ -2365,17 +2418,17 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients, on
                       return (
                         <div
                           key={r.id}
-                          onClick={() => onGoTaskSection && onGoTaskSection("post")}
-                          title={`投稿予定：${c?.companyName || ""} ・ ${r.theme || "動画"}（クリックで投稿待ち一覧へ）`}
+                          onClick={() => goToReelStage(r)}
+                          title={`投稿予定：${c?.companyName || ""} ・ ${r.theme || "動画"} ・ ${postDeadlineStageLabel(r)}（クリックで該当箇所へ）`}
                           className="text-[9px] px-1 py-0.5 rounded truncate cursor-pointer flex items-center gap-0.5"
-                          style={{ background: "#D6248A", color: "#fff" }}
+                          style={{ background: postDeadlineColor(r), color: "#fff" }}
                         >
                           <Send size={8} /> {c?.companyName || ""}：{r.theme || "動画"}
                         </div>
                       );
                     })}
                     {dueReels.length > 2 && (
-                      <div onClick={() => onGoTaskSection && onGoTaskSection("post")} className="text-[9px] cursor-pointer font-semibold" style={{ color: "#D6248A" }}>
+                      <div onClick={() => goToReelStage(dueReels[2])} className="text-[9px] cursor-pointer font-semibold" style={{ color: "#D6248A" }}>
                         +{dueReels.length - 2}件
                       </div>
                     )}
@@ -2665,7 +2718,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
       </div>
 
       {(["editor", "shooter", "designer", "admin"].some(r => (currentUser.roles || []).includes(r))) && (
-        <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
+        <div id="dashboard-inprogress" className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
           <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><Clock size={16} color="#F6934B" /> 編集中（{inProgressReels.length}）</p>
           {inProgressReels.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>現在編集中の動画はありません。</p>}
           <div className="grid md:grid-cols-2 gap-3">
@@ -2719,7 +2772,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
       )}
 
       {(["editor", "shooter", "designer", "admin"].some(r => (currentUser.roles || []).includes(r))) && (
-        <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
+        <div id="dashboard-pickup" className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
           <p className="font-bold mb-2 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><MessageSquare size={16} color="#D6248A" /> 編集指示一覧</p>
           <div className="rounded-xl px-3 py-2 mb-4 text-center" style={{ background: "#FBE4F1" }}>
             <span className="text-sm font-bold" style={{ color: "#96185E" }}>編集の工程は ①カット・基本テロップ → ②テロップ・③効果音 → ④修正チェック の順番で進みます</span>
