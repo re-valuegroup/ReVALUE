@@ -1369,6 +1369,40 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                     {reel.checkSubmitted ? <CircleCheck size={14} /> : <Circle size={14} />} {reel.checkSubmitted ? "完了" : "未完了（クリックで完了）"}
                   </button>
                 </div>
+                <div className="mt-2 pt-2" style={{ borderTop: "1px dashed #EFEDE4" }}>
+                  <p className="text-[11px] font-semibold mb-1.5 flex items-center gap-1.5" style={{ color: "#0E90B8" }}><ClipboardList size={12} /> ④修正チェック詳細</p>
+                  <div className="space-y-1.5">
+                    {CHECKLIST_ITEMS.map((item, i) => (
+                      <label key={item.key} className="flex items-start gap-2 text-xs cursor-pointer">
+                        <input type="checkbox" checked={!!checklist[item.key]} onChange={() => canEdit && toggleCheck(item.key)} disabled={!canEdit} className="mt-0.5" />
+                        <span>{i + 1}. {item.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <Field label="動画の文字起こし（任意・AIキャプション生成にも使用されます）">
+                    <TextArea rows={3} value={draft.transcript} onChange={e => set({ transcript: e.target.value })} placeholder="完成した動画の文字起こしを貼り付け（なくても生成可）" disabled={!canEdit} />
+                    {canEdit && (
+                      <div className="flex items-center gap-2 flex-wrap mt-1.5">
+                        <label className="text-xs font-semibold px-3 py-1.5 rounded-lg border flex items-center gap-1.5 cursor-pointer" style={{ borderColor: "#DEDACD", color: "#5F5E5A" }}>
+                          <ClipboardList size={12} /> テキストファイルを読み込む
+                          <input type="file" accept=".txt,text/plain" className="hidden" onChange={handleTranscriptFile} />
+                        </label>
+                        {draft.transcript && (
+                          <button onClick={cleanTranscript} disabled={transcriptCleanLoading} className="text-xs font-semibold px-3 py-1.5 rounded-lg border flex items-center gap-1.5 disabled:opacity-50" style={{ borderColor: "#DEDACD", color: "#5F5E5A" }}>
+                            {transcriptCleanLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {transcriptCleanLoading ? "添削中..." : "文章を添削"}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {transcriptFileError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{transcriptFileError}</p>}
+                    {transcriptCleanError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{transcriptCleanError}</p>}
+                  </Field>
+                  <Field label="コメント・申し送り">
+                    <TextArea rows={2} value={draft.checkComment || ""} onChange={e => set({ checkComment: e.target.value })} disabled={!canEdit} placeholder="意図・注意点・引き継ぎ事項など" />
+                  </Field>
+                  <p className="text-[11px]" style={{ color: "#8B897F" }}>チェック済み {checkedCount}/{CHECKLIST_ITEMS.length}</p>
+                  {checkSubmitError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{checkSubmitError}</p>}
+                </div>
               </div>
 
               <div className="rounded-lg p-2" style={{ background: "#fff", border: reel.captionDone ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
@@ -1390,6 +1424,70 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   >
                     {reel.captionDone ? <CircleCheck size={14} /> : <Circle size={14} />} {reel.captionDone ? "完了" : "未完了（クリックで完了）"}
                   </button>
+                </div>
+                <div className="mt-2 pt-2" style={{ borderTop: "1px dashed #EFEDE4" }}>
+                  <p className="text-[11px] font-semibold mb-1.5 flex items-center gap-1.5" style={{ color: "#D6248A" }}><Sparkles size={12} /> ⑤キャプション作成詳細</p>
+                  <Field label="指示文（キャプション生成時にAIに伝える指示）">
+                    <TextArea rows={2} value={draft.captionInstruction || ""} onChange={e => set({ captionInstruction: e.target.value })} placeholder="例：親しみやすい口調で、絵文字を多めに使ってください" disabled={!canEdit} />
+                    {canEdit && pastCaptionInstructions && pastCaptionInstructions.length > 0 && (
+                      <select
+                        value=""
+                        onChange={e => { if (e.target.value) set({ captionInstruction: e.target.value }); }}
+                        className={inputCls}
+                        style={{ ...inputStyle, marginTop: 4, fontSize: 11 }}
+                      >
+                        <option value="">過去の指示文から選んで入力（直近{pastCaptionInstructions.length}件）</option>
+                        {pastCaptionInstructions.map((text, i) => (
+                          <option key={i} value={text}>{text.length > 40 ? text.slice(0, 40) + "…" : text}</option>
+                        ))}
+                      </select>
+                    )}
+                  </Field>
+                  <p className="text-[11px] mb-2" style={{ color: "#A9A79C" }}>
+                    指定ハッシュタグ：{[client?.hashtag1, client?.hashtag2, client?.hashtag3].filter(Boolean).join(" ") || "未設定（クライアント情報の編集画面から設定できます）"}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    {canEdit && (
+                      <button onClick={genCaption} disabled={genLoading} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 disabled:opacity-50" style={{ background: "#D6248A" }}>
+                        {genLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {genLoading ? "生成中..." : (draft.caption ? "AIで再生成" : "AIでキャプションを生成")}
+                      </button>
+                    )}
+                    {canEdit && draft.caption && (
+                      <button onClick={applyHashtagsToCaption} className="text-xs font-semibold px-3 py-1.5 rounded-lg border" style={{ borderColor: "#DEDACD", color: "#5F5E5A" }}>
+                        指定ハッシュタグを末尾に反映
+                      </button>
+                    )}
+                  </div>
+                  {genError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{genError}</p>}
+                  <Field label="キャプション">
+                    <TextArea rows={4} value={draft.caption} onChange={e => set({ caption: e.target.value })} disabled={!canEdit} />
+                    {draft.caption && (
+                      <button onClick={copyCaption} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 mt-1.5" style={{ background: copied ? "#0E90B8" : "#16171B" }}>
+                        {copied ? <CircleCheck size={12} /> : <Copy size={12} />} {copied ? "コピーしました" : "キャプションをコピー"}
+                      </button>
+                    )}
+                  </Field>
+                  {(draft.captionHistory || []).length > 0 && (
+                    <button onClick={() => setShowHistory(s => !s)} className="text-xs font-semibold" style={{ color: "#5F5E5A" }}>
+                      生成履歴を見る（{draft.captionHistory.length}件）{showHistory ? " ▲" : " ▼"}
+                    </button>
+                  )}
+                  {showHistory && (
+                    <div className="space-y-2 mt-2">
+                      {(draft.captionHistory || []).map(h => (
+                        <div key={h.id} className="rounded-lg p-2.5" style={{ background: "#FAF8F3", border: "1px solid #EFEDE4" }}>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[11px]" style={{ color: "#8B897F" }}>{timeAgo(h.createdAt)}</span>
+                            <div className="flex items-center gap-2">
+                              {canEdit && <button onClick={() => applyHistoryCaption(h.text)} className="text-[11px] font-semibold" style={{ color: "#D6248A" }}>この内容を使う</button>}
+                              {canEdit && <button onClick={() => deleteHistoryCaption(h.id)} className="text-[11px]" style={{ color: "#A32D2D" }}>削除</button>}
+                            </div>
+                          </div>
+                          <p className="text-xs whitespace-pre-wrap" style={{ lineHeight: 1.6, color: "#5F5E5A" }}>{h.text}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1413,147 +1511,37 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                     </button>
                   </div>
                 )}
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-xl p-3 my-2" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-bold flex items-center gap-1.5"><ClipboardList size={13} color="#0E90B8" /> ④修正チェック詳細</p>
-              {reel.checkSubmitted && <Badge tone="teal">提出済み ・ {timeAgo(reel.checkSubmittedAt)}</Badge>}
-            </div>
-            <div className="space-y-1.5">
-              {CHECKLIST_ITEMS.map((item, i) => (
-                <label key={item.key} className="flex items-start gap-2 text-xs cursor-pointer">
-                  <input type="checkbox" checked={!!checklist[item.key]} onChange={() => canEdit && toggleCheck(item.key)} disabled={!canEdit} className="mt-0.5" />
-                  <span>{i + 1}. {item.label}</span>
-                </label>
-              ))}
-            </div>
-            <Field label="動画の文字起こし（任意・AIキャプション生成にも使用されます）">
-              <TextArea rows={3} value={draft.transcript} onChange={e => set({ transcript: e.target.value })} placeholder="完成した動画の文字起こしを貼り付け（なくても生成可）" disabled={!canEdit} />
-              {canEdit && (
-                <div className="flex items-center gap-2 flex-wrap mt-1.5">
-                  <label className="text-xs font-semibold px-3 py-1.5 rounded-lg border flex items-center gap-1.5 cursor-pointer" style={{ borderColor: "#DEDACD", color: "#5F5E5A" }}>
-                    <ClipboardList size={12} /> テキストファイルを読み込む
-                    <input type="file" accept=".txt,text/plain" className="hidden" onChange={handleTranscriptFile} />
-                  </label>
-                  {draft.transcript && (
-                    <button onClick={cleanTranscript} disabled={transcriptCleanLoading} className="text-xs font-semibold px-3 py-1.5 rounded-lg border flex items-center gap-1.5 disabled:opacity-50" style={{ borderColor: "#DEDACD", color: "#5F5E5A" }}>
-                      {transcriptCleanLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {transcriptCleanLoading ? "添削中..." : "文章を添削"}
-                    </button>
-                  )}
-                </div>
-              )}
-              {transcriptFileError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{transcriptFileError}</p>}
-              {transcriptCleanError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{transcriptCleanError}</p>}
-            </Field>
-            <Field label="コメント・申し送り">
-              <TextArea rows={2} value={draft.checkComment || ""} onChange={e => set({ checkComment: e.target.value })} disabled={!canEdit} placeholder="意図・注意点・引き継ぎ事項など" />
-            </Field>
-            <p className="text-[11px]" style={{ color: "#8B897F" }}>チェック済み {checkedCount}/{CHECKLIST_ITEMS.length}</p>
-            {checkSubmitError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{checkSubmitError}</p>}
-          </div>
-
-          <div className="rounded-xl p-3 my-2" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-bold flex items-center gap-1.5"><Sparkles size={13} color="#D6248A" /> ⑤キャプション作成詳細</p>
-              {reel.captionDone && <Badge tone="teal">完了</Badge>}
-            </div>
-            <Field label="指示文（キャプション生成時にAIに伝える指示）">
-              <TextArea rows={2} value={draft.captionInstruction || ""} onChange={e => set({ captionInstruction: e.target.value })} placeholder="例：親しみやすい口調で、絵文字を多めに使ってください" disabled={!canEdit} />
-              {canEdit && pastCaptionInstructions && pastCaptionInstructions.length > 0 && (
-                <select
-                  value=""
-                  onChange={e => { if (e.target.value) set({ captionInstruction: e.target.value }); }}
-                  className={inputCls}
-                  style={{ ...inputStyle, marginTop: 4, fontSize: 11 }}
-                >
-                  <option value="">過去の指示文から選んで入力（直近{pastCaptionInstructions.length}件）</option>
-                  {pastCaptionInstructions.map((text, i) => (
-                    <option key={i} value={text}>{text.length > 40 ? text.slice(0, 40) + "…" : text}</option>
-                  ))}
-                </select>
-              )}
-            </Field>
-            <p className="text-[11px] mb-2" style={{ color: "#A9A79C" }}>
-              指定ハッシュタグ：{[client?.hashtag1, client?.hashtag2, client?.hashtag3].filter(Boolean).join(" ") || "未設定（クライアント情報の編集画面から設定できます）"}
-            </p>
-            <div className="flex items-center gap-2">
-              {canEdit && (
-                <button onClick={genCaption} disabled={genLoading} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 disabled:opacity-50" style={{ background: "#D6248A" }}>
-                  {genLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {genLoading ? "生成中..." : (draft.caption ? "AIで再生成" : "AIでキャプションを生成")}
-                </button>
-              )}
-              {canEdit && draft.caption && (
-                <button onClick={applyHashtagsToCaption} className="text-xs font-semibold px-3 py-1.5 rounded-lg border" style={{ borderColor: "#DEDACD", color: "#5F5E5A" }}>
-                  指定ハッシュタグを末尾に反映
-                </button>
-              )}
-            </div>
-            {genError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{genError}</p>}
-            <Field label="キャプション">
-              <TextArea rows={4} value={draft.caption} onChange={e => set({ caption: e.target.value })} disabled={!canEdit} />
-              {draft.caption && (
-                <button onClick={copyCaption} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 mt-1.5" style={{ background: copied ? "#0E90B8" : "#16171B" }}>
-                  {copied ? <CircleCheck size={12} /> : <Copy size={12} />} {copied ? "コピーしました" : "キャプションをコピー"}
-                </button>
-              )}
-            </Field>
-            {(draft.captionHistory || []).length > 0 && (
-              <button onClick={() => setShowHistory(s => !s)} className="text-xs font-semibold" style={{ color: "#5F5E5A" }}>
-                生成履歴を見る（{draft.captionHistory.length}件）{showHistory ? " ▲" : " ▼"}
-              </button>
-            )}
-            {showHistory && (
-              <div className="space-y-2 mt-2">
-                {(draft.captionHistory || []).map(h => (
-                  <div key={h.id} className="rounded-lg p-2.5" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[11px]" style={{ color: "#8B897F" }}>{timeAgo(h.createdAt)}</span>
-                      <div className="flex items-center gap-2">
-                        {canEdit && <button onClick={() => applyHistoryCaption(h.text)} className="text-[11px] font-semibold" style={{ color: "#D6248A" }}>この内容を使う</button>}
-                        {canEdit && <button onClick={() => deleteHistoryCaption(h.id)} className="text-[11px]" style={{ color: "#A32D2D" }}>削除</button>}
-                      </div>
-                    </div>
-                    <p className="text-xs whitespace-pre-wrap" style={{ lineHeight: 1.6, color: "#5F5E5A" }}>{h.text}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-xl p-3 my-2" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-bold flex items-center gap-1.5"><Send size={13} color="#D6248A" /> ⑥投稿詳細</p>
-              {reel.completedStages >= 5 && <Badge tone="teal">投稿完了</Badge>}
-            </div>
-            <Field label="投稿日">
-              <TextInput type="date" value={draft.postedDate} onChange={e => set({ postedDate: e.target.value })} disabled={!canEdit} />
-            </Field>
-            <div className="grid md:grid-cols-3 gap-x-4">
-              {[
-                { key: "instagram", label: "Instagram" },
-                { key: "tiktok", label: "TikTok" },
-                { key: "youtube", label: "YouTube" },
-              ].map(sns => (
-                <div key={sns.key}>
-                  <Field label={`${sns.label} 投稿URL`}>
-                    <div className="flex gap-1">
-                      <TextInput value={draft[sns.key + "Url"] || ""} onChange={e => set({ [sns.key + "Url"]: e.target.value })} placeholder="https://..." disabled={!canEdit} />
-                      {draft[sns.key + "Url"] && (
-                        <a href={draft[sns.key + "Url"]} target="_blank" rel="noreferrer" className="shrink-0 flex items-center justify-center px-2 rounded-lg border text-xs font-semibold" style={{ borderColor: "#DEDACD" }}>
-                          開く
-                        </a>
-                      )}
-                    </div>
+                <div className="mt-2 pt-2" style={{ borderTop: "1px dashed #EFEDE4" }}>
+                  <p className="text-[11px] font-semibold mb-1.5 flex items-center gap-1.5" style={{ color: "#D6248A" }}><Send size={12} /> ⑥投稿詳細</p>
+                  <Field label="投稿日">
+                    <TextInput type="date" value={draft.postedDate} onChange={e => set({ postedDate: e.target.value })} disabled={!canEdit} />
                   </Field>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Field label="再生数"><TextInput type="number" value={draft[sns.key + "Views"] || ""} onChange={e => set({ [sns.key + "Views"]: e.target.value })} disabled={!canEdit} /></Field>
-                    <Field label="いいね数"><TextInput type="number" value={draft[sns.key + "Likes"] || ""} onChange={e => set({ [sns.key + "Likes"]: e.target.value })} disabled={!canEdit} /></Field>
+                  <div className="grid md:grid-cols-3 gap-x-4">
+                    {[
+                      { key: "instagram", label: "Instagram" },
+                      { key: "tiktok", label: "TikTok" },
+                      { key: "youtube", label: "YouTube" },
+                    ].map(sns => (
+                      <div key={sns.key}>
+                        <Field label={`${sns.label} 投稿URL`}>
+                          <div className="flex gap-1">
+                            <TextInput value={draft[sns.key + "Url"] || ""} onChange={e => set({ [sns.key + "Url"]: e.target.value })} placeholder="https://..." disabled={!canEdit} />
+                            {draft[sns.key + "Url"] && (
+                              <a href={draft[sns.key + "Url"]} target="_blank" rel="noreferrer" className="shrink-0 flex items-center justify-center px-2 rounded-lg border text-xs font-semibold" style={{ borderColor: "#DEDACD" }}>
+                                開く
+                              </a>
+                            )}
+                          </div>
+                        </Field>
+                        <div className="grid grid-cols-2 gap-2">
+                          <Field label="再生数"><TextInput type="number" value={draft[sns.key + "Views"] || ""} onChange={e => set({ [sns.key + "Views"]: e.target.value })} disabled={!canEdit} /></Field>
+                          <Field label="いいね数"><TextInput type="number" value={draft[sns.key + "Likes"] || ""} onChange={e => set({ [sns.key + "Likes"]: e.target.value })} disabled={!canEdit} /></Field>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              ))}
+              </div>
             </div>
           </div>
 
