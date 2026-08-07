@@ -1188,12 +1188,12 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
           <div className="rounded-xl p-3 my-2" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
             <p className="text-xs font-bold mb-2 flex items-center gap-1.5"><Camera size={13} color="#854F0B" /> 撮影・編集指示</p>
             <Field label="担当撮影者">
-              <div className="flex items-center gap-2">
-                <select value={draft.assignedStaffId || ""} onChange={e => set({ assignedStaffId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
-                  <option value="">未割り当て</option>
-                  {shooters.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                </select>
-                {canEdit && (
+              <select value={draft.assignedStaffId || ""} onChange={e => set({ assignedStaffId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
+                <option value="">未割り当て</option>
+                {shooters.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+              {canEdit && (
+                <div className="flex justify-end mt-1.5">
                   <button
                     type="button"
                     onClick={() => update({ completedStages: reel.completedStages >= 1 ? Math.min(reel.completedStages, 0) : Math.max(reel.completedStages, 1) })}
@@ -1203,8 +1203,8 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   >
                     {reel.completedStages >= 1 ? <CircleCheck size={14} /> : <Circle size={14} />} {reel.completedStages >= 1 ? "完了" : "未完了（クリックで完了）"}
                   </button>
-                )}
-              </div>
+                </div>
+              )}
             </Field>
             <Field label="編集指示">
               <TextArea rows={2} value={draft.editInstructions} onChange={e => set({ editInstructions: e.target.value })} disabled={!canEdit || reel.completedStages >= 2} />
@@ -1285,6 +1285,8 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                       <option value="">未割り当て</option>
                       {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                     </select>
+                  </div>
+                  <div className="flex justify-end mt-1.5">
                     <button
                       type="button"
                       disabled={!canEdit || !canToggle}
@@ -1336,32 +1338,79 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   </div>
                 );
               })}
+
+              <div className="rounded-lg p-2" style={{ background: "#fff", border: reel.checkSubmitted ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>④修正チェック担当</span>
+                  <select value={draft.editorSecondaryId || ""} onChange={e => set({ editorSecondaryId: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
+                    <option value="">未割り当て</option>
+                    {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  </select>
+                </div>
+                <div className="flex justify-end mt-1.5">
+                  <button
+                    type="button"
+                    disabled={!canEdit || (!reel.checkSubmitted && !canSubmitCheck(reel))}
+                    title={reel.checkSubmitted ? "もう一度押すとチェック中に戻せます" : !canSubmitCheck(reel) ? "①②③（必要な工程）がすべて完了してから提出できます" : "クリックで完了・未完了を切り替え"}
+                    onClick={submitCheck}
+                    className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0 disabled:opacity-40"
+                    style={{ background: reel.checkSubmitted ? "#0E90B8" : "#D6248A" }}
+                  >
+                    {reel.checkSubmitted ? <CircleCheck size={14} /> : <Circle size={14} />} {reel.checkSubmitted ? "完了" : "未完了（クリックで完了）"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-lg p-2" style={{ background: "#fff", border: reel.captionDone ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>⑤キャプション作成担当</span>
+                  <select value={draft.captionAssigneeId || ""} onChange={e => set({ captionAssigneeId: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
+                    <option value="">未割り当て</option>
+                    {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  </select>
+                </div>
+                <div className="flex justify-end mt-1.5">
+                  <button
+                    type="button"
+                    disabled={!canEdit || (!reel.captionDone && !draft.caption?.trim())}
+                    title={!reel.captionDone && !draft.caption?.trim() ? "キャプションを入力すると完了にできます" : "クリックで完了・未完了を切り替え"}
+                    onClick={() => update({ captionDone: !reel.captionDone })}
+                    className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0 disabled:opacity-40"
+                    style={{ background: reel.captionDone ? "#0E90B8" : "#D6248A" }}
+                  >
+                    {reel.captionDone ? <CircleCheck size={14} /> : <Circle size={14} />} {reel.captionDone ? "完了" : "未完了（クリックで完了）"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-lg p-2" style={{ background: "#fff", border: reel.completedStages >= 5 ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>⑥投稿担当</span>
+                  <select value={draft.postAssigneeId || ""} onChange={e => set({ postAssigneeId: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
+                    <option value="">未割り当て</option>
+                    {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  </select>
+                </div>
+                {canEdit && (
+                  <div className="flex justify-end mt-1.5">
+                    <button
+                      type="button"
+                      onClick={() => update({ postedDate: draft.postedDate || new Date().toISOString().slice(0, 10), completedStages: reel.completedStages >= 5 ? 4 : 5 })}
+                      className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0"
+                      style={{ background: reel.completedStages >= 5 ? "#0E90B8" : "#D6248A" }}
+                    >
+                      {reel.completedStages >= 5 ? <CircleCheck size={14} /> : <Circle size={14} />} {reel.completedStages >= 5 ? `完了（${reel.postedDate || "日付未設定"}）` : "未完了（クリックで完了）"}
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
           <div className="rounded-xl p-3 my-2" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
             <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-bold flex items-center gap-1.5"><ClipboardList size={13} color="#0E90B8" /> ④修正チェック担当</p>
+              <p className="text-xs font-bold flex items-center gap-1.5"><ClipboardList size={13} color="#0E90B8" /> ④修正チェック詳細</p>
               {reel.checkSubmitted && <Badge tone="teal">提出済み ・ {timeAgo(reel.checkSubmittedAt)}</Badge>}
-            </div>
-            <div className="rounded-lg p-2 mb-2" style={{ background: "#fff", border: reel.checkSubmitted ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>担当者</span>
-                <select value={draft.editorSecondaryId || ""} onChange={e => set({ editorSecondaryId: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
-                  <option value="">未割り当て</option>
-                  {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                </select>
-                <button
-                  type="button"
-                  disabled={!canEdit || (!reel.checkSubmitted && !canSubmitCheck(reel))}
-                  title={reel.checkSubmitted ? "もう一度押すとチェック中に戻せます" : !canSubmitCheck(reel) ? "①②③（必要な工程）がすべて完了してから提出できます" : "クリックで完了・未完了を切り替え"}
-                  onClick={submitCheck}
-                  className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0 disabled:opacity-40"
-                  style={{ background: reel.checkSubmitted ? "#0E90B8" : "#D6248A" }}
-                >
-                  {reel.checkSubmitted ? <CircleCheck size={14} /> : <Circle size={14} />} {reel.checkSubmitted ? "完了" : "未完了（クリックで完了）"}
-                </button>
-              </div>
             </div>
             <div className="space-y-1.5">
               {CHECKLIST_ITEMS.map((item, i) => (
@@ -1398,27 +1447,8 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
 
           <div className="rounded-xl p-3 my-2" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
             <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-bold flex items-center gap-1.5"><Sparkles size={13} color="#D6248A" /> ⑤キャプション作成担当</p>
+              <p className="text-xs font-bold flex items-center gap-1.5"><Sparkles size={13} color="#D6248A" /> ⑤キャプション作成詳細</p>
               {reel.captionDone && <Badge tone="teal">完了</Badge>}
-            </div>
-            <div className="rounded-lg p-2 mb-2" style={{ background: "#fff", border: reel.captionDone ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>担当者</span>
-                <select value={draft.captionAssigneeId || ""} onChange={e => set({ captionAssigneeId: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
-                  <option value="">未割り当て</option>
-                  {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                </select>
-                <button
-                  type="button"
-                  disabled={!canEdit || (!reel.captionDone && !draft.caption?.trim())}
-                  title={!reel.captionDone && !draft.caption?.trim() ? "キャプションを入力すると完了にできます" : "クリックで完了・未完了を切り替え"}
-                  onClick={() => update({ captionDone: !reel.captionDone })}
-                  className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0 disabled:opacity-40"
-                  style={{ background: reel.captionDone ? "#0E90B8" : "#D6248A" }}
-                >
-                  {reel.captionDone ? <CircleCheck size={14} /> : <Circle size={14} />} {reel.captionDone ? "完了" : "未完了（クリックで完了）"}
-                </button>
-              </div>
             </div>
             <Field label="指示文（キャプション生成時にAIに伝える指示）">
               <TextArea rows={2} value={draft.captionInstruction || ""} onChange={e => set({ captionInstruction: e.target.value })} placeholder="例：親しみやすい口調で、絵文字を多めに使ってください" disabled={!canEdit} />
@@ -1485,27 +1515,8 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
 
           <div className="rounded-xl p-3 my-2" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
             <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-bold flex items-center gap-1.5"><Send size={13} color="#D6248A" /> ⑥投稿担当</p>
+              <p className="text-xs font-bold flex items-center gap-1.5"><Send size={13} color="#D6248A" /> ⑥投稿詳細</p>
               {reel.completedStages >= 5 && <Badge tone="teal">投稿完了</Badge>}
-            </div>
-            <div className="rounded-lg p-2 mb-2" style={{ background: "#fff", border: reel.completedStages >= 5 ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>担当者</span>
-                <select value={draft.postAssigneeId || ""} onChange={e => set({ postAssigneeId: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
-                  <option value="">未割り当て</option>
-                  {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                </select>
-                {canEdit && (
-                  <button
-                    type="button"
-                    onClick={() => update({ postedDate: draft.postedDate || new Date().toISOString().slice(0, 10), completedStages: reel.completedStages >= 5 ? 4 : 5 })}
-                    className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0"
-                    style={{ background: reel.completedStages >= 5 ? "#0E90B8" : "#D6248A" }}
-                  >
-                    {reel.completedStages >= 5 ? <CircleCheck size={14} /> : <Circle size={14} />} {reel.completedStages >= 5 ? `完了（${reel.postedDate || "日付未設定"}）` : "未完了（クリックで完了）"}
-                  </button>
-                )}
-              </div>
             </div>
             <Field label="投稿日">
               <TextInput type="date" value={draft.postedDate} onChange={e => set({ postedDate: e.target.value })} disabled={!canEdit} />
@@ -1546,8 +1557,8 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
               </button>
             )}
           </div>
-          <button onClick={() => setExpanded(false)} className="w-full text-sm font-semibold px-4 py-2 rounded-lg border mt-2" style={{ borderColor: "#DEDACD", color: "#5F5E5A" }}>
-            閉じる
+          <button onClick={() => setExpanded(false)} className="w-full text-sm font-semibold px-4 py-2 rounded-lg text-white mt-2 flex items-center justify-center gap-1.5" style={{ background: "#5F5E5A" }}>
+            <ChevronRight size={15} style={{ transform: "rotate(-90deg)" }} /> 閉じる
           </button>
 
           {canEdit && (
@@ -2011,7 +2022,7 @@ function emptyCalendarEvent() {
   return { id: uid("event"), staffId: "", staffIds: [], reelIds: [], type: "shoot", editTask: "all", startDate: "", endDate: "", startTime: "", endTime: "", note: "", createdAt: new Date().toISOString() };
 }
 
-function CalendarWidget({ events, setEvents, users, reels, setReels, clients, onGoReels }) {
+function CalendarWidget({ events, setEvents, users, reels, setReels, clients, onGoReels, onGoTaskSection }) {
   const [month, setMonth] = useState(currentYearMonth());
   const [form, setForm] = useState(emptyCalendarEvent());
   const [showForm, setShowForm] = useState(false);
@@ -2344,6 +2355,33 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients, on
                   );
                 })}
               </div>
+              {(() => {
+                const dueReels = reels.filter(r => r.deadline === ds && r.completedStages < 5);
+                if (dueReels.length === 0) return null;
+                return (
+                  <div className="space-y-0.5 mt-0.5">
+                    {dueReels.slice(0, 2).map(r => {
+                      const c = clients.find(x => x.id === r.clientId);
+                      return (
+                        <div
+                          key={r.id}
+                          onClick={() => onGoTaskSection && onGoTaskSection("post")}
+                          title={`投稿予定：${c?.companyName || ""} ・ ${r.theme || "動画"}（クリックで投稿待ち一覧へ）`}
+                          className="text-[9px] px-1 py-0.5 rounded truncate cursor-pointer flex items-center gap-0.5"
+                          style={{ background: "#D6248A", color: "#fff" }}
+                        >
+                          <Send size={8} /> {c?.companyName || ""}：{r.theme || "動画"}
+                        </div>
+                      );
+                    })}
+                    {dueReels.length > 2 && (
+                      <div onClick={() => onGoTaskSection && onGoTaskSection("post")} className="text-[9px] cursor-pointer font-semibold" style={{ color: "#D6248A" }}>
+                        +{dueReels.length - 2}件
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
               {postingClients.length > 0 && (
                 <div className="flex flex-wrap gap-0.5 mt-1 pt-1" style={{ borderTop: "1px dashed #DEDACD" }} title={`投稿予定：${postingClients.map(c => c.companyName).join("、")}`}>
                   {postingClients.slice(0, 6).map(c => (
@@ -2360,7 +2398,7 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients, on
   );
 }
 
-function DashboardPage({ clients, reels, setReels, users, currentUser, finance, boardPosts, setBoardPosts, calendarEvents, setCalendarEvents, onGoReels, onGoReelDetail }) {
+function DashboardPage({ clients, reels, setReels, users, currentUser, finance, boardPosts, setBoardPosts, calendarEvents, setCalendarEvents, onGoReels, onGoReelDetail, onGoTaskSection }) {
   const ym = currentYearMonth();
   const totalReels = reels.length;
   const posted = reels.filter(r => r.completedStages >= 5).length;
@@ -2588,7 +2626,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
         );
       })()}
 
-      <CalendarWidget events={calendarEvents} setEvents={setCalendarEvents} users={users} reels={reels} setReels={setReels} clients={clients} onGoReels={onGoReels} />
+      <CalendarWidget events={calendarEvents} setEvents={setCalendarEvents} users={users} reels={reels} setReels={setReels} clients={clients} onGoReels={onGoReels} onGoTaskSection={onGoTaskSection} />
 
       <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
         <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><Megaphone size={16} color="#D6248A" /> 掲示板（情報共有）</p>
@@ -3957,6 +3995,7 @@ function AppInner() {
 
   const goReels = (clientId) => { navigateTo("reels", { reelsFocusClient: clientId }); };
   const goReelDetail = (clientId, reelId) => { navigateTo("reels", { reelsFocusClient: clientId, reelsFocusReelId: reelId }); };
+  const goTaskSection = (section) => { navigateTo("tasks"); setTaskSection(section); setTaskNavOpen(true); };
   const goClientDetail = (clientId) => { navigateTo("clients", { openClientId: clientId }); };
   const logout = async () => { await supabase.auth.signOut(); setPage("dashboard"); };
 
@@ -4032,7 +4071,7 @@ function AppInner() {
       return <ClientDetail client={openClient} clients={clients} setClients={setClients} finance={finance} setFinance={setFinance} reels={reels} currentUser={currentUser} onBack={() => setOpenClientId(null)} onGoReels={goReels} />;
     }
     switch (page) {
-      case "dashboard": return <DashboardPage clients={clients} reels={reels} setReels={setReels} users={users} currentUser={currentUser} finance={finance} boardPosts={boardPosts} setBoardPosts={setBoardPosts} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} onGoReels={goReels} onGoReelDetail={goReelDetail} />;
+      case "dashboard": return <DashboardPage clients={clients} reels={reels} setReels={setReels} users={users} currentUser={currentUser} finance={finance} boardPosts={boardPosts} setBoardPosts={setBoardPosts} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} onGoReels={goReels} onGoReelDetail={goReelDetail} onGoTaskSection={goTaskSection} />;
       case "clients": return <ClientsPage clients={clients} setClients={setClients} finance={finance} setFinance={setFinance} currentUser={currentUser} onOpenClient={setOpenClientId} />;
       case "reels": return <ReelsPage clients={clients} reels={reels} setReels={setReels} users={users} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} currentUser={currentUser} focusClientId={reelsFocusClient} focusReelId={reelsFocusReelId} />;
       case "research": return <ResearchPage clients={clients} reels={reels} setReels={setReels} />;
