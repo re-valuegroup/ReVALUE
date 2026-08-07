@@ -1370,7 +1370,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   </button>
                 </div>
                 <div className="mt-2 pt-2" style={{ borderTop: "1px dashed #EFEDE4" }}>
-                  <p className="text-[11px] font-semibold mb-1.5 flex items-center gap-1.5" style={{ color: "#0E90B8" }}><ClipboardList size={12} /> ④修正チェック詳細</p>
+                  <p className="text-[11px] font-semibold mb-1.5 flex items-center gap-1.5" style={{ color: "#0E90B8" }}><ClipboardList size={12} /> 修正チェック詳細</p>
                   <div className="space-y-1.5">
                     {CHECKLIST_ITEMS.map((item, i) => (
                       <label key={item.key} className="flex items-start gap-2 text-xs cursor-pointer">
@@ -1426,7 +1426,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   </button>
                 </div>
                 <div className="mt-2 pt-2" style={{ borderTop: "1px dashed #EFEDE4" }}>
-                  <p className="text-[11px] font-semibold mb-1.5 flex items-center gap-1.5" style={{ color: "#D6248A" }}><Sparkles size={12} /> ⑤キャプション作成詳細</p>
+                  <p className="text-[11px] font-semibold mb-1.5 flex items-center gap-1.5" style={{ color: "#D6248A" }}><Sparkles size={12} /> キャプション作成詳細</p>
                   <Field label="指示文（キャプション生成時にAIに伝える指示）">
                     <TextArea rows={2} value={draft.captionInstruction || ""} onChange={e => set({ captionInstruction: e.target.value })} placeholder="例：親しみやすい口調で、絵文字を多めに使ってください" disabled={!canEdit} />
                     {canEdit && pastCaptionInstructions && pastCaptionInstructions.length > 0 && (
@@ -1512,7 +1512,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   </div>
                 )}
                 <div className="mt-2 pt-2" style={{ borderTop: "1px dashed #EFEDE4" }}>
-                  <p className="text-[11px] font-semibold mb-1.5 flex items-center gap-1.5" style={{ color: "#D6248A" }}><Send size={12} /> ⑥投稿詳細</p>
+                  <p className="text-[11px] font-semibold mb-1.5 flex items-center gap-1.5" style={{ color: "#D6248A" }}><Send size={12} /> 投稿詳細</p>
                   <Field label="投稿日">
                     <TextInput type="date" value={draft.postedDate} onChange={e => set({ postedDate: e.target.value })} disabled={!canEdit} />
                   </Field>
