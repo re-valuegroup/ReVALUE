@@ -1198,7 +1198,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
           <div className="rounded-xl p-3 my-2" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
             <p className="text-xs font-bold mb-2 flex items-center gap-1.5"><Camera size={13} color="#854F0B" /> 撮影・編集指示</p>
             <Field label="担当撮影者">
-              <select value={draft.assignedStaffId || ""} onChange={e => set({ assignedStaffId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
+              <select value={reel.assignedStaffId || ""} onChange={e => update({ assignedStaffId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
                 <option value="">未割り当て</option>
                 {shooters.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
@@ -1291,7 +1291,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   <div key={f.key} className="rounded-lg p-2" style={{ background: "#fff", border: done ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>{f.label}</span>
-                    <select value={draft[f.key] || ""} onChange={e => set({ [f.key]: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
+                    <select value={reel[f.key] || ""} onChange={e => update({ [f.key]: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
                       <option value="">未割り当て</option>
                       {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                     </select>
@@ -1352,7 +1352,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
               <div className="rounded-lg p-2" style={{ background: "#fff", border: reel.checkSubmitted ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>④修正チェック担当</span>
-                  <select value={draft.editorSecondaryId || ""} onChange={e => set({ editorSecondaryId: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
+                  <select value={reel.editorSecondaryId || ""} onChange={e => update({ editorSecondaryId: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
                     <option value="">未割り当て</option>
                     {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                   </select>
@@ -1374,7 +1374,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
               <div className="rounded-lg p-2" style={{ background: "#fff", border: reel.captionDone ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>⑤キャプション作成担当</span>
-                  <select value={draft.captionAssigneeId || ""} onChange={e => set({ captionAssigneeId: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
+                  <select value={reel.captionAssigneeId || ""} onChange={e => update({ captionAssigneeId: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
                     <option value="">未割り当て</option>
                     {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                   </select>
@@ -1396,7 +1396,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
               <div className="rounded-lg p-2" style={{ background: "#fff", border: reel.completedStages >= 5 ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>⑥投稿担当</span>
-                  <select value={draft.postAssigneeId || ""} onChange={e => set({ postAssigneeId: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
+                  <select value={reel.postAssigneeId || ""} onChange={e => update({ postAssigneeId: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
                     <option value="">未割り当て</option>
                     {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                   </select>
