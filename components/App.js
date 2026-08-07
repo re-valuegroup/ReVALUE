@@ -1416,8 +1416,8 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                 <div className="flex justify-end mt-1.5">
                   <button
                     type="button"
-                    disabled={!canEdit || (!reel.captionDone && !draft.caption?.trim())}
-                    title={!reel.captionDone && !draft.caption?.trim() ? "キャプションを入力すると完了にできます" : "クリックで完了・未完了を切り替え"}
+                    disabled={!canEdit || (!reel.captionDone && (!reel.checkSubmitted || !draft.caption?.trim()))}
+                    title={!reel.checkSubmitted ? "④修正チェックが完了してから完了にできます" : !reel.captionDone && !draft.caption?.trim() ? "キャプションを入力すると完了にできます" : "クリックで完了・未完了を切り替え"}
                     onClick={() => update({ captionDone: !reel.captionDone })}
                     className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0 disabled:opacity-40"
                     style={{ background: reel.captionDone ? "#0E90B8" : "#D6248A" }}
@@ -1503,8 +1503,10 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   <div className="flex justify-end mt-1.5">
                     <button
                       type="button"
+                      disabled={reel.completedStages < 5 && !(reel.checkSubmitted && reel.captionDone)}
+                      title={reel.completedStages >= 5 ? "もう一度押すと未投稿に戻せます" : !(reel.checkSubmitted && reel.captionDone) ? "④修正チェック・⑤キャプション作成が完了してから投稿完了にできます" : "クリックで完了・未完了を切り替え"}
                       onClick={() => update({ postedDate: draft.postedDate || new Date().toISOString().slice(0, 10), completedStages: reel.completedStages >= 5 ? 4 : 5 })}
-                      className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0"
+                      className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0 disabled:opacity-40"
                       style={{ background: reel.completedStages >= 5 ? "#0E90B8" : "#D6248A" }}
                     >
                       {reel.completedStages >= 5 ? <CircleCheck size={14} /> : <Circle size={14} />} {reel.completedStages >= 5 ? `完了（${reel.postedDate || "日付未設定"}）` : "未完了（クリックで完了）"}
@@ -3337,7 +3339,9 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoReelDetail,
                 </button>
                 <button
                   onClick={() => updateReelField({ postedDate: r.postedDate || new Date().toISOString().slice(0, 10), completedStages: 5 })}
-                  className="text-xs font-semibold px-2.5 py-1 rounded-lg text-white flex items-center gap-1 mt-1.5 ml-1.5"
+                  disabled={!r.checkSubmitted}
+                  title={!r.checkSubmitted ? "④修正チェックが完了してから投稿完了にできます" : ""}
+                  className="text-xs font-semibold px-2.5 py-1 rounded-lg text-white flex items-center gap-1 mt-1.5 ml-1.5 disabled:opacity-40"
                   style={{ background: "#0E90B8" }}
                 >
                   <CircleCheck size={12} /> 投稿完了
