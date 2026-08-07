@@ -1197,11 +1197,11 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   <button
                     type="button"
                     onClick={() => update({ completedStages: reel.completedStages >= 1 ? Math.min(reel.completedStages, 0) : Math.max(reel.completedStages, 1) })}
-                    className="flex items-center gap-1 text-xs shrink-0 font-semibold"
-                    style={{ color: reel.completedStages >= 1 ? "#0E90B8" : "#5F5E5A" }}
+                    className="text-xs px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0 font-semibold"
+                    style={{ background: reel.completedStages >= 1 ? "#0E90B8" : "#D6248A" }}
                     title="撮影完了の切り替え"
                   >
-                    {reel.completedStages >= 1 ? <CircleCheck size={16} color="#0E90B8" /> : <Circle size={16} color="#A9A79C" />} 撮影完了
+                    {reel.completedStages >= 1 ? <CircleCheck size={14} /> : <Circle size={14} />} {reel.completedStages >= 1 ? "完了" : "未完了（クリックで完了）"}
                   </button>
                 )}
               </div>
@@ -1228,7 +1228,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                       onClick={() => update({ completedStages: Math.max(reel.completedStages, 2) })}
                       disabled={!draft.editInstructions?.trim()}
                       className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-40"
-                      style={{ background: "#16171B" }}
+                      style={{ background: "#D6248A" }}
                     >
                       編集指示をする
                     </button>
@@ -1302,10 +1302,10 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                         }
                         update(patch);
                       }}
-                      className="flex items-center gap-1 text-xs shrink-0 font-semibold"
-                      style={{ color: done ? "#0E90B8" : canToggle ? "#5F5E5A" : "#C4C2B8" }}
+                      className="text-xs px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0 font-semibold disabled:opacity-40"
+                      style={{ background: done ? "#0E90B8" : canToggle ? "#D6248A" : "#C4C2B8" }}
                     >
-                      {done ? <CircleCheck size={16} color="#0E90B8" /> : <Circle size={16} color="#A9A79C" />} {done ? "完了" : !reel[f.key] ? "担当者未割当" : canToggle ? "未完了（クリックで完了）" : "前の工程待ち"}
+                      {done ? <CircleCheck size={14} /> : <Circle size={14} />} {done ? "完了" : !reel[f.key] ? "担当者未割当" : canToggle ? "未完了（クリックで完了）" : "前の工程待ち"}
                     </button>
                   </div>
                   {canEdit && reel[f.key] && (
@@ -1341,19 +1341,26 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
 
           <div className="rounded-xl p-3 my-2" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
             <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-bold flex items-center gap-1.5"><ClipboardList size={13} color="#0E90B8" /> ④修正チェック</p>
+              <p className="text-xs font-bold flex items-center gap-1.5"><ClipboardList size={13} color="#0E90B8" /> ④修正チェック担当</p>
               {reel.checkSubmitted && <Badge tone="teal">提出済み ・ {timeAgo(reel.checkSubmittedAt)}</Badge>}
             </div>
             <div className="rounded-lg p-2 mb-2" style={{ background: "#fff", border: reel.checkSubmitted ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>④修正チェック担当</span>
+                <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>担当者</span>
                 <select value={draft.editorSecondaryId || ""} onChange={e => set({ editorSecondaryId: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
                   <option value="">未割り当て</option>
                   {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                 </select>
-                <span className="flex items-center gap-1 text-xs font-semibold shrink-0" style={{ color: reel.checkSubmitted ? "#0E90B8" : "#A9A79C" }}>
-                  {reel.checkSubmitted ? <CircleCheck size={16} color="#0E90B8" /> : <Circle size={16} color="#A9A79C" />} {reel.checkSubmitted ? "完了" : "未完了"}
-                </span>
+                <button
+                  type="button"
+                  disabled={!canEdit || (!reel.checkSubmitted && !canSubmitCheck(reel))}
+                  title={reel.checkSubmitted ? "もう一度押すとチェック中に戻せます" : !canSubmitCheck(reel) ? "①②③（必要な工程）がすべて完了してから提出できます" : "クリックで完了・未完了を切り替え"}
+                  onClick={submitCheck}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0 disabled:opacity-40"
+                  style={{ background: reel.checkSubmitted ? "#0E90B8" : "#D6248A" }}
+                >
+                  {reel.checkSubmitted ? <CircleCheck size={14} /> : <Circle size={14} />} {reel.checkSubmitted ? "完了" : "未完了（クリックで完了）"}
+                </button>
               </div>
             </div>
             <div className="space-y-1.5">
@@ -1385,14 +1392,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             <Field label="コメント・申し送り">
               <TextArea rows={2} value={draft.checkComment || ""} onChange={e => set({ checkComment: e.target.value })} disabled={!canEdit} placeholder="意図・注意点・引き継ぎ事項など" />
             </Field>
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <span className="text-[11px]" style={{ color: "#8B897F" }}>チェック済み {checkedCount}/{CHECKLIST_ITEMS.length}</span>
-              {canEdit && (
-                <button onClick={submitCheck} disabled={!reel.checkSubmitted && !canSubmitCheck(reel)} title={reel.checkSubmitted ? "もう一度押すとチェック中に戻せます" : !canSubmitCheck(reel) ? "①②③（必要な工程）がすべて完了してから提出できます" : ""} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 disabled:opacity-40" style={{ background: reel.checkSubmitted ? "#0E90B8" : "#16171B" }}>
-                  {reel.checkSubmitted && <CircleCheck size={13} />} {reel.checkSubmitted ? "修正チェック完了" : "修正チェック未完了（クリックで完了）"}
-                </button>
-              )}
-            </div>
+            <p className="text-[11px]" style={{ color: "#8B897F" }}>チェック済み {checkedCount}/{CHECKLIST_ITEMS.length}</p>
             {checkSubmitError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{checkSubmitError}</p>}
           </div>
 
@@ -1401,12 +1401,25 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
               <p className="text-xs font-bold flex items-center gap-1.5"><Sparkles size={13} color="#D6248A" /> ⑤キャプション作成担当</p>
               {reel.captionDone && <Badge tone="teal">完了</Badge>}
             </div>
-            <Field label="担当者">
-              <select value={draft.captionAssigneeId || ""} onChange={e => set({ captionAssigneeId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
-                <option value="">未割り当て</option>
-                {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
-            </Field>
+            <div className="rounded-lg p-2 mb-2" style={{ background: "#fff", border: reel.captionDone ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>担当者</span>
+                <select value={draft.captionAssigneeId || ""} onChange={e => set({ captionAssigneeId: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
+                  <option value="">未割り当て</option>
+                  {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+                <button
+                  type="button"
+                  disabled={!canEdit || (!reel.captionDone && !draft.caption?.trim())}
+                  title={!reel.captionDone && !draft.caption?.trim() ? "キャプションを入力すると完了にできます" : "クリックで完了・未完了を切り替え"}
+                  onClick={() => update({ captionDone: !reel.captionDone })}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0 disabled:opacity-40"
+                  style={{ background: reel.captionDone ? "#0E90B8" : "#D6248A" }}
+                >
+                  {reel.captionDone ? <CircleCheck size={14} /> : <Circle size={14} />} {reel.captionDone ? "完了" : "未完了（クリックで完了）"}
+                </button>
+              </div>
+            </div>
             <Field label="指示文（キャプション生成時にAIに伝える指示）">
               <TextArea rows={2} value={draft.captionInstruction || ""} onChange={e => set({ captionInstruction: e.target.value })} placeholder="例：親しみやすい口調で、絵文字を多めに使ってください" disabled={!canEdit} />
               {canEdit && pastCaptionInstructions && pastCaptionInstructions.length > 0 && (
@@ -1441,24 +1454,11 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             {genError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{genError}</p>}
             <Field label="キャプション">
               <TextArea rows={4} value={draft.caption} onChange={e => set({ caption: e.target.value })} disabled={!canEdit} />
-              <div className="flex items-center gap-2 flex-wrap mt-1.5">
-                {draft.caption && (
-                  <button onClick={copyCaption} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5" style={{ background: copied ? "#0E90B8" : "#16171B" }}>
-                    {copied ? <CircleCheck size={12} /> : <Copy size={12} />} {copied ? "コピーしました" : "キャプションをコピー"}
-                  </button>
-                )}
-                {canEdit && (
-                  reel.captionDone ? (
-                    <button onClick={() => update({ captionDone: false })} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5" style={{ background: "#0E90B8" }}>
-                      <CircleCheck size={12} /> ⑤キャプション作成完了（クリックで編集し直す）
-                    </button>
-                  ) : (
-                    <button onClick={() => update({ captionDone: true })} disabled={!draft.caption?.trim()} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#16171B" }}>
-                      キャプション作成未完了（クリックで完了）
-                    </button>
-                  )
-                )}
-              </div>
+              {draft.caption && (
+                <button onClick={copyCaption} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 mt-1.5" style={{ background: copied ? "#0E90B8" : "#16171B" }}>
+                  {copied ? <CircleCheck size={12} /> : <Copy size={12} />} {copied ? "コピーしました" : "キャプションをコピー"}
+                </button>
+              )}
             </Field>
             {(draft.captionHistory || []).length > 0 && (
               <button onClick={() => setShowHistory(s => !s)} className="text-xs font-semibold" style={{ color: "#5F5E5A" }}>
@@ -1488,27 +1488,27 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
               <p className="text-xs font-bold flex items-center gap-1.5"><Send size={13} color="#D6248A" /> ⑥投稿担当</p>
               {reel.completedStages >= 5 && <Badge tone="teal">投稿完了</Badge>}
             </div>
-            <Field label="担当者">
-              <select value={draft.postAssigneeId || ""} onChange={e => set({ postAssigneeId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
-                <option value="">未割り当て</option>
-                {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
-            </Field>
+            <div className="rounded-lg p-2 mb-2" style={{ background: "#fff", border: reel.completedStages >= 5 ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>担当者</span>
+                <select value={draft.postAssigneeId || ""} onChange={e => set({ postAssigneeId: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
+                  <option value="">未割り当て</option>
+                  {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => update({ postedDate: draft.postedDate || new Date().toISOString().slice(0, 10), completedStages: reel.completedStages >= 5 ? 4 : 5 })}
+                    className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0"
+                    style={{ background: reel.completedStages >= 5 ? "#0E90B8" : "#D6248A" }}
+                  >
+                    {reel.completedStages >= 5 ? <CircleCheck size={14} /> : <Circle size={14} />} {reel.completedStages >= 5 ? `完了（${reel.postedDate || "日付未設定"}）` : "未完了（クリックで完了）"}
+                  </button>
+                )}
+              </div>
+            </div>
             <Field label="投稿日">
               <TextInput type="date" value={draft.postedDate} onChange={e => set({ postedDate: e.target.value })} disabled={!canEdit} />
-              {canEdit && (
-                reel.completedStages >= 5 ? (
-                  <span className="text-xs font-semibold flex items-center gap-1 mt-1.5" style={{ color: "#0E90B8" }}><CircleCheck size={13} /> 投稿完了（{reel.postedDate || "日付未設定"}）</span>
-                ) : (
-                  <button
-                    onClick={() => update({ postedDate: draft.postedDate || new Date().toISOString().slice(0, 10), completedStages: 5 })}
-                    className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white mt-1.5"
-                    style={{ background: "#0E90B8" }}
-                  >
-                    投稿完了にする
-                  </button>
-                )
-              )}
             </Field>
             <div className="grid md:grid-cols-3 gap-x-4">
               {[
@@ -1572,7 +1572,14 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
   const [selectedClientId, setSelectedClientId] = useState(initialClientId || "");
   const client = clients.find(c => c.id === selectedClientId);
   const existingReels = allReels.filter(r => r.clientId === selectedClientId);
-  const [form, setForm] = useState({ theme: "", editInstructions: "", script: "", driveUrl: "", assignedStaffId: "", deadline: "", editType: "direction", rush: false });
+  const editors = users.filter(u => (u.roles || []).includes("editor"));
+  const shooters = users.filter(u => (u.roles || []).includes("shooter"));
+  const [form, setForm] = useState({
+    theme: "", editInstructions: "", script: "", driveUrl: "", assignedStaffId: "", deadline: "", editType: "direction", rush: false,
+    cutEditorId: "", telopEditorId: "", sfxEditorId: "", cutDone: false, telopDone: false, sfxDone: false,
+    editorSecondaryId: "", captionAssigneeId: "", postAssigneeId: "",
+  });
+  const setF = (patch) => setForm(f => ({ ...f, ...patch }));
   const [dupSource, setDupSource] = useState("");
   const [instructionsSubmitted, setInstructionsSubmitted] = useState(false);
 
@@ -1653,8 +1660,13 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
 
   const submit = () => {
     const base = emptyReel(client.id, ym);
-    // 撮影は完了済みとして扱う。編集指示は「編集指示をする」を押していれば完了扱いにする
-    onCreate({ ...base, ...form, completedStages: instructionsSubmitted ? 2 : 1 });
+    // 撮影は完了済みとして扱う。編集指示は「編集指示をする」を押していれば完了扱いにする。
+    // ①②③のチェックがこの時点で揃っていれば、編集完了の状態まで進める
+    let stage = instructionsSubmitted ? 2 : 1;
+    if (stage >= 2 && editRolesForReel(form).every(f => form[DONE_KEY_FOR_ROLE[f.key]])) {
+      stage = 3;
+    }
+    onCreate({ ...base, ...form, completedStages: stage });
   };
 
   return (
@@ -1769,6 +1781,59 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
               <input type="checkbox" checked={form.rush} onChange={e => setForm(f => ({ ...f, rush: e.target.checked }))} />
               🔥 即納案件（納期が短い）
             </label>
+
+            <div className="rounded-xl p-3 my-2" style={{ background: "#FAF8F3" }}>
+              <p className="text-xs font-bold mb-2 flex items-center gap-1.5"><Scissors size={13} color="#0E90B8" /> 編集進行管理（この時点で担当者・完了チェックも設定できます）</p>
+              {[
+                { key: "cutEditorId", doneKey: "cutDone", label: "①カット・基本テロップ担当" },
+                { key: "telopEditorId", doneKey: "telopDone", label: "②テロップ担当" },
+                { key: "sfxEditorId", doneKey: "sfxDone", label: "③効果音担当" },
+              ].filter(f => editRolesForReel(form).some(r => r.key === f.key)).map(f => {
+                const done = !!form[f.doneKey];
+                const canToggle = done || canToggleRoleDone(form, f.doneKey);
+                return (
+                  <div key={f.key} className="rounded-lg p-2 mb-1.5 flex items-center gap-2 flex-wrap" style={{ background: "#fff", border: done ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
+                    <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>{f.label}</span>
+                    <select value={form[f.key] || ""} onChange={e => setF({ [f.key]: e.target.value })} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
+                      <option value="">未割り当て</option>
+                      {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    </select>
+                    <button
+                      type="button"
+                      disabled={!canToggle}
+                      title={!form[f.key] ? "担当者を割り当ててください" : !done && !canToggle ? "前の工程がまだ完了していません" : ""}
+                      onClick={() => canToggle && setF({ [f.doneKey]: !done })}
+                      className="text-xs px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0 font-semibold disabled:opacity-40"
+                      style={{ background: done ? "#0E90B8" : canToggle ? "#D6248A" : "#C4C2B8" }}
+                    >
+                      {done ? <CircleCheck size={14} /> : <Circle size={14} />} {done ? "完了" : !form[f.key] ? "担当者未割当" : canToggle ? "未完了（クリックで完了）" : "前の工程待ち"}
+                    </button>
+                  </div>
+                );
+              })}
+              <div className="rounded-lg p-2 mb-1.5 flex items-center gap-2 flex-wrap" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
+                <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>④修正チェック担当</span>
+                <select value={form.editorSecondaryId} onChange={e => setF({ editorSecondaryId: e.target.value })} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
+                  <option value="">未割り当て</option>
+                  {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+              </div>
+              <div className="rounded-lg p-2 mb-1.5 flex items-center gap-2 flex-wrap" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
+                <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>⑤キャプション作成担当</span>
+                <select value={form.captionAssigneeId} onChange={e => setF({ captionAssigneeId: e.target.value })} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
+                  <option value="">未割り当て</option>
+                  {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+              </div>
+              <div className="rounded-lg p-2 flex items-center gap-2 flex-wrap" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
+                <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>⑥投稿担当</span>
+                <select value={form.postAssigneeId} onChange={e => setF({ postAssigneeId: e.target.value })} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
+                  <option value="">未割り当て</option>
+                  {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+              </div>
+            </div>
+
             <p className="text-[11px]" style={{ color: "#A9A79C" }}>登録すると、この動画は自動的に「編集指示完了」の状態で登録されます。</p>
           </>
         )}
@@ -1788,6 +1853,7 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
   const [ym, setYm] = useState(currentYearMonth());
   const [staffFilter, setStaffFilter] = useState("");
   const [stageFilter, setStageFilter] = useState("");
+  const [rushOnly, setRushOnly] = useState(false);
   const [showAllMonths, setShowAllMonths] = useState(!focusClientId);
   const canEdit = true;
   const isAdmin = (currentUser.roles || []).includes("admin");
@@ -1819,6 +1885,7 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
     .filter(r => showAllMonths || r.yearMonth === ym)
     .filter(r => !staffFilter || r.assignedStaffId === staffFilter)
     .filter(r => !stageFilter || STAGE_FILTER_OPTIONS.find(o => o.key === stageFilter)?.test(r))
+    .filter(r => !rushOnly || r.rush)
     .sort((a, b) => b.yearMonth.localeCompare(a.yearMonth));
 
   const addReel = () => {
@@ -1878,6 +1945,9 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
           <option value="">進行状況（絞り込みなし）</option>
           {STAGE_FILTER_OPTIONS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
         </select>
+        <button onClick={() => setRushOnly(s => !s)} className="text-sm font-semibold px-3 py-2 rounded-lg border flex items-center gap-1" style={{ borderColor: rushOnly ? "#F0A5A5" : "#DEDACD", background: rushOnly ? "#FCEBEB" : "#fff", color: rushOnly ? "#A32D2D" : "#5F5E5A" }}>
+          🔥 即納案件のみ
+        </button>
         {clientId && (
           <button onClick={addReel} className="flex items-center gap-1 text-sm font-semibold px-3 py-2 rounded-lg text-white ml-auto" style={{ background: "#D6248A" }}>
             <Plus size={15} /> 動画を追加
