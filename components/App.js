@@ -2560,11 +2560,20 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
   const postBoard = () => {
     if (!boardText.trim()) return;
     const author = users.find(u => u.id === boardAuthorId) || currentUser;
-    setBoardPosts(prev => [{ id: uid("post"), authorId: author.id, authorName: author.name, theme: boardTheme.trim(), content: boardText.trim(), createdAt: new Date().toISOString() }, ...prev]);
+    setBoardPosts(prev => [{ id: uid("post"), authorId: author.id, authorName: author.name, theme: boardTheme.trim(), content: boardText.trim(), createdAt: new Date().toISOString(), readBy: [] }, ...prev]);
     setBoardTheme("");
     setBoardText("");
   };
   const deleteBoard = (id) => setBoardPosts(prev => prev.filter(p => p.id !== id));
+  const toggleReadBoard = (id) => {
+    setBoardPosts(prev => prev.map(p => {
+      if (p.id !== id) return p;
+      const readBy = p.readBy || [];
+      const already = readBy.includes(currentUser.id);
+      return { ...p, readBy: already ? readBy.filter(uid2 => uid2 !== currentUser.id) : [...readBy, currentUser.id] };
+    }));
+  };
+  const [openReadStatusId, setOpenReadStatusId] = useState(null);
 
   return (
     <div>
@@ -2687,23 +2696,54 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
         </div>
         <div className="space-y-2 max-h-80 overflow-y-auto">
           {boardPosts.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>まだ投稿はありません。</p>}
-          {boardPosts.map(p => (
-            <div key={p.id} className="rounded-xl p-3" style={{ background: "#FAF8F3" }}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <p className="text-xs font-semibold">{p.authorName}</p>
-                  {p.theme && <Badge tone="coral">{p.theme}</Badge>}
+          {boardPosts.map(p => {
+            const readBy = p.readBy || [];
+            const iRead = readBy.includes(currentUser.id);
+            const readUsers = users.filter(u => readBy.includes(u.id));
+            const unreadUsers = users.filter(u => !readBy.includes(u.id));
+            const showStatus = openReadStatusId === p.id;
+            return (
+              <div key={p.id} className="rounded-xl p-3" style={{ background: "#FAF8F3" }}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs font-semibold">{p.authorName}</p>
+                    {p.theme && <Badge tone="coral">{p.theme}</Badge>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px]" style={{ color: "#8B897F" }}>{timeAgo(p.createdAt)}</span>
+                    {(p.authorId === currentUser.id || (currentUser.roles || []).includes("admin")) && (
+                      <button onClick={() => deleteBoard(p.id)} className="text-[11px]" style={{ color: "#A32D2D" }}>削除</button>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px]" style={{ color: "#8B897F" }}>{timeAgo(p.createdAt)}</span>
-                  {(p.authorId === currentUser.id || (currentUser.roles || []).includes("admin")) && (
-                    <button onClick={() => deleteBoard(p.id)} className="text-[11px]" style={{ color: "#A32D2D" }}>削除</button>
-                  )}
+                <p className="text-sm mt-1 whitespace-pre-wrap"><Linkify text={p.content} /></p>
+                <div className="flex items-center justify-between mt-2 pt-1.5 flex-wrap gap-1.5" style={{ borderTop: "1px dashed #EFEDE4" }}>
+                  <button
+                    onClick={() => toggleReadBoard(p.id)}
+                    className="text-[11px] font-semibold px-2.5 py-1 rounded-lg flex items-center gap-1"
+                    style={{ background: iRead ? "#D6F0EA" : "#F0EEE7", color: iRead ? "#0E6B57" : "#8B897F" }}
+                  >
+                    {iRead ? <CircleCheck size={11} /> : <Circle size={11} />} {iRead ? "既読" : "未読（クリックで既読にする）"}
+                  </button>
+                  <button onClick={() => setOpenReadStatusId(showStatus ? null : p.id)} className="text-[11px] font-semibold" style={{ color: "#5F5E5A" }}>
+                    既読 {readUsers.length}/{users.length}人 {showStatus ? "▲" : "▼"}
+                  </button>
                 </div>
+                {showStatus && (
+                  <div className="mt-1.5 text-[11px] space-y-1">
+                    <div className="flex flex-wrap gap-1">
+                      {readUsers.map(u => <Badge key={u.id} tone="teal">✓ {u.name}</Badge>)}
+                    </div>
+                    {unreadUsers.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {unreadUsers.map(u => <Badge key={u.id} tone="gray">未読：{u.name}</Badge>)}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-              <p className="text-sm mt-1 whitespace-pre-wrap"><Linkify text={p.content} /></p>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
