@@ -1119,6 +1119,8 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                           return dk === t.doneKey ? false : !reel[dk];
                         });
                         if (!stillNeeded) patch.completedStages = Math.max(reel.completedStages, 3);
+                      } else if (reel.completedStages >= 3) {
+                        patch.completedStages = 2;
                       }
                       update(patch);
                     } else {
@@ -1311,6 +1313,8 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                             return dk === f.doneKey ? false : !reel[dk];
                           });
                           if (!stillNeeded) patch.completedStages = Math.max(reel.completedStages, 3);
+                        } else if (reel.completedStages >= 3) {
+                          patch.completedStages = 2;
                         }
                         update(patch);
                       }}
@@ -2492,6 +2496,8 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
         return dk === doneKey ? false : !r[dk];
       });
       if (!stillNeeded) patch.completedStages = Math.max(r.completedStages, 3);
+    } else if (r.completedStages >= 3) {
+      patch.completedStages = 2;
     }
     updateReelField(r.id, patch);
   };
@@ -2531,7 +2537,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
   };
 
   // 一括でチェック担当者を指定（カット・テロップ・効果音がすべて完了した動画）
-  const needsChecker = reels.filter(r => editRolesForReel(r).every(f => r[f.key]) && !r.editorSecondaryId && r.completedStages < 5);
+  const needsChecker = reels.filter(r => editRolesForReel(r).every(f => r[DONE_KEY_FOR_ROLE[f.key]]) && !r.editorSecondaryId && r.completedStages < 5);
 
   const [selectedForBulk, setSelectedForBulk] = useState([]);
   const [bulkChecker, setBulkChecker] = useState("");
