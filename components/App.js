@@ -839,6 +839,10 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
   const [justSaved, setJustSaved] = useState(false);
 
   const [recording, setRecording] = useState(false);
+  const [showVoiceInput, setShowVoiceInput] = useState(false);
+  const [showCheckDetail, setShowCheckDetail] = useState(false);
+  const [showCaptionDetail, setShowCaptionDetail] = useState(false);
+  const [showPostDetail, setShowPostDetail] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [voiceError, setVoiceError] = useState("");
@@ -1143,33 +1147,40 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
         <div className="px-4 pb-4 pt-1 border-t" style={{ borderColor: "#EFEDE4" }} onClick={e => e.stopPropagation()}>
           {canEdit && (
             <div className="rounded-xl p-3 my-2" style={{ background: "#FBE4F1" }}>
-              <p className="text-xs font-bold mb-1 flex items-center gap-1.5" style={{ color: "#96185E" }}><Sparkles size={13} /> 音声で入力する</p>
-              <p className="text-[11px] mb-2" style={{ color: "#96185E" }}>マイクに向かって話すと、内容をAIが読み取り「テーマ」「編集指示」「台本」「動画概要メモ」に自動で振り分けます（対応ブラウザ：Chrome推奨）。</p>
-              <div className="flex items-center gap-2 flex-wrap">
-                {!recording ? (
-                  <button onClick={startRecording} disabled={!voiceSupported} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 disabled:opacity-50" style={{ background: "#D6248A" }}>
-                    🎙️ 録音を開始
-                  </button>
-                ) : (
-                  <button onClick={stopRecording} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 animate-pulse" style={{ background: "#A32D2D" }}>
-                    ⏹ 録音を停止（話し終えたら押してください）
-                  </button>
-                )}
-                {voiceTranscript && !recording && (
-                  <button onClick={applyVoiceInput} disabled={voiceLoading} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 disabled:opacity-50" style={{ background: "#16171B" }}>
-                    {voiceLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {voiceLoading ? "振り分け中..." : "内容を各項目に反映"}
-                  </button>
-                )}
-              </div>
-              {!voiceSupported && <p className="text-[11px] mt-1" style={{ color: "#A32D2D" }}>お使いのブラウザは音声入力に対応していません。Chromeでのご利用をお試しください。</p>}
-              {voiceTranscript && (
-                <div className="mt-2 p-2 rounded-lg text-xs" style={{ background: "#fff", color: "#5F5E5A", lineHeight: 1.6 }}>
-                  {voiceTranscript}
-                </div>
-              )}
-              {voiceError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{voiceError}</p>}
-              {voiceFilledFields && (
-                <p className="text-[11px] mt-1" style={{ color: "#96185E" }}>反映しました（{voiceFilledFields.join("・")}）。内容を確認し、「保存する」を押してください。</p>
+              <button onClick={() => setShowVoiceInput(s => !s)} className="w-full flex items-center justify-between text-left">
+                <span className="text-xs font-bold flex items-center gap-1.5" style={{ color: "#96185E" }}><Sparkles size={13} /> 音声で入力する</span>
+                <ChevronRight size={14} color="#96185E" style={{ transform: showVoiceInput ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+              </button>
+              {showVoiceInput && (
+                <>
+                  <p className="text-[11px] mb-2 mt-1" style={{ color: "#96185E" }}>マイクに向かって話すと、内容をAIが読み取り「テーマ」「編集指示」「台本」「動画概要メモ」に自動で振り分けます（対応ブラウザ：Chrome推奨）。</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {!recording ? (
+                      <button onClick={startRecording} disabled={!voiceSupported} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 disabled:opacity-50" style={{ background: "#D6248A" }}>
+                        🎙️ 録音を開始
+                      </button>
+                    ) : (
+                      <button onClick={stopRecording} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 animate-pulse" style={{ background: "#A32D2D" }}>
+                        ⏹ 録音を停止（話し終えたら押してください）
+                      </button>
+                    )}
+                    {voiceTranscript && !recording && (
+                      <button onClick={applyVoiceInput} disabled={voiceLoading} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 disabled:opacity-50" style={{ background: "#16171B" }}>
+                        {voiceLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {voiceLoading ? "振り分け中..." : "内容を各項目に反映"}
+                      </button>
+                    )}
+                  </div>
+                  {!voiceSupported && <p className="text-[11px] mt-1" style={{ color: "#A32D2D" }}>お使いのブラウザは音声入力に対応していません。Chromeでのご利用をお試しください。</p>}
+                  {voiceTranscript && (
+                    <div className="mt-2 p-2 rounded-lg text-xs" style={{ background: "#fff", color: "#5F5E5A", lineHeight: 1.6 }}>
+                      {voiceTranscript}
+                    </div>
+                  )}
+                  {voiceError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{voiceError}</p>}
+                  {voiceFilledFields && (
+                    <p className="text-[11px] mt-1" style={{ color: "#96185E" }}>反映しました（{voiceFilledFields.join("・")}）。内容を確認し、「保存する」を押してください。</p>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -1374,8 +1385,13 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   </button>
                 </div>
                 <div className="mt-2 pt-2" style={{ borderTop: "1px dashed #EFEDE4" }}>
-                  <p className="text-[11px] font-semibold mb-1.5 flex items-center gap-1.5" style={{ color: "#0E90B8" }}><ClipboardList size={12} /> 修正チェック詳細</p>
-                  <div className="space-y-1.5">
+                  <button onClick={() => setShowCheckDetail(s => !s)} className="w-full flex items-center justify-between">
+                    <span className="text-[11px] font-semibold flex items-center gap-1.5" style={{ color: "#0E90B8" }}><ClipboardList size={12} /> 修正チェック詳細（チェック済み {checkedCount}/{CHECKLIST_ITEMS.length}）</span>
+                    <ChevronRight size={13} color="#0E90B8" style={{ transform: showCheckDetail ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+                  </button>
+                  {showCheckDetail && (
+                  <>
+                  <div className="space-y-1.5 mt-1.5">
                     {CHECKLIST_ITEMS.map((item, i) => (
                       <label key={item.key} className="flex items-start gap-2 text-xs cursor-pointer">
                         <input type="checkbox" checked={!!checklist[item.key]} onChange={() => canEdit && toggleCheck(item.key)} disabled={!canEdit} className="mt-0.5" />
@@ -1404,8 +1420,9 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   <Field label="コメント・申し送り">
                     <TextArea rows={2} value={draft.checkComment || ""} onChange={e => set({ checkComment: e.target.value })} disabled={!canEdit} placeholder="意図・注意点・引き継ぎ事項など" />
                   </Field>
-                  <p className="text-[11px]" style={{ color: "#8B897F" }}>チェック済み {checkedCount}/{CHECKLIST_ITEMS.length}</p>
                   {checkSubmitError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{checkSubmitError}</p>}
+                  </>
+                  )}
                 </div>
               </div>
 
@@ -1430,7 +1447,12 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   </button>
                 </div>
                 <div className="mt-2 pt-2" style={{ borderTop: "1px dashed #EFEDE4" }}>
-                  <p className="text-[11px] font-semibold mb-1.5 flex items-center gap-1.5" style={{ color: "#D6248A" }}><Sparkles size={12} /> キャプション作成詳細</p>
+                  <button onClick={() => setShowCaptionDetail(s => !s)} className="w-full flex items-center justify-between">
+                    <span className="text-[11px] font-semibold flex items-center gap-1.5" style={{ color: "#D6248A" }}><Sparkles size={12} /> キャプション作成詳細</span>
+                    <ChevronRight size={13} color="#D6248A" style={{ transform: showCaptionDetail ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+                  </button>
+                  {showCaptionDetail && (
+                  <div className="mt-1.5">
                   <Field label="指示文（キャプション生成時にAIに伝える指示）">
                     <TextArea rows={2} value={draft.captionInstruction || ""} onChange={e => set({ captionInstruction: e.target.value })} placeholder="例：親しみやすい口調で、絵文字を多めに使ってください" disabled={!canEdit} />
                     {canEdit && pastCaptionInstructions && pastCaptionInstructions.length > 0 && (
@@ -1492,6 +1514,8 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                       ))}
                     </div>
                   )}
+                  </div>
+                  )}
                 </div>
               </div>
 
@@ -1518,11 +1542,15 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   </div>
                 )}
                 <div className="mt-2 pt-2" style={{ borderTop: "1px dashed #EFEDE4" }}>
-                  <p className="text-[11px] font-semibold mb-1.5 flex items-center gap-1.5" style={{ color: "#D6248A" }}><Send size={12} /> 投稿詳細</p>
                   <Field label="投稿日">
                     <TextInput type="date" value={draft.postedDate} onChange={e => set({ postedDate: e.target.value })} disabled={!canEdit} />
                   </Field>
-                  <div className="grid md:grid-cols-3 gap-x-4">
+                  <button onClick={() => setShowPostDetail(s => !s)} className="w-full flex items-center justify-between mt-1">
+                    <span className="text-[11px] font-semibold flex items-center gap-1.5" style={{ color: "#D6248A" }}><Send size={12} /> 投稿詳細（各SNSのURL・再生数など）</span>
+                    <ChevronRight size={13} color="#D6248A" style={{ transform: showPostDetail ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+                  </button>
+                  {showPostDetail && (
+                  <div className="grid md:grid-cols-3 gap-x-4 mt-1.5">
                     {[
                       { key: "instagram", label: "Instagram" },
                       { key: "tiktok", label: "TikTok" },
@@ -1546,6 +1574,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                       </div>
                     ))}
                   </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -2667,7 +2696,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
 
             <div className="rounded-2xl p-5" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
               <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><Users size={16} color="#D6248A" /> 登録スタッフ一覧（{users.length}人）</p>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="space-y-3">
                 {["admin", "shooter", "editor", "designer"].map(roleKey => {
                   const roleInfo = ROLES.find(r => r.key === roleKey);
                   const staffInRole = users.filter(u => (u.roles || []).includes(roleKey));
@@ -2676,16 +2705,16 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                       <p className="text-[11px] font-bold mb-1.5 flex items-center gap-1" style={{ color: "#5F5E5A" }}>
                         <roleInfo.icon size={12} /> {roleInfo.label}（{staffInRole.length}）
                       </p>
-                      <div className="space-y-1.5">
+                      <div className="flex flex-wrap gap-1.5">
                         {staffInRole.length === 0 && <p className="text-[11px]" style={{ color: "#A9A79C" }}>―</p>}
                         {staffInRole.map(u => {
                           const isActive = activeStaffIds.has(u.id);
                           return (
-                            <div key={u.id} className="rounded-lg px-2 py-1.5 flex items-center gap-1.5" style={{ background: isActive ? "#FBE4F1" : "#FAF8F3" }}>
-                              <span className="rounded-full flex items-center justify-center shrink-0" style={{ width: 20, height: 20, background: staffColor(u.id), color: "#fff", fontSize: 9, fontWeight: 700 }}>
+                            <div key={u.id} className="rounded-lg px-2 py-1 flex items-center gap-1.5" style={{ background: isActive ? "#FBE4F1" : "#FAF8F3" }}>
+                              <span className="rounded-full flex items-center justify-center shrink-0" style={{ width: 18, height: 18, background: staffColor(u.id), color: "#fff", fontSize: 9, fontWeight: 700 }}>
                                 {u.name.slice(0, 1)}
                               </span>
-                              <p className="text-[11px] font-semibold truncate">{u.name}{isActive ? " ・ 稼働中" : ""}</p>
+                              <p className="text-[11px] font-semibold whitespace-nowrap">{u.name}{isActive ? " ・ 稼働中" : ""}</p>
                             </div>
                           );
                         })}
