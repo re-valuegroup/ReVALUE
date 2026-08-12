@@ -2580,6 +2580,21 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
     }));
   };
   const [openReadStatusId, setOpenReadStatusId] = useState(null);
+  const [editingBoardId, setEditingBoardId] = useState(null);
+  const [editBoardTheme, setEditBoardTheme] = useState("");
+  const [editBoardText, setEditBoardText] = useState("");
+  const startEditBoard = (p) => {
+    setEditingBoardId(p.id);
+    setEditBoardTheme(p.theme || "");
+    setEditBoardText(p.content || "");
+  };
+  const cancelEditBoard = () => setEditingBoardId(null);
+  const saveEditBoard = (id) => {
+    if (!editBoardText.trim()) return;
+    setBoardPosts(prev => prev.map(p => p.id === id ? { ...p, theme: editBoardTheme.trim(), content: editBoardText.trim() } : p));
+    setEditingBoardId(null);
+  };
+  const sortedBoardPosts = [...boardPosts].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
   return (
     <div>
@@ -2702,27 +2717,43 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
         </div>
         <div className="space-y-2 max-h-80 overflow-y-auto">
           {boardPosts.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>まだ投稿はありません。</p>}
-          {boardPosts.map(p => {
+          {sortedBoardPosts.map(p => {
             const readBy = p.readBy || [];
             const iRead = readBy.includes(currentUser.id);
             const readUsers = users.filter(u => readBy.includes(u.id));
             const unreadUsers = users.filter(u => !readBy.includes(u.id));
             const showStatus = openReadStatusId === p.id;
+            const canManage = p.authorId === currentUser.id || (currentUser.roles || []).includes("admin");
+            const isEditing = editingBoardId === p.id;
             return (
               <div key={p.id} className="rounded-xl p-3" style={{ background: "#FAF8F3" }}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <p className="text-xs font-semibold">{p.authorName}</p>
-                    {p.theme && <Badge tone="coral">{p.theme}</Badge>}
+                    {p.theme && !isEditing && <Badge tone="coral">{p.theme}</Badge>}
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-[11px]" style={{ color: "#8B897F" }}>{timeAgo(p.createdAt)}</span>
-                    {(p.authorId === currentUser.id || (currentUser.roles || []).includes("admin")) && (
-                      <button onClick={() => deleteBoard(p.id)} className="text-[11px]" style={{ color: "#A32D2D" }}>削除</button>
+                    {canManage && !isEditing && (
+                      <>
+                        <button onClick={() => startEditBoard(p)} className="text-[11px]" style={{ color: "#5F5E5A" }}>編集</button>
+                        <button onClick={() => deleteBoard(p.id)} className="text-[11px]" style={{ color: "#A32D2D" }}>削除</button>
+                      </>
                     )}
                   </div>
                 </div>
-                <p className="text-sm mt-1 whitespace-pre-wrap"><Linkify text={p.content} /></p>
+                {isEditing ? (
+                  <div className="mt-1.5 space-y-1.5">
+                    <TextInput value={editBoardTheme} onChange={e => setEditBoardTheme(e.target.value)} placeholder="テーマ（例：連絡・相談・お知らせ）" />
+                    <TextArea rows={2} value={editBoardText} onChange={e => setEditBoardText(e.target.value)} />
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => saveEditBoard(p.id)} disabled={!editBoardText.trim()} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>保存する</button>
+                      <button onClick={cancelEditBoard} className="text-xs font-semibold px-3 py-1.5 rounded-lg border" style={{ borderColor: "#DEDACD", color: "#5F5E5A" }}>キャンセル</button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm mt-1 whitespace-pre-wrap"><Linkify text={p.content} /></p>
+                )}
                 <div className="flex items-center justify-between mt-2 pt-1.5 flex-wrap gap-1.5" style={{ borderTop: "1px dashed #EFEDE4" }}>
                   <button
                     onClick={() => toggleReadBoard(p.id)}
@@ -2757,7 +2788,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
         <div id="dashboard-inprogress" className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
           <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><Clock size={16} color="#F6934B" /> 編集中（{inProgressReels.length}）</p>
           {inProgressReels.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>現在編集中の動画はありません。</p>}
-          <div className="grid md:grid-cols-2 gap-3">
+          <div className="grid md:grid-cols-2 gap-1.5 max-h-96 overflow-y-auto pr-1">
             {inProgressReels.map(r => {
               const c = clients.find(x => x.id === r.clientId);
               const rows = [
@@ -2768,15 +2799,14 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                 { label: "④修正チェック", doneKey: null, assigneeId: r.editorSecondaryId, done: r.checkSubmitted },
               ]);
               return (
-                <div key={r.id} className="rounded-xl p-3" style={{ background: "#FCEEDB" }}>
-                  <button onClick={() => onGoReelDetail(r.clientId, r.id)} className="w-full text-left mb-2">
-                    <p className="font-semibold text-sm truncate">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
-                    <p className="text-[11px]" style={{ color: "#8B897F" }}>{r.deadline ? `投稿予定 ${r.deadline}` : "投稿予定日未設定"}</p>
+                <div key={r.id} className="rounded-lg p-2" style={{ background: "#FCEEDB" }}>
+                  <button onClick={() => onGoReelDetail(r.clientId, r.id)} className="w-full text-left mb-1">
+                    <p className="font-semibold text-xs truncate">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
                   </button>
                   <div className="flex items-center gap-1 flex-wrap">
                     {rows.map((t, i) => {
                       if (t.notRequired) {
-                        return <span key={t.label} className="text-[11px] font-semibold px-2 py-1 rounded-full" style={{ background: "#F0EEE7", color: "#A9A79C" }}>{t.label}：効果音なし</span>;
+                        return <span key={t.label} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: "#F0EEE7", color: "#A9A79C" }}>{t.label}：効果音なし</span>;
                       }
                       const done = t.doneKey ? !!r[t.doneKey] : !!r.checkSubmitted;
                       const person = users.find(u => u.id === t.assigneeId);
@@ -2789,17 +2819,16 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                             disabled={!canToggle}
                             title={!person ? "担当者未割当" : !done && !canToggle ? "前の工程がまだ完了していません" : "クリックで完了・未完了を切り替え"}
                             onClick={() => t.doneKey ? toggleRoleDoneInline(r, t.doneKey) : submitCheckInline(r)}
-                            className="text-[11px] font-semibold px-2 py-1 rounded-full flex items-center gap-1"
+                            className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex items-center gap-0.5"
                             style={{ ...tone, cursor: canToggle ? "pointer" : "default", opacity: !done && !canToggle ? 0.5 : 1 }}
                           >
-                            {done ? <CircleCheck size={11} /> : <Circle size={11} />} {t.label}{person ? `：${person.name}` : "：募集中"}
+                            {done ? <CircleCheck size={10} /> : <Circle size={10} />} {t.label}{person ? `：${person.name}` : "：募集中"}
                           </button>
-                          {i < rows.length - 1 && <span style={{ color: "#C4A876", fontSize: 10 }}>→</span>}
+                          {i < rows.length - 1 && <span style={{ color: "#C4A876", fontSize: 9 }}>→</span>}
                         </React.Fragment>
                       );
                     })}
                   </div>
-                  {r.editInstructions && <p className="text-[11px] mt-2 line-clamp-2" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>}
                 </div>
               );
             })}
@@ -2816,31 +2845,31 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
 
           <p className="inline-block text-base font-bold mb-2 px-3 py-1.5 rounded-lg" style={{ color: "#96185E", background: "#FBE4F1" }}>①カット・基本テロップ編集者募集中</p>
           {pickupList.length === 0 && <p className="text-xs mb-4" style={{ color: "#8B897F" }}>担当者待ちの編集指示はありません。</p>}
-          <div className="space-y-2 mb-5">
+          <div className="space-y-1.5 mb-5 max-h-80 overflow-y-auto pr-1">
             {pickupList.map(r => {
               const c = clients.find(x => x.id === r.clientId);
               const choice = getPickup(r.id);
               return (
-                <div key={r.id} className="rounded-xl p-3" style={{ background: "#FAF8F3" }}>
+                <div key={r.id} className="rounded-lg p-2" style={{ background: "#FAF8F3" }}>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <button onClick={() => onGoReelDetail(r.clientId, r.id)} className="font-semibold text-sm hover:underline text-left">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "（テーマ未設定）"}</button>
+                    <button onClick={() => onGoReelDetail(r.clientId, r.id)} className="font-semibold text-xs hover:underline text-left">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "（テーマ未設定）"}</button>
                     {(() => {
                       const totalWl = [r.cutWorkload, r.telopWorkload, r.sfxWorkload, r.checkWorkload].reduce((s, v) => s + (parseFloat(v) || 0), 0);
                       return totalWl > 0 ? <Badge tone="amber">合計工数 {totalWl}</Badge> : null;
                     })()}
                                         {r.deadline && <Badge tone={r.deadline < new Date().toISOString().slice(0, 10) ? "red" : "gray"}>投稿予定日 {r.deadline}</Badge>}
                   </div>
-                  <p className="text-xs mt-1" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>
-                  <div className="flex items-center gap-2 mt-2 flex-wrap">
-                    <select value={choice.editorId} onChange={e => setPickup(r.id, { editorId: e.target.value })} className={inputCls} style={{ ...inputStyle, width: 160 }}>
+                  <p className="text-[11px] mt-0.5 truncate" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>
+                  <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                    <select value={choice.editorId} onChange={e => setPickup(r.id, { editorId: e.target.value })} className={inputCls} style={{ ...inputStyle, width: 140, fontSize: 11, padding: "5px 8px" }}>
                       <option value="">動画編集者を選択</option>
                       {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                     </select>
-                    <TextInput type="date" value={choice.date} onChange={e => setPickup(r.id, { date: e.target.value })} title="編集する日（カレンダーに反映されます）" style={{ width: 150 }} />
-                    <TextInput type="time" step={600} value={choice.startTime} onChange={e => setPickup(r.id, { startTime: e.target.value })} title="開始時刻（10分刻み・任意）" style={{ width: 110 }} />
+                    <TextInput type="date" value={choice.date} onChange={e => setPickup(r.id, { date: e.target.value })} title="編集する日（カレンダーに反映されます）" style={{ width: 130, fontSize: 11, padding: "5px 8px" }} />
+                    <TextInput type="time" step={600} value={choice.startTime} onChange={e => setPickup(r.id, { startTime: e.target.value })} title="開始時刻（10分刻み・任意）" style={{ width: 95, fontSize: 11, padding: "5px 8px" }} />
                     <span className="text-xs shrink-0" style={{ color: "#8B897F" }}>〜</span>
-                    <TextInput type="time" step={600} value={choice.endTime} onChange={e => setPickup(r.id, { endTime: e.target.value })} title="終了時刻（10分刻み・任意）" style={{ width: 110 }} />
-                    <button onClick={() => confirmPickup(r.id)} disabled={!choice.editorId} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>
+                    <TextInput type="time" step={600} value={choice.endTime} onChange={e => setPickup(r.id, { endTime: e.target.value })} title="終了時刻（10分刻み・任意）" style={{ width: 95, fontSize: 11, padding: "5px 8px" }} />
+                    <button onClick={() => confirmPickup(r.id)} disabled={!choice.editorId} className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>
                       ①カット・基本テロップを担当する
                     </button>
                   </div>
@@ -2851,38 +2880,38 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
 
           <p className="inline-block text-base font-bold mb-2 mt-3 px-3 py-1.5 rounded-lg" style={{ color: "#854F0B", background: "#FCEEDB" }}>②テロップ・③効果音の編集者募集（①カット・基本テロップ完了済み）</p>
           {nextEditRoleList.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>対象の動画はありません。</p>}
-          <div className="space-y-2">
+          <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
             {nextEditRoleList.map(r => {
               const c = clients.find(x => x.id === r.clientId);
               const openRoles = editRolesForReel(r).filter(f => f.key !== "cutEditorId" && !r[f.key]);
               const choice = getNextPickup(r.id);
               return (
-                <div key={r.id} className="rounded-xl p-3" style={{ background: "#FAF8F3" }}>
+                <div key={r.id} className="rounded-lg p-2" style={{ background: "#FAF8F3" }}>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <button onClick={() => onGoReelDetail(r.clientId, r.id)} className="font-semibold text-sm hover:underline text-left">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "（テーマ未設定）"}</button>
+                    <button onClick={() => onGoReelDetail(r.clientId, r.id)} className="font-semibold text-xs hover:underline text-left">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "（テーマ未設定）"}</button>
                     {(() => {
                       const totalWl = [r.cutWorkload, r.telopWorkload, r.sfxWorkload, r.checkWorkload].reduce((s, v) => s + (parseFloat(v) || 0), 0);
                       return totalWl > 0 ? <Badge tone="amber">合計工数 {totalWl}</Badge> : null;
                     })()}
                                         {r.deadline && <Badge tone={r.deadline < new Date().toISOString().slice(0, 10) ? "red" : "gray"}>投稿予定日 {r.deadline}</Badge>}
                   </div>
-                  <p className="text-xs mt-1" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>
-                  <div className="flex items-center gap-2 mt-2 flex-wrap">
-                    <select value={choice.editorId} onChange={e => setNextPickup(r.id, { editorId: e.target.value })} className={inputCls} style={{ ...inputStyle, width: 160 }}>
+                  <p className="text-[11px] mt-0.5 truncate" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>
+                  <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                    <select value={choice.editorId} onChange={e => setNextPickup(r.id, { editorId: e.target.value })} className={inputCls} style={{ ...inputStyle, width: 140, fontSize: 11, padding: "5px 8px" }}>
                       <option value="">動画編集者を選択</option>
                       {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                     </select>
                     {openRoles.map(f => (
-                      <label key={f.key} className="flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg border cursor-pointer" style={{ borderColor: choice.roles.includes(f.key) ? "#D6248A" : "#DEDACD", background: choice.roles.includes(f.key) ? "#FBE4F1" : "#fff" }}>
+                      <label key={f.key} className="flex items-center gap-1 text-[11px] px-1.5 py-1 rounded-lg border cursor-pointer" style={{ borderColor: choice.roles.includes(f.key) ? "#D6248A" : "#DEDACD", background: choice.roles.includes(f.key) ? "#FBE4F1" : "#fff" }}>
                         <input type="checkbox" checked={choice.roles.includes(f.key)} onChange={() => toggleNextPickupRole(r.id, f.key)} />
                         {f.label}
                       </label>
                     ))}
-                    <TextInput type="date" value={choice.date} onChange={e => setNextPickup(r.id, { date: e.target.value })} title="編集する日（カレンダーに反映されます）" style={{ width: 150 }} />
-                    <TextInput type="time" step={600} value={choice.startTime} onChange={e => setNextPickup(r.id, { startTime: e.target.value })} title="開始時刻（任意）" style={{ width: 110 }} />
+                    <TextInput type="date" value={choice.date} onChange={e => setNextPickup(r.id, { date: e.target.value })} title="編集する日（カレンダーに反映されます）" style={{ width: 130, fontSize: 11, padding: "5px 8px" }} />
+                    <TextInput type="time" step={600} value={choice.startTime} onChange={e => setNextPickup(r.id, { startTime: e.target.value })} title="開始時刻（任意）" style={{ width: 95, fontSize: 11, padding: "5px 8px" }} />
                     <span className="text-xs shrink-0" style={{ color: "#8B897F" }}>〜</span>
-                    <TextInput type="time" step={600} value={choice.endTime} onChange={e => setNextPickup(r.id, { endTime: e.target.value })} title="終了時刻（任意）" style={{ width: 110 }} />
-                    <button onClick={() => confirmNextPickup(r.id)} disabled={!choice.editorId || choice.roles.length === 0} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>
+                    <TextInput type="time" step={600} value={choice.endTime} onChange={e => setNextPickup(r.id, { endTime: e.target.value })} title="終了時刻（任意）" style={{ width: 95, fontSize: 11, padding: "5px 8px" }} />
+                    <button onClick={() => confirmNextPickup(r.id)} disabled={!choice.editorId || choice.roles.length === 0} className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>
                       担当する
                     </button>
                   </div>
@@ -2897,33 +2926,32 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
               {needsChecker.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>対象の動画はありません。</p>}
               {needsChecker.length > 0 && (
                 <>
-                  <div className="space-y-2 mb-3">
+                  <div className="space-y-1.5 mb-3 max-h-80 overflow-y-auto pr-1">
                     {needsChecker.map(r => {
                       const c = clients.find(x => x.id === r.clientId);
                       const names = editRolesForReel(r).map(f => `${f.label}：${users.find(u => u.id === r[f.key])?.name || "未割当"}`).join(" ・ ");
                       return (
-                        <div key={r.id} className="rounded-xl p-3" style={{ background: "#FAF8F3" }}>
+                        <div key={r.id} className="rounded-lg p-2" style={{ background: "#FAF8F3" }}>
                           <div className="flex items-center gap-2 flex-wrap">
                             <input type="checkbox" checked={selectedForBulk.includes(r.id)} onChange={() => toggleBulk(r.id)} title="一括指定に含める" />
-                            <button onClick={() => onGoReelDetail(r.clientId, r.id)} className="font-semibold text-sm hover:underline text-left">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "（テーマ未設定）"}</button>
+                            <button onClick={() => onGoReelDetail(r.clientId, r.id)} className="font-semibold text-xs hover:underline text-left">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "（テーマ未設定）"}</button>
                             {(() => {
                               const totalWl = [r.cutWorkload, r.telopWorkload, r.sfxWorkload, r.checkWorkload].reduce((s, v) => s + (parseFloat(v) || 0), 0);
                               return totalWl > 0 ? <Badge tone="amber">合計工数 {totalWl}</Badge> : null;
                             })()}
                                                 {r.deadline && <Badge tone={r.deadline < new Date().toISOString().slice(0, 10) ? "red" : "gray"}>投稿予定日 {r.deadline}</Badge>}
                           </div>
-                          <p className="text-xs mt-1" style={{ color: "#8B897F" }}>{names}</p>
-                          {r.editInstructions && <p className="text-xs mt-1" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>}
-                          <div className="flex items-center gap-2 mt-2 flex-wrap">
-                            <select value={getCheckerChoice(r.id).editorId} onChange={e => setCheckerChoiceField(r.id, { editorId: e.target.value })} className={inputCls} style={{ ...inputStyle, width: 160 }}>
+                          <p className="text-[11px] mt-0.5 truncate" style={{ color: "#8B897F" }}>{names}</p>
+                          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                            <select value={getCheckerChoice(r.id).editorId} onChange={e => setCheckerChoiceField(r.id, { editorId: e.target.value })} className={inputCls} style={{ ...inputStyle, width: 140, fontSize: 11, padding: "5px 8px" }}>
                               <option value="">動画編集者を選択</option>
                               {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                             </select>
-                            <TextInput type="date" value={getCheckerChoice(r.id).date} onChange={e => setCheckerChoiceField(r.id, { date: e.target.value })} title="チェックする日（カレンダーに反映されます）" style={{ width: 150 }} />
-                            <TextInput type="time" step={600} value={getCheckerChoice(r.id).startTime} onChange={e => setCheckerChoiceField(r.id, { startTime: e.target.value })} title="開始時刻（任意）" style={{ width: 110 }} />
+                            <TextInput type="date" value={getCheckerChoice(r.id).date} onChange={e => setCheckerChoiceField(r.id, { date: e.target.value })} title="チェックする日（カレンダーに反映されます）" style={{ width: 130, fontSize: 11, padding: "5px 8px" }} />
+                            <TextInput type="time" step={600} value={getCheckerChoice(r.id).startTime} onChange={e => setCheckerChoiceField(r.id, { startTime: e.target.value })} title="開始時刻（任意）" style={{ width: 95, fontSize: 11, padding: "5px 8px" }} />
                             <span className="text-xs shrink-0" style={{ color: "#8B897F" }}>〜</span>
-                            <TextInput type="time" step={600} value={getCheckerChoice(r.id).endTime} onChange={e => setCheckerChoiceField(r.id, { endTime: e.target.value })} title="終了時刻（任意）" style={{ width: 110 }} />
-                            <button onClick={() => confirmIndividualChecker(r.id)} disabled={!getCheckerChoice(r.id).editorId} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>
+                            <TextInput type="time" step={600} value={getCheckerChoice(r.id).endTime} onChange={e => setCheckerChoiceField(r.id, { endTime: e.target.value })} title="終了時刻（任意）" style={{ width: 95, fontSize: 11, padding: "5px 8px" }} />
+                            <button onClick={() => confirmIndividualChecker(r.id)} disabled={!getCheckerChoice(r.id).editorId} className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>
                               ④修正チェックを担当する
                             </button>
                           </div>
