@@ -100,7 +100,7 @@ function emptyUser() {
     id: uid("user"), name: "", roles: ["shooter"],
     email: "", phone: "", joinDate: "", contractType: "業務委託",
     skills: "", availability: "", bankAccount: "",
-    workStatus: "稼働中", notes: "", createdAt: new Date().toISOString(),
+    workStatus: "稼働中", notes: "", withdrawn: false, createdAt: new Date().toISOString(),
   };
 }
 
@@ -182,7 +182,7 @@ const emptyClient = () => ({
   tiktok: { url: "", id: "", password: "" },
   youtube: { url: "", id: "" },
   hashtag1: "", hashtag2: "", hashtag3: "",
-  business: "", appeal: "", plan: "", monthlyCount: 4, shortTermCount: "",
+  business: "", appeal: "", castInfo: "", plan: "", monthlyCount: 4, shortTermCount: "",
   contractEndDate: "", postDays: [],
   setupTasks: { profile: "pending", highlight: "pending", line: "pending", lp: "pending" },
   notes: "", createdAt: new Date().toISOString(),
@@ -479,9 +479,34 @@ function LoginScreen({ onAuthed }) {
   );
 }
 
-function ClientForm({ client, finance, isAdmin, onSave, onCancel }) {
-  const [c, setC] = useState({ ...emptyClient(), ...client, instagram: { ...emptyClient().instagram, ...client.instagram }, tiktok: { ...emptyClient().tiktok, ...client.tiktok }, youtube: { ...emptyClient().youtube, ...client.youtube } });
-  const [f, setF] = useState(finance || emptyFinance(client.id));
+function ClientForm({ client, finance, isAdmin, onSave, onCancel, onDirtyChange }) {
+  const initial = useRef({ ...emptyClient(), ...client, instagram: { ...emptyClient().instagram, ...client.instagram }, tiktok: { ...emptyClient().tiktok, ...client.tiktok }, youtube: { ...emptyClient().youtube, ...client.youtube } });
+  const initialF = useRef(finance || emptyFinance(client.id));
+  const [c, setC] = useState(initial.current);
+  const [f, setF] = useState(initialF.current);
+  const dirty = JSON.stringify(c) !== JSON.stringify(initial.current) || JSON.stringify(f) !== JSON.stringify(initialF.current);
+
+  useEffect(() => {
+    onDirtyChange && onDirtyChange("client-form", dirty);
+    return () => { onDirtyChange && onDirtyChange("client-form", false); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty]);
+
+  useEffect(() => {
+    if (!dirty) return;
+    const handler = (e) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [dirty]);
+
+  const requestCancel = () => {
+    if (dirty) {
+      const proceed = window.confirm("保存されていない変更があります。\n「OK」で保存せずに閉じる、「キャンセル」で編集を続けます。");
+      if (!proceed) return;
+    }
+    onCancel();
+  };
+
   const set = (path, val) => {
     setC(prev => {
       const next = { ...prev };
@@ -495,6 +520,11 @@ function ClientForm({ client, finance, isAdmin, onSave, onCancel }) {
   const setFin = (key, val) => setF(prev => ({ ...prev, [key]: val }));
   return (
     <div className="rounded-2xl p-5 border" style={{ borderColor: "#DEDACD", background: "#fff" }}>
+      {dirty && (
+        <div className="rounded-xl p-2.5 mb-3 text-xs font-semibold" style={{ background: "#FBE4F1", color: "#96185E" }}>
+          未保存の変更があります。下の「保存する」を押してください。
+        </div>
+      )}
       <div className="grid md:grid-cols-2 gap-x-6">
         <Field label="会社名"><TextInput value={c.companyName} onChange={e => set("companyName", e.target.value)} placeholder="株式会社〇〇" /></Field>
         <Field label="代表者名"><TextInput value={c.ceoName} onChange={e => set("ceoName", e.target.value)} placeholder="代表 太郎" /></Field>
@@ -504,6 +534,7 @@ function ClientForm({ client, finance, isAdmin, onSave, onCancel }) {
         <Field label="契約終了予定日"><TextInput type="date" value={c.contractEndDate} onChange={e => set("contractEndDate", e.target.value)} /></Field>
         <Field label="事業内容"><TextArea rows={2} value={c.business} onChange={e => set("business", e.target.value)} placeholder="美容室経営 / ヘアサロン" /></Field>
         <Field label="アピールポイント"><TextArea rows={2} value={c.appeal} onChange={e => set("appeal", e.target.value)} placeholder="低価格、地域No.1の技術力など" /></Field>
+        <Field label="登場人物（任意）"><TextArea rows={2} value={c.castInfo || ""} onChange={e => set("castInfo", e.target.value)} placeholder="動画に登場するスタッフ・出演者など" /></Field>
         <Field label="月の動画制作本数"><TextInput type="number" value={c.monthlyCount} onChange={e => set("monthlyCount", e.target.value)} /></Field>
         <Field label="制作本数（短期契約用・任意）"><TextInput type="number" value={c.shortTermCount} onChange={e => set("shortTermCount", e.target.value)} placeholder="例：単発契約で合計5本など" /></Field>
         <Field label="投稿曜日">
@@ -590,14 +621,14 @@ function ClientForm({ client, finance, isAdmin, onSave, onCancel }) {
       </div>
 
       <div className="flex justify-end gap-2 mt-4">
-        <button onClick={onCancel} className="text-sm font-semibold px-4 py-2 rounded-lg border" style={{ borderColor: "#DEDACD" }}>キャンセル</button>
+        <button onClick={requestCancel} className="text-sm font-semibold px-4 py-2 rounded-lg border" style={{ borderColor: "#DEDACD" }}>キャンセル</button>
         <button onClick={() => onSave(c, f)} disabled={!c.companyName.trim()} className="text-sm font-semibold px-4 py-2 rounded-lg text-white disabled:opacity-40" style={{ background: "#16171B" }}>保存する</button>
       </div>
     </div>
   );
 }
 
-function ClientsPage({ clients, setClients, finance, setFinance, currentUser, onOpenClient }) {
+function ClientsPage({ clients, setClients, finance, setFinance, currentUser, onOpenClient, onDirtyChange }) {
   const [editing, setEditing] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const canEdit = true;
@@ -621,7 +652,7 @@ function ClientsPage({ clients, setClients, finance, setFinance, currentUser, on
     setConfirmDeleteId(null);
   };
 
-  if (editing) return <ClientForm client={editing} finance={finance.find(x => x.clientId === editing.id)} isAdmin={isAdmin} onSave={save} onCancel={() => setEditing(null)} />;
+  if (editing) return <ClientForm client={editing} finance={finance.find(x => x.clientId === editing.id)} isAdmin={isAdmin} onSave={save} onCancel={() => setEditing(null)} onDirtyChange={onDirtyChange} />;
 
   return (
     <div>
@@ -674,7 +705,7 @@ function ClientsPage({ clients, setClients, finance, setFinance, currentUser, on
   );
 }
 
-function ClientDetail({ client, clients, setClients, finance, setFinance, reels, currentUser, onBack, onGoReels }) {
+function ClientDetail({ client, clients, setClients, finance, setFinance, reels, currentUser, onBack, onGoReels, onDirtyChange }) {
   const [editing, setEditing] = useState(false);
   const canEdit = true;
   const isAdmin = (currentUser.roles || []).includes("admin");
@@ -683,7 +714,7 @@ function ClientDetail({ client, clients, setClients, finance, setFinance, reels,
   const postedCount = clientReels.filter(r => r.completedStages >= 5).length;
 
   if (editing) {
-    return <ClientForm client={client} finance={finance.find(x => x.clientId === client.id)} isAdmin={isAdmin} onCancel={() => setEditing(false)} onSave={(c, f) => {
+    return <ClientForm client={client} finance={finance.find(x => x.clientId === client.id)} isAdmin={isAdmin} onCancel={() => setEditing(false)} onDirtyChange={onDirtyChange} onSave={(c, f) => {
       setClients(prev => prev.map(x => x.id === c.id ? c : x));
       if (f) {
         setFinance(prev => {
@@ -718,6 +749,10 @@ function ClientDetail({ client, clients, setClients, finance, setFinance, reels,
           <div>
             <p className="text-xs font-semibold mb-1" style={{ color: "#8B897F" }}>アピールポイント</p>
             <p className="text-sm">{client.appeal || "―"}</p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold mb-1" style={{ color: "#8B897F" }}>登場人物</p>
+            <p className="text-sm">{client.castInfo || "―"}</p>
           </div>
           <div>
             <p className="text-xs font-semibold mb-1" style={{ color: "#8B897F" }}>プラン / 月間本数</p>
@@ -3988,6 +4023,7 @@ function UsersPage({ users, setUsers, currentUser }) {
   const [editing, setEditing] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [confirmWithdrawId, setConfirmWithdrawId] = useState(null);
 
   const save = (u) => {
     setUsers(prev => {
@@ -4001,6 +4037,18 @@ function UsersPage({ users, setUsers, currentUser }) {
     setUsers(prev => prev.filter(u => u.id !== id));
     setConfirmDeleteId(null);
   };
+  const withdraw = (id) => {
+    if (id === currentUser.id) return;
+    setUsers(prev => prev.map(u => u.id === id ? { ...u, withdrawn: true, withdrawnAt: new Date().toISOString() } : u));
+    setConfirmWithdrawId(null);
+    setExpandedId(null);
+  };
+  const reinstate = (id) => {
+    setUsers(prev => prev.map(u => u.id === id ? { ...u, withdrawn: false } : u));
+  };
+
+  const activeUsers = users.filter(u => !u.withdrawn);
+  const withdrawnUsers = users.filter(u => u.withdrawn);
 
   if (editing) return <StaffForm user={editing} onSave={save} onCancel={() => setEditing(null)} />;
 
@@ -4013,12 +4061,12 @@ function UsersPage({ users, setUsers, currentUser }) {
         </button>
       </div>
 
-      {users.length === 0 && (
+      {activeUsers.length === 0 && (
         <div className="text-center py-16 rounded-2xl border border-dashed" style={{ borderColor: "#DEDACD", color: "#8B897F" }}>まだスタッフが登録されていません。</div>
       )}
 
       <div className="space-y-2">
-        {users.map(u => {
+        {activeUsers.map(u => {
           const expanded = expandedId === u.id;
           return (
             <div key={u.id} className="rounded-2xl overflow-hidden" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
@@ -4047,17 +4095,27 @@ function UsersPage({ users, setUsers, currentUser }) {
                     <p><span style={{ color: "#8B897F" }}>振込先銀行口座：</span>{u.bankAccount ? "••••••••（登録済み）" : "―"}</p>
                     <p className="md:col-span-2"><span style={{ color: "#8B897F" }}>備考：</span>{u.notes || "―"}</p>
                   </div>
-                  <div className="flex items-center gap-2 mt-3">
+                  <div className="flex items-center gap-2 mt-3 flex-wrap">
                     <button onClick={() => setEditing(u)} className="text-xs font-semibold px-3 py-1.5 rounded-lg border flex items-center gap-1" style={{ borderColor: "#DEDACD" }}><Pencil size={13} />編集する</button>
                     {u.id !== currentUser.id && (
-                      confirmDeleteId === u.id ? (
-                        <>
-                          <button onClick={() => remove(u.id)} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#A32D2D" }}>本当に削除する</button>
-                          <button onClick={() => setConfirmDeleteId(null)} className="text-xs font-semibold" style={{ color: "#8B897F" }}>キャンセル</button>
-                        </>
-                      ) : (
-                        <button onClick={() => setConfirmDeleteId(u.id)} className="text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1" style={{ color: "#A32D2D" }}><Trash2 size={13} />削除する</button>
-                      )
+                      <>
+                        {confirmWithdrawId === u.id ? (
+                          <>
+                            <button onClick={() => withdraw(u.id)} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#854F0B" }}>本当に辞退させる</button>
+                            <button onClick={() => setConfirmWithdrawId(null)} className="text-xs font-semibold" style={{ color: "#8B897F" }}>キャンセル</button>
+                          </>
+                        ) : (
+                          <button onClick={() => setConfirmWithdrawId(u.id)} className="text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1" style={{ color: "#854F0B" }}><UserCog size={13} />辞退させる</button>
+                        )}
+                        {confirmDeleteId === u.id ? (
+                          <>
+                            <button onClick={() => remove(u.id)} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#A32D2D" }}>本当に削除する</button>
+                            <button onClick={() => setConfirmDeleteId(null)} className="text-xs font-semibold" style={{ color: "#8B897F" }}>キャンセル</button>
+                          </>
+                        ) : (
+                          <button onClick={() => setConfirmDeleteId(u.id)} className="text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1" style={{ color: "#A32D2D" }}><Trash2 size={13} />削除する</button>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
@@ -4066,6 +4124,30 @@ function UsersPage({ users, setUsers, currentUser }) {
           );
         })}
       </div>
+
+      {withdrawnUsers.length > 0 && (
+        <div className="mt-6">
+          <p className="text-sm font-bold mb-2 flex items-center gap-1.5" style={{ color: "#8B897F" }}><UserCog size={15} /> 辞退者リスト（{withdrawnUsers.length}人）</p>
+          <p className="text-[11px] mb-2" style={{ color: "#A9A79C" }}>辞退したスタッフは、ダッシュボードやスケジュールなどには表示されません。</p>
+          <div className="space-y-2">
+            {withdrawnUsers.map(u => (
+              <div key={u.id} className="rounded-xl px-4 py-3 flex items-center justify-between gap-2 flex-wrap" style={{ background: "#F4F2EA" }}>
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-semibold text-sm truncate" style={{ color: "#8B897F" }}>{u.name}</span>
+                  {(u.roles || []).map(rk => (
+                    <Badge key={rk} tone="gray">{roleLabel(rk)}</Badge>
+                  ))}
+                  {u.withdrawnAt && <span className="text-[11px]" style={{ color: "#A9A79C" }}>辞退日：{u.withdrawnAt.slice(0, 10)}</span>}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button onClick={() => reinstate(u.id)} className="text-xs font-semibold px-3 py-1.5 rounded-lg border" style={{ borderColor: "#DEDACD" }}>復帰させる</button>
+                  <button onClick={() => remove(u.id)} className="text-xs font-semibold px-3 py-1.5 rounded-lg" style={{ color: "#A32D2D" }}>完全に削除</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -4121,6 +4203,7 @@ function AppInner() {
   const [session, setSession] = useState(null);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [users, setUsers] = useState([]);
+  const activeUsers = useMemo(() => users.filter(u => !u.withdrawn), [users]);
   const [clients, setClients] = useState([]);
   const [reels, setReels] = useState([]);
   const [finance, setFinance] = useState([]);
@@ -4341,14 +4424,14 @@ function AppInner() {
 
   const renderPage = () => {
     if (page === "clients" && openClient) {
-      return <ClientDetail client={openClient} clients={clients} setClients={setClients} finance={finance} setFinance={setFinance} reels={reels} currentUser={currentUser} onBack={() => setOpenClientId(null)} onGoReels={goReels} />;
+      return <ClientDetail client={openClient} clients={clients} setClients={setClients} finance={finance} setFinance={setFinance} reels={reels} currentUser={currentUser} onBack={() => { if (confirmLeaveIfDirty()) setOpenClientId(null); }} onGoReels={goReels} onDirtyChange={registerDirtyReel} />;
     }
     switch (page) {
-      case "dashboard": return <DashboardPage clients={clients} reels={reels} setReels={setReels} users={users} currentUser={currentUser} finance={finance} boardPosts={boardPosts} setBoardPosts={setBoardPosts} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} onGoReels={goReels} onGoReelDetail={goReelDetail} onGoTaskSection={goTaskSection} />;
-      case "clients": return <ClientsPage clients={clients} setClients={setClients} finance={finance} setFinance={setFinance} currentUser={currentUser} onOpenClient={setOpenClientId} />;
-      case "reels": return <ReelsPage clients={clients} reels={reels} setReels={setReels} users={users} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} currentUser={currentUser} focusClientId={reelsFocusClient} focusReelId={reelsFocusReelId} onDirtyChange={registerDirtyReel} />;
+      case "dashboard": return <DashboardPage clients={clients} reels={reels} setReels={setReels} users={activeUsers} currentUser={currentUser} finance={finance} boardPosts={boardPosts} setBoardPosts={setBoardPosts} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} onGoReels={goReels} onGoReelDetail={goReelDetail} onGoTaskSection={goTaskSection} />;
+      case "clients": return <ClientsPage clients={clients} setClients={setClients} finance={finance} setFinance={setFinance} currentUser={currentUser} onOpenClient={setOpenClientId} onDirtyChange={registerDirtyReel} />;
+      case "reels": return <ReelsPage clients={clients} reels={reels} setReels={setReels} users={activeUsers} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} currentUser={currentUser} focusClientId={reelsFocusClient} focusReelId={reelsFocusReelId} onDirtyChange={registerDirtyReel} />;
       case "research": return <ResearchPage clients={clients} reels={reels} setReels={setReels} />;
-      case "tasks": return <TasksPage clients={clients} reels={reels} setReels={setReels} users={users} onGoReels={goReels} onGoReelDetail={goReelDetail} onGoClient={goClientDetail} section={taskSection} />;
+      case "tasks": return <TasksPage clients={clients} reels={reels} setReels={setReels} users={activeUsers} onGoReels={goReels} onGoReelDetail={goReelDetail} onGoClient={goClientDetail} section={taskSection} />;
       case "analytics": return <AnalyticsPage clients={clients} reels={reels} users={users} />;
       case "finance": return (currentUser.roles || []).includes("admin") ? <FinancePage clients={clients} finance={finance} setFinance={setFinance} reels={reels} users={users} /> : null;
       case "users": return (currentUser.roles || []).includes("admin") ? <UsersPage users={users} setUsers={setUsers} currentUser={currentUser} /> : null;
