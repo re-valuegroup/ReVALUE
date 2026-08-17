@@ -214,7 +214,7 @@ const emptyReel = (clientId, ym) => ({
   editType: "direction", rush: false,
   cutEditorId: "", telopEditorId: "", sfxEditorId: "", editorSecondaryId: "",
   cutDone: false, telopDone: false, sfxDone: false,
-  editStartDate: "", editEndDate: "", deadline: "",
+  editStartDate: "", editEndDate: "", deadline: "", postPlanDate: "",
   cutWorkload: "", telopWorkload: "", sfxWorkload: "", checkWorkload: "",
   cutComment: "", telopComment: "", sfxComment: "", checkComment: "",
   checklist: emptyChecklist(), checkSubmitted: false, checkSubmittedAt: null,
@@ -830,7 +830,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
   const [transcriptCleanLoading, setTranscriptCleanLoading] = useState(false);
   const [transcriptFileError, setTranscriptFileError] = useState("");
   const [roleSchedule, setRoleSchedule] = useState({});
-  const setRoleScheduleField = (roleKey, patch) => setRoleSchedule(prev => ({ ...prev, [roleKey]: { ...(prev[roleKey] || { date: "", startTime: "", endTime: "" }), ...patch } }));
+  const setRoleScheduleField = (roleKey, patch) => setRoleSchedule(prev => ({ ...prev, [roleKey]: { ...(prev[roleKey] || { startDate: "", endDate: "", startTime: "", endTime: "" }), ...patch } }));
   const [transcriptCleanError, setTranscriptCleanError] = useState("");
   const [showHistory, setShowHistory] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -1061,9 +1061,30 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
   const checklist = reel.checklist || emptyChecklist();
   const checkedCount = CHECKLIST_ITEMS.filter(i => checklist[i.key]).length;
 
+  useEffect(() => {
+    if (!dirty) return;
+    const handler = (e) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [dirty]);
+
+  const requestClose = () => {
+    if (dirty) {
+      const proceed = window.confirm("保存されていない変更があります。\n「OK」で保存せずに閉じる、「キャンセル」で編集を続けます。\n（変更を保存するにはキャンセルを押してから「保存する」ボタンを押してください）");
+      if (!proceed) return;
+      setDraft(reel);
+      setDirty(false);
+    }
+    setExpanded(false);
+  };
+  const requestToggleExpanded = () => {
+    if (expanded) requestClose();
+    else setExpanded(true);
+  };
+
   return (
     <div ref={cardRef} className="rounded-2xl border overflow-hidden" style={{ borderColor: "#DEDACD", background: "#fff" }}>
-      <div className="p-4 cursor-pointer" onClick={() => setExpanded(e => !e)}>
+      <div className="p-4 cursor-pointer" onClick={requestToggleExpanded}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             {showClient && <p className="text-[11px] font-semibold truncate" style={{ color: "#D6248A" }}>{client?.companyName || "クライアント不明"} ・ {monthLabel(reel.yearMonth)}</p>}
@@ -1205,7 +1226,8 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                 {draft.driveUrl && <a href={draft.driveUrl} target="_blank" rel="noreferrer" className="shrink-0 flex items-center justify-center w-9 rounded-lg border" style={{ borderColor: "#DEDACD" }}><Link2 size={14} /></a>}
               </div>
             </Field>
-            <Field label="編集期限（投稿予定日）"><TextInput type="date" value={draft.deadline || ""} onChange={e => set({ deadline: e.target.value })} disabled={!canEdit} /></Field>
+            <Field label="初稿日（編集期限）"><TextInput type="date" value={draft.deadline || ""} onChange={e => set({ deadline: e.target.value })} disabled={!canEdit} /></Field>
+            <Field label="投稿予定日"><TextInput type="date" value={draft.postPlanDate || ""} onChange={e => set({ postPlanDate: e.target.value })} disabled={!canEdit} /></Field>
           </div>
 
           <div className="rounded-xl p-3 my-2" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
@@ -1299,7 +1321,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                 const done = !!reel[f.doneKey];
                 const canToggle = done || canToggleRoleDone(reel, f.doneKey);
                 const wlKey = WORKLOAD_KEY_FOR_ROLE[f.key];
-                const sched = roleSchedule[f.key] || { date: "", startTime: "", endTime: "" };
+                const sched = roleSchedule[f.key] || { startDate: "", endDate: "", startTime: "", endTime: "" };
                 return (
                   <div key={f.key} className="rounded-lg p-2" style={{ background: "#fff", border: done ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
                   <div className="flex items-center gap-2 flex-wrap">
@@ -1338,16 +1360,19 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   {canEdit && reel[f.key] && (
                     <div className="flex items-center gap-1.5 flex-wrap mt-1.5 pt-1.5" style={{ borderTop: "1px dashed #EFEDE4" }}>
                       <span className="text-[10px] shrink-0" style={{ color: "#A9A79C" }}>稼働日時（カレンダー登録・再登録）</span>
-                      <TextInput type="date" value={sched.date} onChange={e => setRoleScheduleField(f.key, { date: e.target.value })} style={{ width: 130, fontSize: 11 }} />
+                      <TextInput type="date" value={sched.startDate} onChange={e => setRoleScheduleField(f.key, { startDate: e.target.value })} title="開始日" style={{ width: 115, fontSize: 11 }} />
+                      <span className="text-[10px]" style={{ color: "#8B897F" }}>〜</span>
+                      <TextInput type="date" value={sched.endDate} onChange={e => setRoleScheduleField(f.key, { endDate: e.target.value })} title="終了日（省略可）" style={{ width: 115, fontSize: 11 }} />
                       <TextInput type="time" step={600} value={sched.startTime} onChange={e => setRoleScheduleField(f.key, { startTime: e.target.value })} style={{ width: 95, fontSize: 11 }} />
                       <span className="text-[10px]" style={{ color: "#8B897F" }}>〜</span>
                       <TextInput type="time" step={600} value={sched.endTime} onChange={e => setRoleScheduleField(f.key, { endTime: e.target.value })} style={{ width: 95, fontSize: 11 }} />
                       <button
                         type="button"
-                        disabled={!sched.date}
+                        disabled={!sched.startDate}
                         onClick={() => {
-                          syncRoleCalendar(setCalendarEvents, reel.id, f.task, reel[f.key], sched.date, sched.date, sched.startTime, sched.endTime);
-                          setRoleSchedule(prev => ({ ...prev, [f.key]: { date: "", startTime: "", endTime: "" } }));
+                          const endDate = sched.endDate || sched.startDate;
+                          syncRoleCalendar(setCalendarEvents, reel.id, f.task, reel[f.key], sched.startDate, endDate, sched.startTime, sched.endTime);
+                          setRoleSchedule(prev => ({ ...prev, [f.key]: { startDate: "", endDate: "", startTime: "", endTime: "" } }));
                         }}
                         className="text-[11px] font-semibold px-2 py-1 rounded-lg text-white disabled:opacity-40"
                         style={{ background: "#0E90B8" }}
@@ -1590,7 +1615,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
               </button>
             )}
           </div>
-          <button onClick={() => setExpanded(false)} className="w-full text-sm font-semibold px-4 py-2 rounded-lg text-white mt-2 flex items-center justify-center gap-1.5" style={{ background: "#5F5E5A" }}>
+          <button onClick={requestClose} className="w-full text-sm font-semibold px-4 py-2 rounded-lg text-white mt-2 flex items-center justify-center gap-1.5" style={{ background: "#5F5E5A" }}>
             <ChevronRight size={15} style={{ transform: "rotate(-90deg)" }} /> 閉じる
           </button>
 
@@ -1619,7 +1644,7 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
   const editors = users.filter(u => (u.roles || []).includes("editor"));
   const shooters = users.filter(u => (u.roles || []).includes("shooter"));
   const [form, setForm] = useState({
-    theme: "", editInstructions: "", script: "", driveUrl: "", assignedStaffId: "", deadline: "", editType: "direction", rush: false,
+    theme: "", editInstructions: "", script: "", driveUrl: "", assignedStaffId: "", deadline: "", postPlanDate: "", editType: "direction", rush: false,
     cutEditorId: "", telopEditorId: "", sfxEditorId: "", cutDone: false, telopDone: false, sfxDone: false,
     editorSecondaryId: "", captionAssigneeId: "", postAssigneeId: "",
   });
@@ -1820,7 +1845,8 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
                 {users.filter(u => (u.roles || []).includes("shooter")).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             </Field>
-            <Field label="編集期限（投稿予定日・任意）"><TextInput type="date" value={form.deadline} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} /></Field>
+            <Field label="初稿日（編集期限・任意）"><TextInput type="date" value={form.deadline} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} /></Field>
+            <Field label="投稿予定日（任意）"><TextInput type="date" value={form.postPlanDate} onChange={e => setForm(f => ({ ...f, postPlanDate: e.target.value }))} /></Field>
             <label className="flex items-center gap-2 text-sm font-semibold px-3 py-2 rounded-lg cursor-pointer mb-2" style={{ background: form.rush ? "#FCEBEB" : "#F4F2EA", color: form.rush ? "#A32D2D" : "#5F5E5A", border: form.rush ? "1px solid #F0A5A5" : "1px solid transparent" }}>
               <input type="checkbox" checked={form.rush} onChange={e => setForm(f => ({ ...f, rush: e.target.checked }))} />
               🔥 即納案件（納期が短い）
@@ -1898,6 +1924,7 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
   const [staffFilter, setStaffFilter] = useState("");
   const [stageFilter, setStageFilter] = useState("");
   const [rushOnly, setRushOnly] = useState(false);
+  const [sortOrder, setSortOrder] = useState("");
   const [showAllMonths, setShowAllMonths] = useState(!focusClientId);
   const canEdit = true;
   const isAdmin = (currentUser.roles || []).includes("admin");
@@ -1930,7 +1957,11 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
     .filter(r => !staffFilter || r.assignedStaffId === staffFilter)
     .filter(r => !stageFilter || STAGE_FILTER_OPTIONS.find(o => o.key === stageFilter)?.test(r))
     .filter(r => !rushOnly || r.rush)
-    .sort((a, b) => b.yearMonth.localeCompare(a.yearMonth));
+    .sort((a, b) => {
+      if (sortOrder === "deadline") return (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99");
+      if (sortOrder === "postPlanDate") return (a.postPlanDate || "9999-99-99").localeCompare(b.postPlanDate || "9999-99-99");
+      return b.yearMonth.localeCompare(a.yearMonth);
+    });
 
   const addReel = () => {
     if (!clientId) return;
@@ -1992,6 +2023,11 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
         <button onClick={() => setRushOnly(s => !s)} className="text-sm font-semibold px-3 py-2 rounded-lg border flex items-center gap-1" style={{ borderColor: rushOnly ? "#F0A5A5" : "#DEDACD", background: rushOnly ? "#FCEBEB" : "#fff", color: rushOnly ? "#A32D2D" : "#5F5E5A" }}>
           🔥 即納案件のみ
         </button>
+        <select value={sortOrder} onChange={e => setSortOrder(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 160 }}>
+          <option value="">並び順（通常）</option>
+          <option value="deadline">初稿日順</option>
+          <option value="postPlanDate">投稿予定日順</option>
+        </select>
         {clientId && (
           <button onClick={addReel} className="flex items-center gap-1 text-sm font-semibold px-3 py-2 rounded-lg text-white ml-auto" style={{ background: "#D6248A" }}>
             <Plus size={15} /> 動画を追加
@@ -2279,7 +2315,7 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients, on
             );
           })()}
           {(() => {
-            const dueReels = reels.filter(r => r.deadline === selectedDate && r.completedStages < 5);
+            const dueReels = reels.filter(r => r.postPlanDate === selectedDate && r.completedStages < 5);
             if (dueReels.length === 0) return null;
             return (
               <div className="mt-3 pt-2" style={{ borderTop: "1px dashed #D7C7F0" }}>
@@ -2432,7 +2468,7 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients, on
                 })}
               </div>
               {(() => {
-                const dueReels = reels.filter(r => r.deadline === ds && r.completedStages < 5);
+                const dueReels = reels.filter(r => r.postPlanDate === ds && r.completedStages < 5);
                 if (dueReels.length === 0) return null;
                 return (
                   <div className="space-y-0.5 mt-0.5">
@@ -2494,19 +2530,20 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
   const pickupList = reels.filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions && !r.cutEditorId)
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
   const [pickupChoice, setPickupChoice] = useState({});
-  const getPickup = (reelId) => pickupChoice[reelId] || { editorId: "", date: "", startTime: "", endTime: "" };
+  const getPickup = (reelId) => pickupChoice[reelId] || { editorId: "", startDate: "", endDate: "", startTime: "", endTime: "" };
   const setPickup = (reelId, patch) => setPickupChoice(prev => ({ ...prev, [reelId]: { ...getPickup(reelId), ...patch } }));
   const confirmPickup = (reelId) => {
     const choice = getPickup(reelId);
     if (!choice.editorId) return;
+    const endDate = choice.endDate || choice.startDate;
     setReels(prev => prev.map(r => {
       if (r.id !== reelId) return r;
       const patch = { ...r, cutEditorId: choice.editorId };
-      if (choice.date) { patch.editStartDate = choice.date; patch.editEndDate = choice.date; }
+      if (choice.startDate) { patch.editStartDate = choice.startDate; patch.editEndDate = endDate; }
       return patch;
     }));
-    if (choice.date) syncReelEditCalendar(setCalendarEvents, reelId, choice.date, choice.date, choice.editorId, choice.startTime, choice.endTime);
-    setPickupChoice(prev => ({ ...prev, [reelId]: { editorId: "", date: "", startTime: "", endTime: "" } }));
+    if (choice.startDate) syncReelEditCalendar(setCalendarEvents, reelId, choice.startDate, endDate, choice.editorId, choice.startTime, choice.endTime);
+    setPickupChoice(prev => ({ ...prev, [reelId]: { editorId: "", startDate: "", endDate: "", startTime: "", endTime: "" } }));
   };
 
   // 編集中：カットが割り当て済みで未完了、またはカット完了後にテロップ・効果音が割り当て済みで未完了の動画
@@ -2544,7 +2581,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
     && editRolesForReel(r).filter(f => f.key !== "cutEditorId").some(f => !r[f.key]))
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
   const [nextPickupChoice, setNextPickupChoice] = useState({});
-  const getNextPickup = (reelId) => nextPickupChoice[reelId] || { editorId: "", roles: [], date: "", startTime: "", endTime: "" };
+  const getNextPickup = (reelId) => nextPickupChoice[reelId] || { editorId: "", roles: [], startDate: "", endDate: "", startTime: "", endTime: "" };
   const setNextPickup = (reelId, patch) => setNextPickupChoice(prev => ({ ...prev, [reelId]: { ...getNextPickup(reelId), ...patch } }));
   const toggleNextPickupRole = (reelId, roleKey) => {
     const cur = getNextPickup(reelId);
@@ -2554,15 +2591,16 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
   const confirmNextPickup = (reelId) => {
     const choice = getNextPickup(reelId);
     if (!choice.editorId || choice.roles.length === 0) return;
+    const endDate = choice.endDate || choice.startDate;
     setReels(prev => prev.map(r => {
       if (r.id !== reelId) return r;
       const patch = { ...r };
       choice.roles.forEach(roleKey => { patch[roleKey] = choice.editorId; });
-      if (choice.date) { patch.editStartDate = choice.date; patch.editEndDate = choice.date; }
+      if (choice.startDate) { patch.editStartDate = choice.startDate; patch.editEndDate = endDate; }
       return patch;
     }));
-    if (choice.date) syncReelEditCalendar(setCalendarEvents, reelId, choice.date, choice.date, choice.editorId, choice.startTime, choice.endTime);
-    setNextPickupChoice(prev => ({ ...prev, [reelId]: { editorId: "", roles: [], date: "", startTime: "", endTime: "" } }));
+    if (choice.startDate) syncReelEditCalendar(setCalendarEvents, reelId, choice.startDate, endDate, choice.editorId, choice.startTime, choice.endTime);
+    setNextPickupChoice(prev => ({ ...prev, [reelId]: { editorId: "", roles: [], startDate: "", endDate: "", startTime: "", endTime: "" } }));
   };
 
   // 一括でチェック担当者を指定（カット・テロップ・効果音がすべて完了した動画）
@@ -2571,14 +2609,15 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
   const [selectedForBulk, setSelectedForBulk] = useState([]);
   const [bulkChecker, setBulkChecker] = useState("");
   const [checkerChoice, setCheckerChoice] = useState({});
-  const getCheckerChoice = (reelId) => checkerChoice[reelId] || { editorId: "", date: "", startTime: "", endTime: "" };
+  const getCheckerChoice = (reelId) => checkerChoice[reelId] || { editorId: "", startDate: "", endDate: "", startTime: "", endTime: "" };
   const setCheckerChoiceField = (reelId, patch) => setCheckerChoice(prev => ({ ...prev, [reelId]: { ...getCheckerChoice(reelId), ...patch } }));
   const confirmIndividualChecker = (reelId) => {
     const choice = getCheckerChoice(reelId);
     if (!choice.editorId) return;
+    const endDate = choice.endDate || choice.startDate;
     setReels(prev => prev.map(r => r.id === reelId ? { ...r, editorSecondaryId: choice.editorId } : r));
-    if (choice.date) syncRoleCalendar(setCalendarEvents, reelId, "check", choice.editorId, choice.date, choice.date, choice.startTime, choice.endTime);
-    setCheckerChoice(prev => ({ ...prev, [reelId]: { editorId: "", date: "", startTime: "", endTime: "" } }));
+    if (choice.startDate) syncRoleCalendar(setCalendarEvents, reelId, "check", choice.editorId, choice.startDate, endDate, choice.startTime, choice.endTime);
+    setCheckerChoice(prev => ({ ...prev, [reelId]: { editorId: "", startDate: "", endDate: "", startTime: "", endTime: "" } }));
   };
   const toggleBulk = (id) => setSelectedForBulk(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   const applyBulkChecker = () => {
@@ -2894,7 +2933,9 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                       <option value="">動画編集者を選択</option>
                       {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                     </select>
-                    <TextInput type="date" value={choice.date} onChange={e => setPickup(r.id, { date: e.target.value })} title="編集する日（カレンダーに反映されます）" style={{ width: 130, fontSize: 11, padding: "5px 8px" }} />
+                    <TextInput type="date" value={choice.startDate} onChange={e => setPickup(r.id, { startDate: e.target.value })} title="開始日（カレンダーに反映されます）" style={{ width: 120, fontSize: 11, padding: "5px 8px" }} />
+                    <span className="text-xs shrink-0" style={{ color: "#8B897F" }}>〜</span>
+                    <TextInput type="date" value={choice.endDate} onChange={e => setPickup(r.id, { endDate: e.target.value })} title="終了日（省略時は開始日と同じ）" style={{ width: 120, fontSize: 11, padding: "5px 8px" }} />
                     <TextInput type="time" step={600} value={choice.startTime} onChange={e => setPickup(r.id, { startTime: e.target.value })} title="開始時刻（10分刻み・任意）" style={{ width: 95, fontSize: 11, padding: "5px 8px" }} />
                     <span className="text-xs shrink-0" style={{ color: "#8B897F" }}>〜</span>
                     <TextInput type="time" step={600} value={choice.endTime} onChange={e => setPickup(r.id, { endTime: e.target.value })} title="終了時刻（10分刻み・任意）" style={{ width: 95, fontSize: 11, padding: "5px 8px" }} />
@@ -2936,7 +2977,9 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                         {f.label}
                       </label>
                     ))}
-                    <TextInput type="date" value={choice.date} onChange={e => setNextPickup(r.id, { date: e.target.value })} title="編集する日（カレンダーに反映されます）" style={{ width: 130, fontSize: 11, padding: "5px 8px" }} />
+                    <TextInput type="date" value={choice.startDate} onChange={e => setNextPickup(r.id, { startDate: e.target.value })} title="開始日（カレンダーに反映されます）" style={{ width: 120, fontSize: 11, padding: "5px 8px" }} />
+                    <span className="text-xs shrink-0" style={{ color: "#8B897F" }}>〜</span>
+                    <TextInput type="date" value={choice.endDate} onChange={e => setNextPickup(r.id, { endDate: e.target.value })} title="終了日（省略時は開始日と同じ）" style={{ width: 120, fontSize: 11, padding: "5px 8px" }} />
                     <TextInput type="time" step={600} value={choice.startTime} onChange={e => setNextPickup(r.id, { startTime: e.target.value })} title="開始時刻（任意）" style={{ width: 95, fontSize: 11, padding: "5px 8px" }} />
                     <span className="text-xs shrink-0" style={{ color: "#8B897F" }}>〜</span>
                     <TextInput type="time" step={600} value={choice.endTime} onChange={e => setNextPickup(r.id, { endTime: e.target.value })} title="終了時刻（任意）" style={{ width: 95, fontSize: 11, padding: "5px 8px" }} />
@@ -2976,7 +3019,9 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                               <option value="">動画編集者を選択</option>
                               {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                             </select>
-                            <TextInput type="date" value={getCheckerChoice(r.id).date} onChange={e => setCheckerChoiceField(r.id, { date: e.target.value })} title="チェックする日（カレンダーに反映されます）" style={{ width: 130, fontSize: 11, padding: "5px 8px" }} />
+                            <TextInput type="date" value={getCheckerChoice(r.id).startDate} onChange={e => setCheckerChoiceField(r.id, { startDate: e.target.value })} title="開始日（カレンダーに反映されます）" style={{ width: 120, fontSize: 11, padding: "5px 8px" }} />
+                            <span className="text-xs shrink-0" style={{ color: "#8B897F" }}>〜</span>
+                            <TextInput type="date" value={getCheckerChoice(r.id).endDate} onChange={e => setCheckerChoiceField(r.id, { endDate: e.target.value })} title="終了日（省略時は開始日と同じ）" style={{ width: 120, fontSize: 11, padding: "5px 8px" }} />
                             <TextInput type="time" step={600} value={getCheckerChoice(r.id).startTime} onChange={e => setCheckerChoiceField(r.id, { startTime: e.target.value })} title="開始時刻（任意）" style={{ width: 95, fontSize: 11, padding: "5px 8px" }} />
                             <span className="text-xs shrink-0" style={{ color: "#8B897F" }}>〜</span>
                             <TextInput type="time" step={600} value={getCheckerChoice(r.id).endTime} onChange={e => setCheckerChoiceField(r.id, { endTime: e.target.value })} title="終了時刻（任意）" style={{ width: 95, fontSize: 11, padding: "5px 8px" }} />
