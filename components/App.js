@@ -30,6 +30,7 @@ const STAGE_FILTER_OPTIONS = [
 
 const TASK_SUBSECTIONS = [
   { key: "", label: "全体表示" },
+  { key: "editors", label: "各編集者のタスク" },
   { key: "setup", label: "初期設定未完了一覧" },
   { key: "shoot", label: "撮影待ち" },
   { key: "cut", label: "①カット・基本テロップ待ち" },
@@ -816,7 +817,7 @@ function timeAgo(ts) {
   return d.toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onChange, onDelete, onDuplicate, canEdit, currentUser, showClient, pastCaptions, pastInstructions, pastCaptionInstructions, number, startExpanded }) {
+function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onChange, onDelete, onDuplicate, canEdit, currentUser, showClient, pastCaptions, pastInstructions, pastCaptionInstructions, number, startExpanded, onDirtyChange }) {
   const [expanded, setExpanded] = useState(!!startExpanded);
   const cardRef = useRef(null);
   useEffect(() => {
@@ -837,6 +838,12 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
   const [draft, setDraft] = useState(reel);
   const [dirty, setDirty] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
+
+  useEffect(() => {
+    onDirtyChange && onDirtyChange(reel.id, dirty);
+    return () => { onDirtyChange && onDirtyChange(reel.id, false); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty, reel.id]);
 
   const [recording, setRecording] = useState(false);
   const [showVoiceInput, setShowVoiceInput] = useState(false);
@@ -1918,7 +1925,7 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
   );
 }
 
-function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalendarEvents, currentUser, focusClientId, focusReelId }) {
+function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalendarEvents, currentUser, focusClientId, focusReelId, onDirtyChange }) {
   const [clientId, setClientId] = useState(focusClientId || "__all__");
   const [ym, setYm] = useState(currentYearMonth());
   const [staffFilter, setStaffFilter] = useState("");
@@ -2047,7 +2054,7 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
 
       <div className="space-y-3">
         {list.map(r => (
-          <ReelCard key={r.id} reel={r} client={clients.find(c => c.id === r.clientId)} users={users} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} currentUser={currentUser} onChange={updateReel} onDelete={deleteReel} onDuplicate={duplicateReelInPlace} canEdit={true} showClient={allClientsMode || showAllMonths} pastCaptions={reels.filter(x => x.clientId === r.clientId && x.id !== r.id && x.caption && x.captionDone).map(x => x.caption)} pastInstructions={[...new Set(reels.filter(x => x.clientId === r.clientId && x.id !== r.id && x.editInstructions).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(x => x.editInstructions))].slice(0, 10)} pastCaptionInstructions={[...new Set(reels.filter(x => x.clientId === r.clientId && x.id !== r.id && x.captionInstruction).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(x => x.captionInstruction))].slice(0, 10)} number={numberMap.get(r.id)} startExpanded={r.id === focusReelId} />
+          <ReelCard key={r.id} reel={r} client={clients.find(c => c.id === r.clientId)} users={users} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} currentUser={currentUser} onChange={updateReel} onDelete={deleteReel} onDuplicate={duplicateReelInPlace} canEdit={true} showClient={allClientsMode || showAllMonths} pastCaptions={reels.filter(x => x.clientId === r.clientId && x.id !== r.id && x.caption && x.captionDone).map(x => x.caption)} pastInstructions={[...new Set(reels.filter(x => x.clientId === r.clientId && x.id !== r.id && x.editInstructions).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(x => x.editInstructions))].slice(0, 10)} pastCaptionInstructions={[...new Set(reels.filter(x => x.clientId === r.clientId && x.id !== r.id && x.captionInstruction).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(x => x.captionInstruction))].slice(0, 10)} number={numberMap.get(r.id)} startExpanded={r.id === focusReelId} onDirtyChange={onDirtyChange} />
         ))}
       </div>
 
@@ -3348,6 +3355,20 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoReelDetail,
     </div>
   );
 
+  const roleSummary = (r) => {
+    const parts = [
+      `①カット：${users.find(u => u.id === r.cutEditorId)?.name || "未割当"}`,
+      `②テロップ：${users.find(u => u.id === r.telopEditorId)?.name || "未割当"}`,
+    ];
+    if (editRolesForReel(r).some(f => f.key === "sfxEditorId")) {
+      parts.push(`③効果音：${users.find(u => u.id === r.sfxEditorId)?.name || "未割当"}`);
+    }
+    parts.push(`④チェック：${users.find(u => u.id === r.editorSecondaryId)?.name || "未割当"}`);
+    parts.push(`⑤キャプション：${users.find(u => u.id === r.captionAssigneeId)?.name || "未割当"}`);
+    parts.push(`⑥投稿：${users.find(u => u.id === r.postAssigneeId)?.name || "未割当"}`);
+    return parts.join(" ・ ");
+  };
+
   const simpleList = (list, extra) => (
     <>
       {list.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>対象の動画はありません。</p>}
@@ -3357,6 +3378,7 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoReelDetail,
           <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-black/5" style={{ background: "#FAF8F3" }}>
             <p className="font-semibold">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
             <p style={{ color: "#8B897F" }}>{extra ? extra(r) : (r.deadline ? `投稿予定 ${r.deadline}` : "投稿予定日未設定")}</p>
+            <p className="mt-0.5" style={{ color: "#A9A79C", fontSize: 10 }}>{roleSummary(r)}</p>
           </button>
         );
       })}
@@ -3377,6 +3399,47 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoReelDetail,
           </div>
         )}
       </div>
+
+      {section === "editors" && (
+        <div className="space-y-4">
+          {editors.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>編集者が登録されていません。</p>}
+          {editors.map(ed => {
+            const cases = reels.filter(r => r.completedStages < 5 && (r.cutEditorId === ed.id || r.telopEditorId === ed.id || r.sfxEditorId === ed.id || r.editorSecondaryId === ed.id));
+            return (
+              <div key={ed.id} className="rounded-2xl p-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-bold flex items-center gap-1.5"><Scissors size={15} color="#0E90B8" /> {ed.name}さん</p>
+                  <Badge tone="gray">{cases.length}件</Badge>
+                </div>
+                {cases.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>現在担当している案件はありません。</p>}
+                <div className="grid md:grid-cols-2 gap-2">
+                  {cases.map(r => {
+                    const c = clients.find(x => x.id === r.clientId);
+                    const myRoles = [
+                      { key: "cutEditorId", doneKey: "cutDone", label: "①カット・基本テロップ" },
+                      { key: "telopEditorId", doneKey: "telopDone", label: "②テロップ" },
+                      { key: "sfxEditorId", doneKey: "sfxDone", label: "③効果音" },
+                    ].filter(f => r[f.key] === ed.id);
+                    if (r.editorSecondaryId === ed.id) myRoles.push({ key: "editorSecondaryId", doneKey: null, label: "④修正チェック" });
+                    return (
+                      <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-black/5" style={{ background: "#FAF8F3" }}>
+                        <p className="font-semibold">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
+                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                          {myRoles.map(f => {
+                            const done = f.doneKey ? !!r[f.doneKey] : !!r.checkSubmitted;
+                            return <Badge key={f.key} tone={done ? "teal" : "amber"}>{f.label}：{done ? "完了" : "編集中"}</Badge>;
+                          })}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
 
       {showAll && editorFilter && (
         <div className="rounded-2xl p-4 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
@@ -3433,6 +3496,7 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoReelDetail,
               <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-black/5" style={{ background: "#FAF8F3" }}>
                 <p className="font-semibold">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
                 <p style={{ color: "#8B897F" }}>{monthLabel(r.yearMonth)}{shooter ? ` ・ 担当: ${shooter.name}` : " ・ 担当者未割り当て"}</p>
+                <p className="mt-0.5" style={{ color: "#A9A79C", fontSize: 10 }}>{roleSummary(r)}</p>
               </button>
             );
           })}
@@ -3481,6 +3545,7 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoReelDetail,
               <div key={r.id} className="rounded-lg p-2.5" style={{ background: "#FAF8F3" }}>
                 <button onClick={() => onGoReelDetail(r.clientId, r.id)} className="w-full text-left">
                   <p className="font-semibold text-xs">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
+                  <p className="mt-0.5" style={{ color: "#A9A79C", fontSize: 10 }}>{roleSummary(r)}</p>
                 </button>
                 <button onClick={() => copyCaption(r)} className="text-xs font-semibold px-2.5 py-1 rounded-lg text-white flex items-center gap-1 mt-1.5" style={{ background: copiedId === r.id ? "#0E90B8" : "#16171B" }}>
                   {copiedId === r.id ? <CircleCheck size={12} /> : <Copy size={12} />} {copiedId === r.id ? "コピーしました" : "キャプションをコピー"}
@@ -4073,7 +4138,21 @@ function AppInner() {
   const [refreshing, setRefreshing] = useState(false);
   const [justRefreshed, setJustRefreshed] = useState(false);
 
+  // 動画詳細で未保存の変更がある場合、ページ移動時に確認する
+  const dirtyReelIds = useRef(new Set());
+  const registerDirtyReel = (reelId, isDirty) => {
+    if (isDirty) dirtyReelIds.current.add(reelId);
+    else dirtyReelIds.current.delete(reelId);
+  };
+  const confirmLeaveIfDirty = () => {
+    if (dirtyReelIds.current.size === 0) return true;
+    const proceed = window.confirm("保存されていない変更があります。\n「OK」で保存せずにこのページを離れる、「キャンセル」で今の画面にとどまります。\n（変更を保存するにはキャンセルを押してから各動画の「保存する」ボタンを押してください）");
+    if (proceed) dirtyReelIds.current.clear();
+    return proceed;
+  };
+
   const navigateTo = (newPage, opts = {}) => {
+    if (!confirmLeaveIfDirty()) return;
     setPageHistory(prev => [...prev, { page, openClientId, reelsFocusClient, reelsFocusReelId }]);
     setPage(newPage);
     setOpenClientId(opts.openClientId ?? null);
@@ -4082,6 +4161,7 @@ function AppInner() {
   };
 
   const goBack = () => {
+    if (!confirmLeaveIfDirty()) return;
     setPageHistory(prev => {
       if (prev.length === 0) {
         setPage("dashboard"); setOpenClientId(null); setReelsFocusClient(null); setReelsFocusReelId(null);
@@ -4266,7 +4346,7 @@ function AppInner() {
     switch (page) {
       case "dashboard": return <DashboardPage clients={clients} reels={reels} setReels={setReels} users={users} currentUser={currentUser} finance={finance} boardPosts={boardPosts} setBoardPosts={setBoardPosts} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} onGoReels={goReels} onGoReelDetail={goReelDetail} onGoTaskSection={goTaskSection} />;
       case "clients": return <ClientsPage clients={clients} setClients={setClients} finance={finance} setFinance={setFinance} currentUser={currentUser} onOpenClient={setOpenClientId} />;
-      case "reels": return <ReelsPage clients={clients} reels={reels} setReels={setReels} users={users} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} currentUser={currentUser} focusClientId={reelsFocusClient} focusReelId={reelsFocusReelId} />;
+      case "reels": return <ReelsPage clients={clients} reels={reels} setReels={setReels} users={users} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} currentUser={currentUser} focusClientId={reelsFocusClient} focusReelId={reelsFocusReelId} onDirtyChange={registerDirtyReel} />;
       case "research": return <ResearchPage clients={clients} reels={reels} setReels={setReels} />;
       case "tasks": return <TasksPage clients={clients} reels={reels} setReels={setReels} users={users} onGoReels={goReels} onGoReelDetail={goReelDetail} onGoClient={goClientDetail} section={taskSection} />;
       case "analytics": return <AnalyticsPage clients={clients} reels={reels} users={users} />;
