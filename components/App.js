@@ -57,13 +57,9 @@ const EDIT_ROLE_FIELDS = [
   { key: "animationEditorId", label: "③アニメーション・演出" },
   { key: "sfxEditorId", label: "④効果音・BGM" },
 ];
-const EDIT_TYPE_OPTIONS = [
-  { key: "telop", label: "フルテロップ編集（カット＋テロップのみ）", roles: ["cutEditorId", "telopEditorId"] },
-  { key: "direction", label: "演出編集（カット＋テロップ＋アニメーション・演出＋効果音・BGM）", roles: ["cutEditorId", "telopEditorId", "animationEditorId", "sfxEditorId"] },
-];
 const editRolesForReel = (reel) => {
-  const opt = EDIT_TYPE_OPTIONS.find(o => o.key === reel?.editType) || EDIT_TYPE_OPTIONS[1];
-  return EDIT_ROLE_FIELDS.filter(f => opt.roles.includes(f.key));
+  const required = reel?.requiredRoles && reel.requiredRoles.length > 0 ? reel.requiredRoles : EDIT_ROLE_FIELDS.map(f => f.key);
+  return EDIT_ROLE_FIELDS.filter(f => required.includes(f.key));
 };
 const DONE_KEY_FOR_ROLE = { cutEditorId: "cutDone", telopEditorId: "telopDone", animationEditorId: "animationDone", sfxEditorId: "sfxDone" };
 const WORKLOAD_KEY_FOR_ROLE = { cutEditorId: "cutWorkload", telopEditorId: "telopWorkload", animationEditorId: "animationWorkload", sfxEditorId: "sfxWorkload" };
@@ -214,7 +210,7 @@ const emptyChecklist = () => ({ c1: false, c2: false, c3: false, c4: false, c5: 
 const emptyReel = (clientId, ym) => ({
   id: uid("reel"), clientId, yearMonth: ym,
   assignedStaffId: "",
-  editType: "direction", rush: false,
+  requiredRoles: ["cutEditorId", "telopEditorId", "animationEditorId", "sfxEditorId"], rush: false,
   cutEditorId: "", telopEditorId: "", animationEditorId: "", sfxEditorId: "", editorSecondaryId: "",
   cutDone: false, telopDone: false, animationDone: false, sfxDone: false,
   editStartDate: "", editEndDate: "", deadline: "", postPlanDate: "",
@@ -1146,7 +1142,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
 
         <div className="rounded-lg mt-2 p-1.5 flex items-center gap-1 flex-wrap" style={{ background: "#F4F2EA" }}>
           <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background: "#EDEBE4", color: "#5F5E5A" }}>
-            {EDIT_TYPE_OPTIONS.find(o => o.key === (reel.editType || "direction"))?.key === "telop" ? "フルテロップ編集" : "演出編集"}
+            編集工程 {editRolesForReel(reel).length}項目
           </span>
           {[
             { label: "①カット", key: "cutEditorId", doneKey: "cutDone", assigneeId: reel.cutEditorId, done: reel.cutDone },
@@ -1260,10 +1256,35 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
 
           <div className="grid md:grid-cols-2 gap-x-4">
             <Field label="テーマ"><TextInput value={draft.theme} onChange={e => set({ theme: e.target.value })} disabled={!canEdit} /></Field>
-            <Field label="編集タイプ">
-              <select value={draft.editType || "direction"} onChange={e => set({ editType: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
-                {EDIT_TYPE_OPTIONS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
-              </select>
+            <Field label="この動画に必要な編集工程">
+              <div className="flex items-center gap-2 flex-wrap">
+                <label className="flex items-center gap-1 text-xs font-semibold px-2 py-1.5 rounded-lg border cursor-pointer" style={{ borderColor: "#16171B", background: "#16171B", color: "#fff" }}>
+                  <input
+                    type="checkbox"
+                    checked={(draft.requiredRoles || []).length === EDIT_ROLE_FIELDS.length}
+                    onChange={e => set({ requiredRoles: e.target.checked ? EDIT_ROLE_FIELDS.map(f => f.key) : [] })}
+                    disabled={!canEdit}
+                  />
+                  すべて選択
+                </label>
+                {EDIT_ROLE_FIELDS.map(f => {
+                  const checked = (draft.requiredRoles || []).includes(f.key);
+                  return (
+                    <label key={f.key} className="flex items-center gap-1 text-xs font-semibold px-2 py-1.5 rounded-lg border cursor-pointer" style={{ borderColor: checked ? "#D6248A" : "#DEDACD", background: checked ? "#FBE4F1" : "#fff", color: checked ? "#D6248A" : "#5F5E5A" }}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {
+                          const cur = draft.requiredRoles || [];
+                          set({ requiredRoles: checked ? cur.filter(k => k !== f.key) : [...cur, f.key] });
+                        }}
+                        disabled={!canEdit}
+                      />
+                      {f.label}
+                    </label>
+                  );
+                })}
+              </div>
             </Field>
             <Field label="Google Drive 保存先URL">
               <div className="flex gap-1">
@@ -1346,7 +1367,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
           <div className="rounded-xl p-3 my-2" style={{ background: "#FAF8F3" }}>
             <div className="flex items-center justify-between mb-2">
               <p className="text-xs font-bold flex items-center gap-1.5"><Scissors size={13} color="#0E90B8" /> 編集進行管理</p>
-              <Badge tone="gray">{EDIT_TYPE_OPTIONS.find(o => o.key === (draft.editType || "direction"))?.key === "telop" ? "フルテロップ編集" : "演出編集"}</Badge>
+              <Badge tone="gray">編集工程 {(draft.requiredRoles || []).length}項目選択中</Badge>
             </div>
             <div className="space-y-2">
               {[
@@ -1360,7 +1381,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   return (
                     <div key={f.key} className="rounded-lg p-2 flex items-center gap-2" style={{ background: "#F4F2EA", border: "1px solid #EFEDE4" }}>
                       <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#A9A79C" }}>{f.label}</span>
-                      <span className="text-xs font-semibold" style={{ color: "#A9A79C" }}>フルテロップ編集のため不要</span>
+                      <span className="text-xs font-semibold" style={{ color: "#A9A79C" }}>この動画では不要（上の編集工程チェックで変更できます）</span>
                     </div>
                   );
                 }
@@ -1690,7 +1711,7 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
   const editors = users.filter(u => (u.roles || []).includes("editor"));
   const shooters = users.filter(u => (u.roles || []).includes("shooter"));
   const [form, setForm] = useState({
-    theme: "", editInstructions: "", script: "", driveUrl: "", assignedStaffId: "", deadline: "", postPlanDate: "", editType: "direction", rush: false,
+    theme: "", editInstructions: "", script: "", driveUrl: "", assignedStaffId: "", deadline: "", postPlanDate: "", requiredRoles: ["cutEditorId", "telopEditorId", "animationEditorId", "sfxEditorId"], rush: false,
     cutEditorId: "", telopEditorId: "", animationEditorId: "", sfxEditorId: "", cutDone: false, telopDone: false, animationDone: false, sfxDone: false,
     editorSecondaryId: "", captionAssigneeId: "", postAssigneeId: "",
   });
@@ -1769,7 +1790,7 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
     if (!id) return;
     const src = existingReels.find(r => r.id === id);
     if (!src) return;
-    setForm({ theme: src.theme, editInstructions: src.editInstructions, script: src.script, driveUrl: "", assignedStaffId: src.assignedStaffId || "", deadline: "", editType: src.editType || "direction" });
+    setForm({ theme: src.theme, editInstructions: src.editInstructions, script: src.script, driveUrl: "", assignedStaffId: src.assignedStaffId || "", deadline: "", requiredRoles: src.requiredRoles && src.requiredRoles.length > 0 ? src.requiredRoles : ["cutEditorId", "telopEditorId", "animationEditorId", "sfxEditorId"] });
     setInstructionsSubmitted(false);
   };
 
@@ -1846,10 +1867,33 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
             )}
 
             <Field label="テーマ"><TextInput value={form.theme} onChange={e => setForm(f => ({ ...f, theme: e.target.value }))} placeholder="今月のリールテーマ" /></Field>
-            <Field label="編集タイプ">
-              <select value={form.editType} onChange={e => setForm(f => ({ ...f, editType: e.target.value }))} className={inputCls} style={inputStyle}>
-                {EDIT_TYPE_OPTIONS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
-              </select>
+            <Field label="この動画に必要な編集工程">
+              <div className="flex items-center gap-2 flex-wrap">
+                <label className="flex items-center gap-1 text-xs font-semibold px-2 py-1.5 rounded-lg border cursor-pointer" style={{ borderColor: "#16171B", background: "#16171B", color: "#fff" }}>
+                  <input
+                    type="checkbox"
+                    checked={(form.requiredRoles || []).length === EDIT_ROLE_FIELDS.length}
+                    onChange={e => setForm(f => ({ ...f, requiredRoles: e.target.checked ? EDIT_ROLE_FIELDS.map(x => x.key) : [] }))}
+                  />
+                  すべて選択
+                </label>
+                {EDIT_ROLE_FIELDS.map(f => {
+                  const checked = (form.requiredRoles || []).includes(f.key);
+                  return (
+                    <label key={f.key} className="flex items-center gap-1 text-xs font-semibold px-2 py-1.5 rounded-lg border cursor-pointer" style={{ borderColor: checked ? "#D6248A" : "#DEDACD", background: checked ? "#FBE4F1" : "#fff", color: checked ? "#D6248A" : "#5F5E5A" }}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {
+                          const cur = form.requiredRoles || [];
+                          setForm(prev => ({ ...prev, requiredRoles: checked ? cur.filter(k => k !== f.key) : [...cur, f.key] }));
+                        }}
+                      />
+                      {f.label}
+                    </label>
+                  );
+                })}
+              </div>
             </Field>
             <Field label="編集指示">
               <TextArea rows={3} value={form.editInstructions} onChange={e => setForm(f => ({ ...f, editInstructions: e.target.value }))} placeholder="テロップの雰囲気、使う素材、尺の目安など" disabled={instructionsSubmitted} />
