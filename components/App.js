@@ -3034,7 +3034,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
             })}
           </div>
 
-          {(currentUser.roles || []).includes("admin") && (
+          {(["editor", "shooter", "designer", "admin"].some(r => (currentUser.roles || []).includes(r))) && (
             <>
               <p className="inline-block text-base font-bold mb-2 mt-3 px-3 py-1.5 rounded-lg" style={{ color: "#0E6B57", background: "#D6F0EA" }}>④修正チェック担当の指定（①②③完了済み）</p>
               {needsChecker.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>対象の動画はありません。</p>}
@@ -3044,10 +3044,11 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                     {needsChecker.map(r => {
                       const c = clients.find(x => x.id === r.clientId);
                       const names = editRolesForReel(r).map(f => `${f.label}：${users.find(u => u.id === r[f.key])?.name || "未割当"}`).join(" ・ ");
+                      const isAdmin = (currentUser.roles || []).includes("admin");
                       return (
                         <div key={r.id} className="rounded-lg p-2" style={{ background: "#FAF8F3" }}>
                           <div className="flex items-center gap-2 flex-wrap">
-                            <input type="checkbox" checked={selectedForBulk.includes(r.id)} onChange={() => toggleBulk(r.id)} title="一括指定に含める" />
+                            {isAdmin && <input type="checkbox" checked={selectedForBulk.includes(r.id)} onChange={() => toggleBulk(r.id)} title="一括指定に含める" />}
                             <button onClick={() => onGoReelDetail(r.clientId, r.id)} className="font-semibold text-xs hover:underline text-left">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "（テーマ未設定）"}</button>
                             {(() => {
                               const totalWl = [r.cutWorkload, r.telopWorkload, r.sfxWorkload, r.checkWorkload].reduce((s, v) => s + (parseFloat(v) || 0), 0);
@@ -3075,14 +3076,16 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                       );
                     })}
                   </div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs" style={{ color: "#8B897F" }}>チェックを入れた動画をまとめて指定：</span>
-                    <select value={bulkChecker} onChange={e => setBulkChecker(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 200 }}>
-                      <option value="">チェック担当者を選択</option>
-                      {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                    </select>
-                    <button onClick={applyBulkChecker} disabled={!bulkChecker || selectedForBulk.length === 0} className="text-xs font-semibold px-3 py-2 rounded-lg text-white disabled:opacity-40" style={{ background: "#16171B" }}>選択した{selectedForBulk.length}件に一括指定</button>
-                  </div>
+                  {(currentUser.roles || []).includes("admin") && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs" style={{ color: "#8B897F" }}>チェックを入れた動画をまとめて指定：</span>
+                      <select value={bulkChecker} onChange={e => setBulkChecker(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 200 }}>
+                        <option value="">チェック担当者を選択</option>
+                        {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                      </select>
+                      <button onClick={applyBulkChecker} disabled={!bulkChecker || selectedForBulk.length === 0} className="text-xs font-semibold px-3 py-2 rounded-lg text-white disabled:opacity-40" style={{ background: "#16171B" }}>選択した{selectedForBulk.length}件に一括指定</button>
+                    </div>
+                  )}
                 </>
               )}
             </>
