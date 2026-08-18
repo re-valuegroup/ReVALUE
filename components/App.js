@@ -2617,28 +2617,42 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
     { label: "制作中", value: inProgress, icon: Clock, tone: "amber" },
   ];
 
-  // 編集指示が記入され、カット・テロップ・効果音のいずれかが未割当の動画
-  // 編集指示一覧：①カットがまだ割り当てられていない動画（最初の入り口）
-  const pickupList = reels.filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions && !r.cutEditorId)
-    .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
-  const [pickupChoice, setPickupChoice] = useState({});
-  const getPickup = (reelId) => pickupChoice[reelId] || { editorId: "", startDate: "", endDate: "", startTime: "", endTime: "" };
-  const setPickup = (reelId, patch) => setPickupChoice(prev => ({ ...prev, [reelId]: { ...getPickup(reelId), ...patch } }));
-  const confirmPickup = (reelId) => {
-    const choice = getPickup(reelId);
+  // 編集指示が記入され、①②③④のいずれかの担当者がまだ決まっていない動画
+  // 工程キー → カレンダー登録用のタスク名
+  const ROLE_TASK_KEY = { cutEditorId: "cut", telopEditorId: "telop", animationEditorId: "animation", sfxEditorId: "sfx" };
+  const rolePickupList = (roleKey) => {
+    const active = reels.filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions);
+    return active.filter(r => {
+      const ordered = editRolesForReel(r);
+      const idx = ordered.findIndex(f => f.key === roleKey);
+      if (idx === -1 || r[roleKey]) return false;
+      return ordered.slice(0, idx).every(f => r[DONE_KEY_FOR_ROLE[f.key]]);
+    }).sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
+  };
+  const cutPickupList = rolePickupList("cutEditorId");
+  const telopPickupList = rolePickupList("telopEditorId");
+  const animationPickupList = rolePickupList("animationEditorId");
+  const sfxPickupList = rolePickupList("sfxEditorId");
+
+  const [rolePickupChoice, setRolePickupChoice] = useState({});
+  const rolePickKey = (roleKey, reelId) => `${roleKey}:${reelId}`;
+  const getRolePickup = (roleKey, reelId) => rolePickupChoice[rolePickKey(roleKey, reelId)] || { editorId: "", startDate: "", endDate: "", startTime: "", endTime: "" };
+  const setRolePickup = (roleKey, reelId, patch) => setRolePickupChoice(prev => ({ ...prev, [rolePickKey(roleKey, reelId)]: { ...getRolePickup(roleKey, reelId), ...patch } }));
+  const confirmRolePickup = (roleKey, reelId) => {
+    const choice = getRolePickup(roleKey, reelId);
     if (!choice.editorId) return;
     const endDate = choice.endDate || choice.startDate;
     setReels(prev => prev.map(r => {
       if (r.id !== reelId) return r;
-      const patch = { ...r, cutEditorId: choice.editorId };
+      const patch = { ...r, [roleKey]: choice.editorId };
       if (choice.startDate) { patch.editStartDate = choice.startDate; patch.editEndDate = endDate; }
       return patch;
     }));
-    if (choice.startDate) syncReelEditCalendar(setCalendarEvents, reelId, choice.startDate, endDate, choice.editorId, choice.startTime, choice.endTime);
-    setPickupChoice(prev => ({ ...prev, [reelId]: { editorId: "", startDate: "", endDate: "", startTime: "", endTime: "" } }));
+    if (choice.startDate) syncRoleCalendar(setCalendarEvents, reelId, ROLE_TASK_KEY[roleKey], choice.editorId, choice.startDate, endDate, choice.startTime, choice.endTime);
+    setRolePickupChoice(prev => ({ ...prev, [rolePickKey(roleKey, reelId)]: { editorId: "", startDate: "", endDate: "", startTime: "", endTime: "" } }));
   };
 
-  // 編集中：カットが割り当て済みで未完了、またはカット完了後にテロップ・効果音が割り当て済みで未完了の動画
+  // 編集中：いずれかの工程が割り当て済みで未完了の動画
   const inProgressReels = reels.filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions && !r.checkSubmitted
     && (r.cutEditorId || r.telopEditorId || r.animationEditorId || r.sfxEditorId || r.editorSecondaryId))
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
@@ -2666,33 +2680,6 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
     }
     if (!canSubmitCheck(r)) return;
     updateReelField(r.id, { checkSubmitted: true, checkSubmittedAt: new Date().toISOString(), completedStages: Math.max(r.completedStages, 4) });
-  };
-
-  // テロップ・効果音を編集すべき一覧：カットが完了し、テロップ・効果音のいずれかがまだ割り当てられていない動画
-  const nextEditRoleList = reels.filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions && r.cutDone
-    && editRolesForReel(r).filter(f => f.key !== "cutEditorId").some(f => !r[f.key]))
-    .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
-  const [nextPickupChoice, setNextPickupChoice] = useState({});
-  const getNextPickup = (reelId) => nextPickupChoice[reelId] || { editorId: "", roles: [], startDate: "", endDate: "", startTime: "", endTime: "" };
-  const setNextPickup = (reelId, patch) => setNextPickupChoice(prev => ({ ...prev, [reelId]: { ...getNextPickup(reelId), ...patch } }));
-  const toggleNextPickupRole = (reelId, roleKey) => {
-    const cur = getNextPickup(reelId);
-    const roles = cur.roles.includes(roleKey) ? cur.roles.filter(r => r !== roleKey) : [...cur.roles, roleKey];
-    setNextPickup(reelId, { roles });
-  };
-  const confirmNextPickup = (reelId) => {
-    const choice = getNextPickup(reelId);
-    if (!choice.editorId || choice.roles.length === 0) return;
-    const endDate = choice.endDate || choice.startDate;
-    setReels(prev => prev.map(r => {
-      if (r.id !== reelId) return r;
-      const patch = { ...r };
-      choice.roles.forEach(roleKey => { patch[roleKey] = choice.editorId; });
-      if (choice.startDate) { patch.editStartDate = choice.startDate; patch.editEndDate = endDate; }
-      return patch;
-    }));
-    if (choice.startDate) syncReelEditCalendar(setCalendarEvents, reelId, choice.startDate, endDate, choice.editorId, choice.startTime, choice.endTime);
-    setNextPickupChoice(prev => ({ ...prev, [reelId]: { editorId: "", roles: [], startDate: "", endDate: "", startTime: "", endTime: "" } }));
   };
 
   // 一括でチェック担当者を指定（カット・テロップ・効果音がすべて完了した動画）
@@ -3004,86 +2991,51 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
             <span className="text-sm font-bold" style={{ color: "#96185E" }}>編集の工程は ①カット → ②テロップ → ③アニメーション・演出 → ④効果音・BGM → ⑤最終チェック の順番で進みます</span>
           </div>
 
-          <p className="inline-block text-base font-bold mb-2 px-3 py-1.5 rounded-lg" style={{ color: "#96185E", background: "#FBE4F1" }}>①カット編集者募集中</p>
-          {pickupList.length === 0 && <p className="text-xs mb-4" style={{ color: "#8B897F" }}>担当者待ちの編集指示はありません。</p>}
-          <div className="space-y-1.5 mb-5 max-h-80 overflow-y-auto pr-1">
-            {pickupList.map(r => {
-              const c = clients.find(x => x.id === r.clientId);
-              const choice = getPickup(r.id);
-              return (
-                <div key={r.id} className="rounded-lg p-2" style={{ background: "#FAF8F3" }}>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <button onClick={() => onGoReelDetail(r.clientId, r.id)} className="font-semibold text-xs hover:underline text-left">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "（テーマ未設定）"}</button>
-                    {(() => {
-                      const totalWl = [r.cutWorkload, r.telopWorkload, r.sfxWorkload, r.checkWorkload].reduce((s, v) => s + (parseFloat(v) || 0), 0);
-                      return totalWl > 0 ? <Badge tone="amber">合計工数 {totalWl}</Badge> : null;
-                    })()}
-                                        {r.deadline && <Badge tone={r.deadline < new Date().toISOString().slice(0, 10) ? "red" : "gray"}>投稿予定日 {r.deadline}</Badge>}
-                  </div>
-                  <p className="text-[11px] mt-0.5 truncate" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>
-                  <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                    <select value={choice.editorId} onChange={e => setPickup(r.id, { editorId: e.target.value })} className={inputCls} style={{ ...inputStyle, width: 140, fontSize: 11, padding: "5px 8px" }}>
-                      <option value="">動画編集者を選択</option>
-                      {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                    </select>
-                    <TextInput type="date" value={choice.startDate} onChange={e => setPickup(r.id, { startDate: e.target.value })} title="開始日（カレンダーに反映されます）" style={{ width: 120, fontSize: 11, padding: "5px 8px" }} />
-                    <span className="text-xs shrink-0" style={{ color: "#8B897F" }}>〜</span>
-                    <TextInput type="date" value={choice.endDate} onChange={e => setPickup(r.id, { endDate: e.target.value })} title="終了日（省略時は開始日と同じ）" style={{ width: 120, fontSize: 11, padding: "5px 8px" }} />
-                    <TextInput type="time" step={600} value={choice.startTime} onChange={e => setPickup(r.id, { startTime: e.target.value })} title="開始時刻（10分刻み・任意）" style={{ width: 95, fontSize: 11, padding: "5px 8px" }} />
-                    <span className="text-xs shrink-0" style={{ color: "#8B897F" }}>〜</span>
-                    <TextInput type="time" step={600} value={choice.endTime} onChange={e => setPickup(r.id, { endTime: e.target.value })} title="終了時刻（10分刻み・任意）" style={{ width: 95, fontSize: 11, padding: "5px 8px" }} />
-                    <button onClick={() => confirmPickup(r.id)} disabled={!choice.editorId} className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>
-                      ①カットを担当する
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <p className="inline-block text-base font-bold mb-2 mt-3 px-3 py-1.5 rounded-lg" style={{ color: "#854F0B", background: "#FCEEDB" }}>②テロップ・③アニメーション・演出・④効果音・BGMの編集者募集（①カット完了済み）</p>
-          {nextEditRoleList.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>対象の動画はありません。</p>}
-          <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
-            {nextEditRoleList.map(r => {
-              const c = clients.find(x => x.id === r.clientId);
-              const openRoles = editRolesForReel(r).filter(f => f.key !== "cutEditorId" && !r[f.key]);
-              const choice = getNextPickup(r.id);
-              return (
-                <div key={r.id} className="rounded-lg p-2" style={{ background: "#FAF8F3" }}>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <button onClick={() => onGoReelDetail(r.clientId, r.id)} className="font-semibold text-xs hover:underline text-left">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "（テーマ未設定）"}</button>
-                    {(() => {
-                      const totalWl = [r.cutWorkload, r.telopWorkload, r.sfxWorkload, r.checkWorkload].reduce((s, v) => s + (parseFloat(v) || 0), 0);
-                      return totalWl > 0 ? <Badge tone="amber">合計工数 {totalWl}</Badge> : null;
-                    })()}
-                                        {r.deadline && <Badge tone={r.deadline < new Date().toISOString().slice(0, 10) ? "red" : "gray"}>投稿予定日 {r.deadline}</Badge>}
-                  </div>
-                  <p className="text-[11px] mt-0.5 truncate" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>
-                  <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                    <select value={choice.editorId} onChange={e => setNextPickup(r.id, { editorId: e.target.value })} className={inputCls} style={{ ...inputStyle, width: 140, fontSize: 11, padding: "5px 8px" }}>
-                      <option value="">動画編集者を選択</option>
-                      {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                    </select>
-                    {openRoles.map(f => (
-                      <label key={f.key} className="flex items-center gap-1 text-[11px] px-1.5 py-1 rounded-lg border cursor-pointer" style={{ borderColor: choice.roles.includes(f.key) ? "#D6248A" : "#DEDACD", background: choice.roles.includes(f.key) ? "#FBE4F1" : "#fff" }}>
-                        <input type="checkbox" checked={choice.roles.includes(f.key)} onChange={() => toggleNextPickupRole(r.id, f.key)} />
-                        {f.label}
-                      </label>
-                    ))}
-                    <TextInput type="date" value={choice.startDate} onChange={e => setNextPickup(r.id, { startDate: e.target.value })} title="開始日（カレンダーに反映されます）" style={{ width: 120, fontSize: 11, padding: "5px 8px" }} />
-                    <span className="text-xs shrink-0" style={{ color: "#8B897F" }}>〜</span>
-                    <TextInput type="date" value={choice.endDate} onChange={e => setNextPickup(r.id, { endDate: e.target.value })} title="終了日（省略時は開始日と同じ）" style={{ width: 120, fontSize: 11, padding: "5px 8px" }} />
-                    <TextInput type="time" step={600} value={choice.startTime} onChange={e => setNextPickup(r.id, { startTime: e.target.value })} title="開始時刻（任意）" style={{ width: 95, fontSize: 11, padding: "5px 8px" }} />
-                    <span className="text-xs shrink-0" style={{ color: "#8B897F" }}>〜</span>
-                    <TextInput type="time" step={600} value={choice.endTime} onChange={e => setNextPickup(r.id, { endTime: e.target.value })} title="終了時刻（任意）" style={{ width: 95, fontSize: 11, padding: "5px 8px" }} />
-                    <button onClick={() => confirmNextPickup(r.id)} disabled={!choice.editorId || choice.roles.length === 0} className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>
-                      担当する
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          {[
+            { roleKey: "cutEditorId", label: "①カット編集者募集中", list: cutPickupList, tone: { color: "#96185E", background: "#FBE4F1" }, btnLabel: "①カットを担当する" },
+            { roleKey: "telopEditorId", label: "②テロップ編集者募集中", list: telopPickupList, tone: { color: "#854F0B", background: "#FCEEDB" }, btnLabel: "②テロップを担当する" },
+            { roleKey: "animationEditorId", label: "③アニメーション・演出の編集者募集中", list: animationPickupList, tone: { color: "#6B3FA0", background: "#F1E9FB" }, btnLabel: "③アニメーション・演出を担当する" },
+            { roleKey: "sfxEditorId", label: "④効果音・BGMの編集者募集中", list: sfxPickupList, tone: { color: "#0E6B57", background: "#D6F0EA" }, btnLabel: "④効果音・BGMを担当する" },
+          ].map((section, sIdx) => (
+            <div key={section.roleKey} className={sIdx > 0 ? "mt-3" : ""}>
+              <p className="inline-block text-base font-bold mb-2 px-3 py-1.5 rounded-lg" style={{ color: section.tone.color, background: section.tone.background }}>{section.label}</p>
+              {section.list.length === 0 && <p className="text-xs mb-4" style={{ color: "#8B897F" }}>担当者待ちの動画はありません。</p>}
+              <div className="space-y-1.5 mb-2 max-h-80 overflow-y-auto pr-1">
+                {section.list.map(r => {
+                  const c = clients.find(x => x.id === r.clientId);
+                  const choice = getRolePickup(section.roleKey, r.id);
+                  return (
+                    <div key={r.id} className="rounded-lg p-2" style={{ background: "#FAF8F3" }}>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button onClick={() => onGoReelDetail(r.clientId, r.id)} className="font-semibold text-xs hover:underline text-left">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "（テーマ未設定）"}</button>
+                        {(() => {
+                          const totalWl = [r.cutWorkload, r.telopWorkload, r.animationWorkload, r.sfxWorkload, r.checkWorkload].reduce((s, v) => s + (parseFloat(v) || 0), 0);
+                          return totalWl > 0 ? <Badge tone="amber">合計工数 {totalWl}</Badge> : null;
+                        })()}
+                        {r.deadline && <Badge tone={r.deadline < new Date().toISOString().slice(0, 10) ? "red" : "gray"}>投稿予定日 {r.deadline}</Badge>}
+                      </div>
+                      <p className="text-[11px] mt-0.5 truncate" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>
+                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                        <select value={choice.editorId} onChange={e => setRolePickup(section.roleKey, r.id, { editorId: e.target.value })} className={inputCls} style={{ ...inputStyle, width: 140, fontSize: 11, padding: "5px 8px" }}>
+                          <option value="">動画編集者を選択</option>
+                          {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                        </select>
+                        <TextInput type="date" value={choice.startDate} onChange={e => setRolePickup(section.roleKey, r.id, { startDate: e.target.value })} title="開始日（カレンダーに反映されます）" style={{ width: 120, fontSize: 11, padding: "5px 8px" }} />
+                        <span className="text-xs shrink-0" style={{ color: "#8B897F" }}>〜</span>
+                        <TextInput type="date" value={choice.endDate} onChange={e => setRolePickup(section.roleKey, r.id, { endDate: e.target.value })} title="終了日（省略時は開始日と同じ）" style={{ width: 120, fontSize: 11, padding: "5px 8px" }} />
+                        <TextInput type="time" step={600} value={choice.startTime} onChange={e => setRolePickup(section.roleKey, r.id, { startTime: e.target.value })} title="開始時刻（10分刻み・任意）" style={{ width: 95, fontSize: 11, padding: "5px 8px" }} />
+                        <span className="text-xs shrink-0" style={{ color: "#8B897F" }}>〜</span>
+                        <TextInput type="time" step={600} value={choice.endTime} onChange={e => setRolePickup(section.roleKey, r.id, { endTime: e.target.value })} title="終了時刻（10分刻み・任意）" style={{ width: 95, fontSize: 11, padding: "5px 8px" }} />
+                        <button onClick={() => confirmRolePickup(section.roleKey, r.id)} disabled={!choice.editorId} className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>
+                          {section.btnLabel}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
 
           {(["editor", "shooter", "designer", "admin"].some(r => (currentUser.roles || []).includes(r))) && (
             <>
