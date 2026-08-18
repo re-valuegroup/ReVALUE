@@ -51,6 +51,10 @@ const ROLES = [
 ];
 const SELECTABLE_ROLES = ROLES.filter(r => r.key !== "admin");
 const EDIT_WORKLOAD_OPTIONS = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4];
+const WORK_MODE_OPTIONS = [
+  { key: "team", label: "分業（工程ごとに担当者・チェック）", desc: "工程ごとに担当者を割り当て、各工程完了後にチェック（合格／修正依頼）を行います。" },
+  { key: "solo", label: "1人完結（全工程を1人が担当）", desc: "1人の担当者がすべての工程を行い、全工程完了後に初稿チェックを1回だけ行います。" },
+];
 const EDIT_ROLE_FIELDS = [
   { key: "cutEditorId", label: "①カット" },
   { key: "telopEditorId", label: "②テロップ" },
@@ -211,6 +215,7 @@ const emptyReel = (clientId, ym) => ({
   id: uid("reel"), clientId, yearMonth: ym,
   assignedStaffId: "",
   requiredRoles: ["cutEditorId", "telopEditorId", "animationEditorId", "sfxEditorId"], rush: false,
+  workMode: "team", revisionHistory: [], revisionMemo: "", revisionVideoUrl: "",
   cutEditorId: "", telopEditorId: "", animationEditorId: "", sfxEditorId: "", editorSecondaryId: "",
   cutDone: false, telopDone: false, animationDone: false, sfxDone: false,
   editStartDate: "", editEndDate: "", deadline: "", postPlanDate: "",
@@ -1098,6 +1103,44 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
     setCheckSubmitError("");
     update({ checkSubmitted: true, checkSubmittedAt: new Date().toISOString(), completedStages: Math.max(reel.completedStages, 4) });
   };
+  const requestRevision = () => {
+    if (!reel.editorSecondaryId) {
+      setCheckSubmitError("チェック担当者が指定されていません");
+      return;
+    }
+    if (!draft.revisionMemo?.trim()) {
+      setCheckSubmitError("修正依頼メモを入力してください");
+      return;
+    }
+    const revisionNumber = (reel.revisionHistory || []).length + 1;
+    const record = {
+      id: uid("rev"),
+      revisionNumber,
+      createdAt: new Date().toISOString(),
+      staffId: reel.editorSecondaryId,
+      status: "requested",
+      memo: draft.revisionMemo,
+      videoUrl: draft.revisionVideoUrl || "",
+      completedAt: null,
+      resubmittedAt: null,
+    };
+    const patch = {
+      revisionHistory: [...(reel.revisionHistory || []), record],
+      checkSubmitted: false,
+      checkSubmittedAt: null,
+      completedStages: Math.min(reel.completedStages, 2),
+      revisionMemo: "",
+      revisionVideoUrl: "",
+    };
+    editRolesForReel(reel).forEach(f => { patch[DONE_KEY_FOR_ROLE[f.key]] = false; });
+    setCheckSubmitError("");
+    update(patch);
+  };
+  const markRevisionDone = (revId) => {
+    update({
+      revisionHistory: (reel.revisionHistory || []).map(rv => rv.id === revId ? { ...rv, status: "resubmitted", completedAt: rv.completedAt || new Date().toISOString(), resubmittedAt: new Date().toISOString() } : rv),
+    });
+  };
   const checklist = reel.checklist || emptyChecklist();
   const checkedCount = CHECKLIST_ITEMS.filter(i => checklist[i.key]).length;
 
@@ -1256,6 +1299,17 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
 
           <div className="grid md:grid-cols-2 gap-x-4">
             <Field label="テーマ"><TextInput value={draft.theme} onChange={e => set({ theme: e.target.value })} disabled={!canEdit} /></Field>
+            <Field label="編集方式">
+              <div className="flex items-center gap-2 flex-wrap">
+                {WORK_MODE_OPTIONS.map(o => (
+                  <label key={o.key} className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border cursor-pointer" style={{ borderColor: (draft.workMode || "team") === o.key ? "#D6248A" : "#DEDACD", background: (draft.workMode || "team") === o.key ? "#FBE4F1" : "#fff", color: (draft.workMode || "team") === o.key ? "#D6248A" : "#5F5E5A" }}>
+                    <input type="radio" checked={(draft.workMode || "team") === o.key} onChange={() => set({ workMode: o.key })} disabled={!canEdit} />
+                    {o.label}
+                  </label>
+                ))}
+              </div>
+              <p className="text-[11px] mt-1" style={{ color: "#A9A79C" }}>{WORK_MODE_OPTIONS.find(o => o.key === (draft.workMode || "team"))?.desc}</p>
+            </Field>
             <Field label="この動画に必要な編集工程">
               <div className="flex items-center gap-2 flex-wrap">
                 <label className="flex items-center gap-1 text-xs font-semibold px-2 py-1.5 rounded-lg border cursor-pointer" style={{ borderColor: "#16171B", background: "#16171B", color: "#fff" }}>
@@ -1464,18 +1518,70 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                     {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                   </select>
                 </div>
-                <div className="flex justify-end mt-1.5">
-                  <button
-                    type="button"
-                    disabled={!canEdit || (!reel.checkSubmitted && !canSubmitCheck(reel))}
-                    title={reel.checkSubmitted ? "もう一度押すとチェック中に戻せます" : !canSubmitCheck(reel) ? "①②③④（必要な工程）がすべて完了してから提出できます" : "クリックで完了・未完了を切り替え"}
-                    onClick={submitCheck}
-                    className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0 disabled:opacity-40"
-                    style={{ background: reel.checkSubmitted ? "#0E90B8" : "#D6248A" }}
-                  >
-                    {reel.checkSubmitted ? <CircleCheck size={14} /> : <Circle size={14} />} {reel.checkSubmitted ? "完了" : "未完了（クリックで完了）"}
-                  </button>
-                </div>
+                {reel.checkSubmitted ? (
+                  <div className="flex justify-end mt-1.5">
+                    <button
+                      type="button"
+                      title="もう一度押すとチェック中に戻せます"
+                      onClick={submitCheck}
+                      className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0"
+                      style={{ background: "#0E90B8" }}
+                    >
+                      <CircleCheck size={14} /> 合格済み
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <Field label="修正依頼メモ（修正依頼を出す場合のみ入力）">
+                      <TextArea rows={2} value={draft.revisionMemo || ""} onChange={e => set({ revisionMemo: e.target.value })} disabled={!canEdit} placeholder="例：00:15〜00:20のカットを変更してください" />
+                    </Field>
+                    <Field label="修正説明動画URL（YouTube限定公開・任意）">
+                      <TextInput value={draft.revisionVideoUrl || ""} onChange={e => set({ revisionVideoUrl: e.target.value })} disabled={!canEdit} placeholder="https://youtube.com/..." />
+                    </Field>
+                    <div className="flex justify-end gap-2 mt-1.5 flex-wrap">
+                      <button
+                        type="button"
+                        disabled={!canEdit || !draft.revisionMemo?.trim()}
+                        onClick={requestRevision}
+                        className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0 disabled:opacity-40"
+                        style={{ background: "#A32D2D" }}
+                      >
+                        修正依頼を出す
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!canEdit || !canSubmitCheck(reel)}
+                        title={!canSubmitCheck(reel) ? "①②③④（必要な工程）がすべて完了してから合格にできます" : ""}
+                        onClick={submitCheck}
+                        className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0 disabled:opacity-40"
+                        style={{ background: "#D6248A" }}
+                      >
+                        合格にする
+                      </button>
+                    </div>
+                  </>
+                )}
+                {(reel.revisionHistory || []).length > 0 && (
+                  <div className="mt-2 pt-2" style={{ borderTop: "1px dashed #EFEDE4" }}>
+                    <p className="text-[11px] font-semibold mb-1.5" style={{ color: "#A32D2D" }}>修正履歴（{reel.revisionHistory.length}件）</p>
+                    <div className="space-y-1.5">
+                      {reel.revisionHistory.map(rv => (
+                        <div key={rv.id} className="rounded-lg p-2" style={{ background: "#FCEBEB" }}>
+                          <div className="flex items-center justify-between flex-wrap gap-1">
+                            <span className="text-xs font-semibold" style={{ color: "#A32D2D" }}>第{rv.revisionNumber}回修正</span>
+                            <Badge tone={rv.status === "resubmitted" ? "teal" : "red"}>{rv.status === "resubmitted" ? "再提出済み" : "対応待ち"}</Badge>
+                          </div>
+                          <p className="text-xs mt-1 whitespace-pre-wrap" style={{ color: "#5F5E5A" }}>{rv.memo}</p>
+                          {rv.videoUrl && <a href={rv.videoUrl} target="_blank" rel="noreferrer" className="text-xs underline" style={{ color: "#0E90B8" }}>修正説明動画を見る</a>}
+                          <p className="text-[10px] mt-1" style={{ color: "#8B897F" }}>依頼日時：{timeAgo(rv.createdAt)}{rv.resubmittedAt ? ` ・ 再提出：${timeAgo(rv.resubmittedAt)}` : ""}</p>
+                          {canEdit && rv.status !== "resubmitted" && (
+                            <button onClick={() => markRevisionDone(rv.id)} className="text-[11px] font-semibold mt-1" style={{ color: "#0E90B8" }}>修正完了・再提出する</button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="mt-2 pt-2" style={{ borderTop: "1px dashed #EFEDE4" }}>
                   <button onClick={() => setShowCheckDetail(s => !s)} className="w-full flex items-center justify-between">
                     <span className="text-[11px] font-semibold flex items-center gap-1.5" style={{ color: "#0E90B8" }}><ClipboardList size={12} /> 修正チェック詳細（チェック済み {checkedCount}/{CHECKLIST_ITEMS.length}）</span>
@@ -1867,6 +1973,17 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
             )}
 
             <Field label="テーマ"><TextInput value={form.theme} onChange={e => setForm(f => ({ ...f, theme: e.target.value }))} placeholder="今月のリールテーマ" /></Field>
+            <Field label="編集方式">
+              <div className="flex items-center gap-2 flex-wrap">
+                {WORK_MODE_OPTIONS.map(o => (
+                  <label key={o.key} className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border cursor-pointer" style={{ borderColor: (form.workMode || "team") === o.key ? "#D6248A" : "#DEDACD", background: (form.workMode || "team") === o.key ? "#FBE4F1" : "#fff", color: (form.workMode || "team") === o.key ? "#D6248A" : "#5F5E5A" }}>
+                    <input type="radio" checked={(form.workMode || "team") === o.key} onChange={() => setForm(f => ({ ...f, workMode: o.key }))} />
+                    {o.label}
+                  </label>
+                ))}
+              </div>
+              <p className="text-[11px] mt-1" style={{ color: "#A9A79C" }}>{WORK_MODE_OPTIONS.find(o => o.key === (form.workMode || "team"))?.desc}</p>
+            </Field>
             <Field label="この動画に必要な編集工程">
               <div className="flex items-center gap-2 flex-wrap">
                 <label className="flex items-center gap-1 text-xs font-semibold px-2 py-1.5 rounded-lg border cursor-pointer" style={{ borderColor: "#16171B", background: "#16171B", color: "#fff" }}>
