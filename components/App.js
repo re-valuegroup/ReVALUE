@@ -1618,7 +1618,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                           className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0"
                           style={{ background: "#0E90B8" }}
                         >
-                          修正完了
+                          修正完了したので再提出する
                         </button>
                       </div>
                     )}
@@ -1668,7 +1668,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                           {rv.videoUrl && <a href={rv.videoUrl} target="_blank" rel="noreferrer" className="text-xs underline" style={{ color: "#0E90B8" }}>修正説明動画を見る</a>}
                           <p className="text-[10px] mt-1" style={{ color: "#8B897F" }}>依頼日時：{timeAgo(rv.createdAt)}{rv.resubmittedAt ? ` ・ 再提出：${timeAgo(rv.resubmittedAt)}` : ""}</p>
                           {canEdit && rv.status !== "resubmitted" && (
-                            <button onClick={() => markRevisionDone(rv.id)} className="text-[11px] font-semibold mt-1" style={{ color: "#0E90B8" }}>修正完了・再提出する</button>
+                            <button onClick={() => markRevisionDone(rv.id)} className="text-[11px] font-semibold mt-1" style={{ color: "#0E90B8" }}>修正完了したので再提出する</button>
                           )}
                         </div>
                       ))}
@@ -3263,6 +3263,31 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                     <p style={{ color: "#A32D2D" }}>第{rv.revisionNumber}回修正 ・ 依頼者：{requestedByUser?.name || "不明"}</p>
                     <p style={{ color: "#8B897F" }}>依頼先：{assignedNames.length > 0 ? assignedNames.join("・") : "未割当"}</p>
                     <p className="mt-1 line-clamp-2" style={{ color: "#5F5E5A" }}>{rv.memo}</p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
+      {(["editor", "shooter", "designer", "admin"].some(r => (currentUser.roles || []).includes(r))) && (() => {
+        const recheckReels = reels.filter(r => (r.revisionHistory || []).length > 0 && r.revisionHistory[r.revisionHistory.length - 1].status === "resubmitted" && !r.checkSubmitted && r.completedStages < 5);
+        return (
+          <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
+            <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><CircleCheck size={16} color="#0E90B8" /> 修正チェック（{recheckReels.length}）</p>
+            {recheckReels.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>現在、再チェック待ちの動画はありません。</p>}
+            <div className="grid md:grid-cols-2 gap-2">
+              {recheckReels.map(r => {
+                const c = clients.find(x => x.id === r.clientId);
+                const rv = r.revisionHistory[r.revisionHistory.length - 1];
+                const requestedByUser = users.find(u => u.id === rv.requestedBy);
+                const checker = users.find(u => u.id === r.editorSecondaryId);
+                return (
+                  <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="text-left text-xs p-2.5 rounded-xl hover:bg-black/5" style={{ background: "#D6F0EA" }}>
+                    <p className="font-semibold truncate">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
+                    <p style={{ color: "#0E6B57" }}>第{rv.revisionNumber}回修正 ・ 再提出済み</p>
+                    <p style={{ color: "#8B897F" }}>依頼者：{requestedByUser?.name || "不明"} ・ チェック担当：{checker?.name || "未割当"}</p>
                   </button>
                 );
               })}
