@@ -53,7 +53,7 @@ const SELECTABLE_ROLES = ROLES.filter(r => r.key !== "admin");
 const EDIT_WORKLOAD_OPTIONS = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4];
 const WORK_MODE_OPTIONS = [
   { key: "team", label: "分業（工程ごとに担当者・チェック）", desc: "工程ごとに担当者を割り当て、各工程完了後にチェック（合格／修正依頼）を行います。" },
-  { key: "solo", label: "1人完結（全工程を1人が担当）", desc: "1人の担当者がすべての工程を行い、全工程完了後に初稿チェックを1回だけ行います。" },
+  { key: "solo", label: "一括編集（全工程を1人が担当）", desc: "1人の担当者がすべての工程を行い、全工程完了後に初稿チェックを1回だけ行います。" },
 ];
 const EDIT_ROLE_FIELDS = [
   { key: "cutEditorId", label: "①カット" },
@@ -1113,29 +1113,27 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
       return;
     }
     const revisionNumber = (reel.revisionHistory || []).length + 1;
+    const assignedEditorIds = [...new Set(editRolesForReel(reel).map(f => reel[f.key]).filter(Boolean))];
     const record = {
       id: uid("rev"),
       revisionNumber,
       createdAt: new Date().toISOString(),
-      staffId: reel.editorSecondaryId,
+      requestedBy: currentUser.id,
+      assignedEditorIds,
       status: "requested",
       memo: draft.revisionMemo,
       videoUrl: draft.revisionVideoUrl || "",
       completedAt: null,
       resubmittedAt: null,
     };
-    const patch = {
+    setCheckSubmitError("");
+    update({
       revisionHistory: [...(reel.revisionHistory || []), record],
-      checkSubmitted: false,
-      checkSubmittedAt: null,
-      completedStages: Math.min(reel.completedStages, 2),
       revisionMemo: "",
       revisionVideoUrl: "",
-    };
-    editRolesForReel(reel).forEach(f => { patch[DONE_KEY_FOR_ROLE[f.key]] = false; });
-    setCheckSubmitError("");
-    update(patch);
+    });
   };
+  const pendingRevision = (reel.revisionHistory || []).length > 0 && reel.revisionHistory[reel.revisionHistory.length - 1].status === "requested" ? reel.revisionHistory[reel.revisionHistory.length - 1] : null;
   const markRevisionDone = (revId) => {
     update({
       revisionHistory: (reel.revisionHistory || []).map(rv => rv.id === revId ? { ...rv, status: "resubmitted", completedAt: rv.completedAt || new Date().toISOString(), resubmittedAt: new Date().toISOString() } : rv),
@@ -1424,7 +1422,82 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
               <Badge tone="gray">編集工程 {(draft.requiredRoles || []).length}項目選択中</Badge>
             </div>
             <div className="space-y-2">
-              {[
+              {draft.workMode === "solo" ? (() => {
+                const soloRoles = editRolesForReel(draft);
+                const soloEditorId = soloRoles.map(f => reel[f.key]).find(Boolean) || "";
+                const allDone = soloRoles.length > 0 && soloRoles.every(f => reel[DONE_KEY_FOR_ROLE[f.key]]);
+                const canToggleSolo = allDone || !!soloEditorId;
+                const sched = roleSchedule.solo || { startDate: "", endDate: "", startTime: "", endTime: "" };
+                return (
+                  <div className="rounded-lg p-2" style={{ background: "#fff", border: allDone ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>①②③④ 一括編集担当</span>
+                      <select
+                        value={soloEditorId}
+                        onChange={e => {
+                          const patch = {};
+                          soloRoles.forEach(f => { patch[f.key] = e.target.value; });
+                          update(patch);
+                        }}
+                        disabled={!canEdit}
+                        className={inputCls}
+                        style={{ ...inputStyle, flex: 1, minWidth: 120 }}
+                      >
+                        <option value="">未割り当て</option>
+                        {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex justify-end mt-1.5">
+                      <button
+                        type="button"
+                        disabled={!canEdit || !canToggleSolo}
+                        title={!soloEditorId ? "担当者を割り当ててください" : ""}
+                        onClick={() => {
+                          if (!canEdit || !canToggleSolo) return;
+                          const nextDone = !allDone;
+                          const patch = {};
+                          soloRoles.forEach(f => { patch[DONE_KEY_FOR_ROLE[f.key]] = nextDone; });
+                          if (nextDone) patch.completedStages = Math.max(reel.completedStages, 3);
+                          else if (reel.completedStages >= 3) patch.completedStages = 2;
+                          update(patch);
+                        }}
+                        className="text-xs px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0 font-semibold disabled:opacity-40"
+                        style={{ background: allDone ? "#0E90B8" : canToggleSolo ? "#D6248A" : "#C4C2B8" }}
+                      >
+                        {allDone ? <CircleCheck size={14} /> : <Circle size={14} />} {allDone ? "初稿提出済み" : !soloEditorId ? "担当者未割当" : "未完了（クリックで初稿提出）"}
+                      </button>
+                    </div>
+                    {canEdit && soloEditorId && (
+                      <div className="flex items-center gap-1.5 flex-wrap mt-1.5 pt-1.5" style={{ borderTop: "1px dashed #EFEDE4" }}>
+                        <span className="text-[10px] shrink-0" style={{ color: "#A9A79C" }}>稼働日時（カレンダー登録・再登録）</span>
+                        <TextInput type="date" value={sched.startDate} onChange={e => setRoleScheduleField("solo", { startDate: e.target.value })} title="開始日" style={{ width: 115, fontSize: 11 }} />
+                        <span className="text-[10px]" style={{ color: "#8B897F" }}>〜</span>
+                        <TextInput type="date" value={sched.endDate} onChange={e => setRoleScheduleField("solo", { endDate: e.target.value })} title="終了日（省略可）" style={{ width: 115, fontSize: 11 }} />
+                        <TextInput type="time" step={600} value={sched.startTime} onChange={e => setRoleScheduleField("solo", { startTime: e.target.value })} style={{ width: 95, fontSize: 11 }} />
+                        <span className="text-[10px]" style={{ color: "#8B897F" }}>〜</span>
+                        <TextInput type="time" step={600} value={sched.endTime} onChange={e => setRoleScheduleField("solo", { endTime: e.target.value })} style={{ width: 95, fontSize: 11 }} />
+                        <button
+                          type="button"
+                          disabled={!sched.startDate}
+                          onClick={() => {
+                            const endDate = sched.endDate || sched.startDate;
+                            syncRoleCalendar(setCalendarEvents, reel.id, "all", soloEditorId, sched.startDate, endDate, sched.startTime, sched.endTime);
+                            setRoleSchedule(prev => ({ ...prev, solo: { startDate: "", endDate: "", startTime: "", endTime: "" } }));
+                          }}
+                          className="text-[11px] font-semibold px-2 py-1 rounded-lg text-white disabled:opacity-40"
+                          style={{ background: "#0E90B8" }}
+                        >
+                          予定を登録
+                        </button>
+                      </div>
+                    )}
+                    <div className="mt-1.5 pt-1.5" style={{ borderTop: "1px dashed #EFEDE4" }}>
+                      <p className="text-[10px] mb-0.5" style={{ color: "#A9A79C" }}>コメント・申し送り</p>
+                      <TextArea rows={2} value={draft.cutComment || ""} onChange={e => set({ cutComment: e.target.value })} disabled={!canEdit} placeholder="意図・注意点・引き継ぎ事項など" style={{ fontSize: 12 }} />
+                    </div>
+                  </div>
+                );
+              })() : [
                 { key: "cutEditorId", doneKey: "cutDone", label: "①カット担当", task: "cut" },
                 { key: "telopEditorId", doneKey: "telopDone", label: "②テロップ担当", task: "telop" },
                 { key: "animationEditorId", doneKey: "animationDone", label: "③アニメーション・演出担当", task: "animation" },
@@ -1529,6 +1602,26 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                     >
                       <CircleCheck size={14} /> 合格済み
                     </button>
+                  </div>
+                ) : pendingRevision ? (
+                  <div className="mt-1.5">
+                    <div className="rounded-lg p-2 mb-1.5" style={{ background: "#FCEBEB" }}>
+                      <p className="text-xs font-semibold" style={{ color: "#A32D2D" }}>修正依頼中（第{pendingRevision.revisionNumber}回）</p>
+                      <p className="text-xs mt-1 whitespace-pre-wrap" style={{ color: "#5F5E5A" }}>{pendingRevision.memo}</p>
+                      {pendingRevision.videoUrl && <a href={pendingRevision.videoUrl} target="_blank" rel="noreferrer" className="text-xs underline" style={{ color: "#0E90B8" }}>修正説明動画を見る</a>}
+                    </div>
+                    {canEdit && (
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => markRevisionDone(pendingRevision.id)}
+                          className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0"
+                          style={{ background: "#0E90B8" }}
+                        >
+                          修正完了
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <>
@@ -2738,7 +2831,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
   // 工程キー → カレンダー登録用のタスク名
   const ROLE_TASK_KEY = { cutEditorId: "cut", telopEditorId: "telop", animationEditorId: "animation", sfxEditorId: "sfx" };
   const rolePickupList = (roleKey) => {
-    const active = reels.filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions);
+    const active = reels.filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions && r.workMode !== "solo");
     return active.filter(r => {
       const ordered = editRolesForReel(r);
       const idx = ordered.findIndex(f => f.key === roleKey);
@@ -2750,6 +2843,28 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
   const telopPickupList = rolePickupList("telopEditorId");
   const animationPickupList = rolePickupList("animationEditorId");
   const sfxPickupList = rolePickupList("sfxEditorId");
+
+  // 一括編集①②③④：一括編集（旧：1人完結）が選択され、まだ担当者が決まっていない動画
+  const soloPickupList = reels.filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions && r.workMode === "solo"
+    && editRolesForReel(r).some(f => !r[f.key]))
+    .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
+  const [soloPickupChoice, setSoloPickupChoice] = useState({});
+  const getSoloPickup = (reelId) => soloPickupChoice[reelId] || { editorId: "", startDate: "", endDate: "", startTime: "", endTime: "" };
+  const setSoloPickup = (reelId, patch) => setSoloPickupChoice(prev => ({ ...prev, [reelId]: { ...getSoloPickup(reelId), ...patch } }));
+  const confirmSoloPickup = (reelId) => {
+    const choice = getSoloPickup(reelId);
+    if (!choice.editorId) return;
+    const endDate = choice.endDate || choice.startDate;
+    setReels(prev => prev.map(r => {
+      if (r.id !== reelId) return r;
+      const patch = { ...r };
+      editRolesForReel(r).forEach(f => { patch[f.key] = choice.editorId; });
+      if (choice.startDate) { patch.editStartDate = choice.startDate; patch.editEndDate = endDate; }
+      return patch;
+    }));
+    if (choice.startDate) syncRoleCalendar(setCalendarEvents, reelId, "all", choice.editorId, choice.startDate, endDate, choice.startTime, choice.endTime);
+    setSoloPickupChoice(prev => ({ ...prev, [reelId]: { editorId: "", startDate: "", endDate: "", startTime: "", endTime: "" } }));
+  };
 
   const [rolePickupChoice, setRolePickupChoice] = useState({});
   const rolePickKey = (roleKey, reelId) => `${roleKey}:${reelId}`;
@@ -2769,9 +2884,14 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
     setRolePickupChoice(prev => ({ ...prev, [rolePickKey(roleKey, reelId)]: { editorId: "", startDate: "", endDate: "", startTime: "", endTime: "" } }));
   };
 
-  // 編集中：いずれかの工程が割り当て済みで未完了の動画
-  const inProgressReels = reels.filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions && !r.checkSubmitted
+  // 編集中：いずれかの工程が割り当て済みで未完了の動画（分業モード）
+  const inProgressReels = reels.filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions && !r.checkSubmitted && r.workMode !== "solo"
     && (r.cutEditorId || r.telopEditorId || r.animationEditorId || r.sfxEditorId || r.editorSecondaryId))
+    .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
+
+  // 編集中：一括編集（旧：1人完結）モードの動画は①②③④まとめて1件として表示
+  const inProgressSoloReels = reels.filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions && !r.checkSubmitted && r.workMode === "solo"
+    && editRolesForReel(r).some(f => r[f.key]))
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
 
   const updateReelField = (reelId, patch) => setReels(prev => prev.map(r => r.id === reelId ? { ...r, ...patch } : r));
@@ -3050,8 +3170,32 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
 
       {(["editor", "shooter", "designer", "admin"].some(r => (currentUser.roles || []).includes(r))) && (
         <div id="dashboard-inprogress" className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
-          <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><Clock size={16} color="#F6934B" /> 編集中（{inProgressReels.length}）</p>
-          {inProgressReels.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>現在編集中の動画はありません。</p>}
+          <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><Clock size={16} color="#F6934B" /> 編集中（{inProgressReels.length + inProgressSoloReels.length}）</p>
+          {inProgressReels.length === 0 && inProgressSoloReels.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>現在編集中の動画はありません。</p>}
+
+          {inProgressSoloReels.length > 0 && (
+            <div className="grid md:grid-cols-2 gap-1.5 mb-2">
+              {inProgressSoloReels.map(r => {
+                const c = clients.find(x => x.id === r.clientId);
+                const editorId = editRolesForReel(r).map(f => r[f.key]).find(Boolean);
+                const person = users.find(u => u.id === editorId);
+                const allDone = editRolesForReel(r).every(f => r[DONE_KEY_FOR_ROLE[f.key]]);
+                const pending = (r.revisionHistory || []).length > 0 && r.revisionHistory[r.revisionHistory.length - 1].status === "requested";
+                const statusLabel = pending ? "修正依頼中" : allDone ? "チェック中" : "初稿制作中";
+                const statusTone = pending ? { background: "#FCEBEB", color: "#A32D2D" } : allDone ? { background: "#F1E9FB", color: "#6B3FA0" } : { background: "#F0EEE7", color: "#8B897F" };
+                return (
+                  <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="text-left rounded-lg p-2 hover:opacity-90" style={{ background: "#EDEBE4" }}>
+                    <p className="font-semibold text-xs truncate">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
+                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: "#16171B", color: "#fff" }}>一括編集①②③④：{person ? person.name : "未割当"}</span>
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={statusTone}>{statusLabel}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           <div className="grid md:grid-cols-2 gap-1.5 max-h-96 overflow-y-auto pr-1">
             {inProgressReels.map(r => {
               const c = clients.find(x => x.id === r.clientId);
@@ -3101,11 +3245,72 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
         </div>
       )}
 
+      {(["editor", "shooter", "designer", "admin"].some(r => (currentUser.roles || []).includes(r))) && (() => {
+        const revisionReels = reels.filter(r => (r.revisionHistory || []).length > 0 && r.revisionHistory[r.revisionHistory.length - 1].status === "requested" && r.completedStages < 5);
+        return (
+          <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
+            <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><Sparkles size={16} color="#A32D2D" /> 修正依頼（{revisionReels.length}）</p>
+            {revisionReels.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>現在、修正依頼中の動画はありません。</p>}
+            <div className="grid md:grid-cols-2 gap-2">
+              {revisionReels.map(r => {
+                const c = clients.find(x => x.id === r.clientId);
+                const rv = r.revisionHistory[r.revisionHistory.length - 1];
+                const requestedByUser = users.find(u => u.id === rv.requestedBy);
+                const assignedNames = (rv.assignedEditorIds || []).map(id => users.find(u => u.id === id)?.name).filter(Boolean);
+                return (
+                  <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="text-left text-xs p-2.5 rounded-xl hover:bg-black/5" style={{ background: "#FCEBEB" }}>
+                    <p className="font-semibold truncate">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
+                    <p style={{ color: "#A32D2D" }}>第{rv.revisionNumber}回修正 ・ 依頼者：{requestedByUser?.name || "不明"}</p>
+                    <p style={{ color: "#8B897F" }}>依頼先：{assignedNames.length > 0 ? assignedNames.join("・") : "未割当"}</p>
+                    <p className="mt-1 line-clamp-2" style={{ color: "#5F5E5A" }}>{rv.memo}</p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
       {(["editor", "shooter", "designer", "admin"].some(r => (currentUser.roles || []).includes(r))) && (
         <div id="dashboard-pickup" className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
           <p className="font-bold mb-2 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><MessageSquare size={16} color="#D6248A" /> 編集指示一覧</p>
           <div className="rounded-xl px-3 py-2 mb-4 text-center" style={{ background: "#FBE4F1" }}>
             <span className="text-sm font-bold" style={{ color: "#96185E" }}>編集の工程は ①カット → ②テロップ → ③アニメーション・演出 → ④効果音・BGM → ⑤最終チェック の順番で進みます</span>
+          </div>
+
+          <div>
+            <p className="inline-block text-base font-bold mb-2 px-3 py-1.5 rounded-lg" style={{ color: "#16171B", background: "#EDEBE4" }}>一括編集①②③④　編集者募集中（一括編集の動画）</p>
+            {soloPickupList.length === 0 && <p className="text-xs mb-4" style={{ color: "#8B897F" }}>担当者待ちの動画はありません。</p>}
+            <div className="space-y-1.5 mb-2 max-h-80 overflow-y-auto pr-1">
+              {soloPickupList.map(r => {
+                const c = clients.find(x => x.id === r.clientId);
+                const choice = getSoloPickup(r.id);
+                return (
+                  <div key={r.id} className="rounded-lg p-2" style={{ background: "#FAF8F3" }}>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button onClick={() => onGoReelDetail(r.clientId, r.id)} className="font-semibold text-xs hover:underline text-left">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "（テーマ未設定）"}</button>
+                      {r.deadline && <Badge tone={r.deadline < new Date().toISOString().slice(0, 10) ? "red" : "gray"}>投稿予定日 {r.deadline}</Badge>}
+                    </div>
+                    <p className="text-[11px] mt-0.5 truncate" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>
+                    <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                      <select value={choice.editorId} onChange={e => setSoloPickup(r.id, { editorId: e.target.value })} className={inputCls} style={{ ...inputStyle, width: 140, fontSize: 11, padding: "5px 8px" }}>
+                        <option value="">動画編集者を選択</option>
+                        {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                      </select>
+                      <TextInput type="date" value={choice.startDate} onChange={e => setSoloPickup(r.id, { startDate: e.target.value })} title="開始日（カレンダーに反映されます）" style={{ width: 120, fontSize: 11, padding: "5px 8px" }} />
+                      <span className="text-xs shrink-0" style={{ color: "#8B897F" }}>〜</span>
+                      <TextInput type="date" value={choice.endDate} onChange={e => setSoloPickup(r.id, { endDate: e.target.value })} title="終了日（省略時は開始日と同じ）" style={{ width: 120, fontSize: 11, padding: "5px 8px" }} />
+                      <TextInput type="time" step={600} value={choice.startTime} onChange={e => setSoloPickup(r.id, { startTime: e.target.value })} title="開始時刻（任意）" style={{ width: 95, fontSize: 11, padding: "5px 8px" }} />
+                      <span className="text-xs shrink-0" style={{ color: "#8B897F" }}>〜</span>
+                      <TextInput type="time" step={600} value={choice.endTime} onChange={e => setSoloPickup(r.id, { endTime: e.target.value })} title="終了時刻（任意）" style={{ width: 95, fontSize: 11, padding: "5px 8px" }} />
+                      <button onClick={() => confirmSoloPickup(r.id)} disabled={!choice.editorId} className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>
+                        一括編集①②③④を担当する
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           {[
