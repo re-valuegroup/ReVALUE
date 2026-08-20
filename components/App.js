@@ -66,6 +66,8 @@ const editRolesForReel = (reel) => {
   return EDIT_ROLE_FIELDS.filter(f => required.includes(f.key));
 };
 const DONE_KEY_FOR_ROLE = { cutEditorId: "cutDone", telopEditorId: "telopDone", animationEditorId: "animationDone", sfxEditorId: "sfxDone" };
+const SUBMITTED_KEY_FOR_ROLE = { cutEditorId: "cutSubmitted", telopEditorId: "telopSubmitted", animationEditorId: "animationSubmitted", sfxEditorId: "sfxSubmitted" };
+const STAGE_KEY_FOR_ROLE = { cutEditorId: "cut", telopEditorId: "telop", animationEditorId: "animation", sfxEditorId: "sfx" };
 const WORKLOAD_KEY_FOR_ROLE = { cutEditorId: "cutWorkload", telopEditorId: "telopWorkload", animationEditorId: "animationWorkload", sfxEditorId: "sfxWorkload" };
 const COMMENT_KEY_FOR_ROLE = { cutEditorId: "cutComment", telopEditorId: "telopComment", animationEditorId: "animationComment", sfxEditorId: "sfxComment" };
 // ①②③④を順番通りにしか完了チェックできないようにする（かつ担当者が割り当てられていないとチェックできない）
@@ -218,6 +220,7 @@ const emptyReel = (clientId, ym) => ({
   workMode: "team", revisionHistory: [], revisionMemo: "", revisionVideoUrl: "",
   cutEditorId: "", telopEditorId: "", animationEditorId: "", sfxEditorId: "", editorSecondaryId: "",
   cutDone: false, telopDone: false, animationDone: false, sfxDone: false,
+  cutSubmitted: false, telopSubmitted: false, animationSubmitted: false, sfxSubmitted: false,
   editStartDate: "", editEndDate: "", deadline: "", postPlanDate: "",
   cutWorkload: "", telopWorkload: "", animationWorkload: "", sfxWorkload: "", checkWorkload: "",
   cutComment: "", telopComment: "", animationComment: "", sfxComment: "", checkComment: "",
@@ -870,6 +873,68 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
   const [transcriptFileError, setTranscriptFileError] = useState("");
   const [roleSchedule, setRoleSchedule] = useState({});
   const setRoleScheduleField = (roleKey, patch) => setRoleSchedule(prev => ({ ...prev, [roleKey]: { ...(prev[roleKey] || { startDate: "", endDate: "", startTime: "", endTime: "" }), ...patch } }));
+  const [stageRevisionDraft, setStageRevisionDraft] = useState({});
+  const getStageRevisionDraft = (roleKey) => stageRevisionDraft[roleKey] || { memo: "", videoUrl: "" };
+  const setStageRevisionDraftField = (roleKey, patch) => setStageRevisionDraft(prev => ({ ...prev, [roleKey]: { ...getStageRevisionDraft(roleKey), ...patch } }));
+  const canSubmitStage = (roleKey) => {
+    if (!reel[roleKey]) return false;
+    const ordered = editRolesForReel(reel).map(f => f.key);
+    const idx = ordered.indexOf(roleKey);
+    if (idx <= 0) return true;
+    return ordered.slice(0, idx).every(k => reel[DONE_KEY_FOR_ROLE[k]]);
+  };
+  const stageRevisions = (roleKey) => (reel.revisionHistory || []).filter(rv => rv.stage === STAGE_KEY_FOR_ROLE[roleKey]);
+  const pendingStageRevision = (roleKey) => {
+    const hist = stageRevisions(roleKey);
+    if (hist.length === 0) return null;
+    const last = hist[hist.length - 1];
+    return last.status === "requested" ? last : null;
+  };
+  const submitStage = (roleKey) => {
+    if (!canSubmitStage(roleKey)) return;
+    update({ [SUBMITTED_KEY_FOR_ROLE[roleKey]]: true });
+  };
+  const approveStage = (roleKey) => {
+    const patch = { [DONE_KEY_FOR_ROLE[roleKey]]: true };
+    const stillNeeded = editRolesForReel(reel).some(f => f.key !== roleKey && !reel[DONE_KEY_FOR_ROLE[f.key]]);
+    if (!stillNeeded) patch.completedStages = Math.max(reel.completedStages, 3);
+    update(patch);
+  };
+  const revertStageApproval = (roleKey) => {
+    const patch = { [DONE_KEY_FOR_ROLE[roleKey]]: false };
+    if (reel.completedStages >= 3) patch.completedStages = 2;
+    update(patch);
+  };
+  const requestStageRevision = (roleKey) => {
+    const draftRev = getStageRevisionDraft(roleKey);
+    if (!draftRev.memo?.trim()) return;
+    const hist = stageRevisions(roleKey);
+    const revisionNumber = hist.length + 1;
+    const record = {
+      id: uid("rev"),
+      stage: STAGE_KEY_FOR_ROLE[roleKey],
+      revisionNumber,
+      createdAt: new Date().toISOString(),
+      requestedBy: currentUser.id,
+      assignedEditorIds: reel[roleKey] ? [reel[roleKey]] : [],
+      status: "requested",
+      memo: draftRev.memo,
+      videoUrl: draftRev.videoUrl || "",
+      completedAt: null,
+      resubmittedAt: null,
+    };
+    update({
+      revisionHistory: [...(reel.revisionHistory || []), record],
+      [SUBMITTED_KEY_FOR_ROLE[roleKey]]: false,
+    });
+    setStageRevisionDraft(prev => ({ ...prev, [roleKey]: { memo: "", videoUrl: "" } }));
+  };
+  const markStageRevisionDone = (roleKey, revId) => {
+    update({
+      revisionHistory: (reel.revisionHistory || []).map(rv => rv.id === revId ? { ...rv, status: "resubmitted", completedAt: rv.completedAt || new Date().toISOString(), resubmittedAt: new Date().toISOString() } : rv),
+      [SUBMITTED_KEY_FOR_ROLE[roleKey]]: true,
+    });
+  };
   const [transcriptCleanError, setTranscriptCleanError] = useState("");
   const [showHistory, setShowHistory] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -1204,9 +1269,25 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
               );
             }
             const person = users.find(u => u.id === t.assigneeId);
+            if (t.doneKey) {
+              // ①②③④は合格／修正依頼のチェックが必要なため、ここでは状態表示のみ（クリックでは切り替えない）
+              const submitted = !!reel[SUBMITTED_KEY_FOR_ROLE[t.key]];
+              const hist = (reel.revisionHistory || []).filter(rv => rv.stage === STAGE_KEY_FOR_ROLE[t.key]);
+              const pendingRev = hist.length > 0 && hist[hist.length - 1].status === "requested";
+              const statusLabel = t.done ? "完了" : pendingRev ? "修正依頼中" : submitted ? "チェック待ち" : person ? "作業中" : "募集中";
+              const toneStyle2 = t.done ? { background: "#D6F0EA", color: "#0E6B57" } : pendingRev ? { background: "#FCEBEB", color: "#A32D2D" } : submitted ? { background: "#F1E9FB", color: "#6B3FA0" } : person ? { background: "#FCEEDB", color: "#854F0B" } : { background: "#F0EEE7", color: "#8B897F" };
+              return (
+                <React.Fragment key={t.label}>
+                  <span className="text-[11px] font-semibold px-2 py-1 rounded-full flex items-center gap-1" style={toneStyle2}>
+                    {t.done ? <CircleCheck size={12} /> : <Circle size={12} />} {t.label}{person ? `：${person.name}` : ""}（{statusLabel}）
+                  </span>
+                  {i < arr.length - 1 && <span style={{ color: "#C4C2B8", fontSize: 11 }}>→</span>}
+                </React.Fragment>
+              );
+            }
             const tone = t.done ? "teal" : person ? "amber" : "gray";
             const toneStyle = { teal: { background: "#D6F0EA", color: "#0E6B57" }, amber: { background: "#FCEEDB", color: "#854F0B" }, gray: { background: "#F0EEE7", color: "#8B897F" } }[tone];
-            const canToggle = t.readOnly ? false : t.doneKey ? (t.done || canToggleRoleDone(reel, t.doneKey)) : (t.done || canSubmitCheck(reel));
+            const canToggle = t.readOnly ? false : (t.done || canSubmitCheck(reel));
             const disabledReason = t.readOnly ? "他の項目から自動的に反映されます" : !t.assigneeId ? "担当者が割り当てられていません" : !t.done && !canToggle ? "前の工程がまだ完了していません" : "";
             return (
               <React.Fragment key={t.label}>
@@ -1217,22 +1298,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   onClick={(e) => {
                     e.stopPropagation();
                     if (t.readOnly || !canEdit || !canToggle) return;
-                    if (t.doneKey) {
-                      const nextDone = !t.done;
-                      const patch = { [t.doneKey]: nextDone };
-                      if (nextDone) {
-                        const stillNeeded = editRolesForReel(reel).some(f => {
-                          const dk = DONE_KEY_FOR_ROLE[f.key];
-                          return dk === t.doneKey ? false : !reel[dk];
-                        });
-                        if (!stillNeeded) patch.completedStages = Math.max(reel.completedStages, 3);
-                      } else if (reel.completedStages >= 3) {
-                        patch.completedStages = 2;
-                      }
-                      update(patch);
-                    } else {
-                      submitCheck();
-                    }
+                    submitCheck();
                   }}
                   className="text-[11px] font-semibold px-2 py-1 rounded-full flex items-center gap-1"
                   style={{ ...toneStyle, cursor: !t.readOnly && canEdit && canToggle ? "pointer" : "default", opacity: t.readOnly ? 1 : !canEdit || (!t.done && !canToggle) ? 0.5 : 1 }}
@@ -1513,9 +1579,12 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   );
                 }
                 const done = !!reel[f.doneKey];
-                const canToggle = done || canToggleRoleDone(reel, f.doneKey);
+                const submitted = !!reel[SUBMITTED_KEY_FOR_ROLE[f.key]];
+                const canSubmit = canSubmitStage(f.key);
+                const pendingRev = pendingStageRevision(f.key);
                 const wlKey = WORKLOAD_KEY_FOR_ROLE[f.key];
                 const sched = roleSchedule[f.key] || { startDate: "", endDate: "", startTime: "", endTime: "" };
+                const revDraft = getStageRevisionDraft(f.key);
                 return (
                   <div key={f.key} className="rounded-lg p-2" style={{ background: "#fff", border: done ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
                   <div className="flex items-center gap-2 flex-wrap">
@@ -1525,32 +1594,58 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                       {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                     </select>
                   </div>
-                  <div className="flex justify-end mt-1.5">
-                    <button
-                      type="button"
-                      disabled={!canEdit || !canToggle}
-                      title={!reel[f.key] ? "担当者を割り当ててください" : !done && !canToggle ? "前の工程がまだ完了していません" : ""}
-                      onClick={() => {
-                        if (!canEdit || !canToggle) return;
-                        const nextDone = !reel[f.doneKey];
-                        const patch = { [f.doneKey]: nextDone };
-                        if (nextDone) {
-                          const stillNeeded = editRolesForReel(reel).some(rf => {
-                            const dk = DONE_KEY_FOR_ROLE[rf.key];
-                            return dk === f.doneKey ? false : !reel[dk];
-                          });
-                          if (!stillNeeded) patch.completedStages = Math.max(reel.completedStages, 3);
-                        } else if (reel.completedStages >= 3) {
-                          patch.completedStages = 2;
-                        }
-                        update(patch);
-                      }}
-                      className="text-xs px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0 font-semibold disabled:opacity-40"
-                      style={{ background: done ? "#0E90B8" : canToggle ? "#D6248A" : "#C4C2B8" }}
-                    >
-                      {done ? <CircleCheck size={14} /> : <Circle size={14} />} {done ? "完了" : !reel[f.key] ? "担当者未割当" : canToggle ? "未完了（クリックで完了）" : "前の工程待ち"}
-                    </button>
-                  </div>
+
+                  {done ? (
+                    <div className="flex items-center justify-between mt-1.5">
+                      <span className="text-xs font-semibold flex items-center gap-1" style={{ color: "#0E90B8" }}><CircleCheck size={14} /> 合格・完了</span>
+                      {canEdit && <button onClick={() => revertStageApproval(f.key)} className="text-[11px] font-semibold" style={{ color: "#8B897F" }}>差し戻す</button>}
+                    </div>
+                  ) : pendingRev ? (
+                    <div className="mt-1.5">
+                      <div className="rounded-lg p-2 mb-1.5" style={{ background: "#FCEBEB" }}>
+                        <p className="text-xs font-semibold" style={{ color: "#A32D2D" }}>修正依頼中（第{pendingRev.revisionNumber}回）</p>
+                        <p className="text-xs mt-1 whitespace-pre-wrap" style={{ color: "#5F5E5A" }}>{pendingRev.memo}</p>
+                        {pendingRev.videoUrl && <a href={pendingRev.videoUrl} target="_blank" rel="noreferrer" className="text-xs underline" style={{ color: "#0E90B8" }}>修正説明動画を見る</a>}
+                      </div>
+                      {canEdit && (
+                        <div className="flex justify-end">
+                          <button type="button" onClick={() => markStageRevisionDone(f.key, pendingRev.id)} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0" style={{ background: "#0E90B8" }}>
+                            修正完了したので再提出する
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : submitted ? (
+                    <div className="mt-1.5">
+                      <Field label="修正依頼メモ（修正依頼を出す場合のみ入力）">
+                        <TextArea rows={2} value={revDraft.memo} onChange={e => setStageRevisionDraftField(f.key, { memo: e.target.value })} disabled={!canEdit} placeholder="例：00:15〜00:20のカットを変更してください" />
+                      </Field>
+                      <Field label="修正説明動画URL（YouTube限定公開・任意）">
+                        <TextInput value={revDraft.videoUrl} onChange={e => setStageRevisionDraftField(f.key, { videoUrl: e.target.value })} disabled={!canEdit} placeholder="https://youtube.com/..." />
+                      </Field>
+                      <div className="flex justify-end gap-2 mt-1.5 flex-wrap">
+                        <button type="button" disabled={!canEdit || !revDraft.memo?.trim()} onClick={() => requestStageRevision(f.key)} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0 disabled:opacity-40" style={{ background: "#A32D2D" }}>
+                          修正依頼を出す
+                        </button>
+                        <button type="button" disabled={!canEdit} onClick={() => approveStage(f.key)} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0" style={{ background: "#D6248A" }}>
+                          合格にする
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex justify-end mt-1.5">
+                      <button
+                        type="button"
+                        disabled={!canEdit || !canSubmit}
+                        title={!reel[f.key] ? "担当者を割り当ててください" : !canSubmit ? "前の工程がまだ完了していません" : ""}
+                        onClick={() => submitStage(f.key)}
+                        className="text-xs px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0 font-semibold disabled:opacity-40"
+                        style={{ background: canSubmit ? "#D6248A" : "#C4C2B8" }}
+                      >
+                        <Circle size={14} /> {!reel[f.key] ? "担当者未割当" : canSubmit ? "初稿提出（クリックでチェックへ）" : "前の工程待ち"}
+                      </button>
+                    </div>
+                  )}
                   {canEdit && reel[f.key] && (
                     <div className="flex items-center gap-1.5 flex-wrap mt-1.5 pt-1.5" style={{ borderTop: "1px dashed #EFEDE4" }}>
                       <span className="text-[10px] shrink-0" style={{ color: "#A9A79C" }}>稼働日時（カレンダー登録・再登録）</span>
@@ -1579,6 +1674,22 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                     <p className="text-[10px] mb-0.5" style={{ color: "#A9A79C" }}>コメント・申し送り（次の工程担当者にも表示されます）</p>
                     <TextArea rows={2} value={draft[COMMENT_KEY_FOR_ROLE[f.key]] || ""} onChange={e => set({ [COMMENT_KEY_FOR_ROLE[f.key]]: e.target.value })} disabled={!canEdit} placeholder="意図・注意点・引き継ぎ事項など" style={{ fontSize: 12 }} />
                   </div>
+                  {stageRevisions(f.key).length > 0 && (
+                    <div className="mt-1.5 pt-1.5" style={{ borderTop: "1px dashed #EFEDE4" }}>
+                      <p className="text-[10px] font-semibold mb-1" style={{ color: "#A32D2D" }}>修正履歴（{stageRevisions(f.key).length}件）</p>
+                      <div className="space-y-1">
+                        {stageRevisions(f.key).map(rv => (
+                          <div key={rv.id} className="rounded p-1.5" style={{ background: "#FCEBEB" }}>
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-semibold" style={{ color: "#A32D2D" }}>第{rv.revisionNumber}回</span>
+                              <Badge tone={rv.status === "resubmitted" ? "teal" : "red"}>{rv.status === "resubmitted" ? "再提出済み" : "対応待ち"}</Badge>
+                            </div>
+                            <p className="text-[11px] mt-0.5" style={{ color: "#5F5E5A" }}>{rv.memo}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   </div>
                 );
               })}
@@ -3217,21 +3328,35 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                       if (t.notRequired) {
                         return <span key={t.label} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: "#F0EEE7", color: "#A9A79C" }}>{t.label}：不要</span>;
                       }
-                      const done = t.doneKey ? !!r[t.doneKey] : !!r.checkSubmitted;
                       const person = users.find(u => u.id === t.assigneeId);
-                      const canToggle = t.doneKey ? (done || canToggleRoleDone(r, t.doneKey)) : (done || canSubmitCheck(r));
-                      const tone = done ? { background: "#D6F0EA", color: "#0E6B57" } : person ? { background: "#FCEEDB", color: "#854F0B", border: "1px solid #F0C98A" } : { background: "#F0EEE7", color: "#8B897F" };
+                      if (!t.doneKey) {
+                        // ⑤最終チェック（合格/修正依頼のフローがあるため、押すと動画詳細に移動）
+                        const done = !!r.checkSubmitted;
+                        const tone = done ? { background: "#D6F0EA", color: "#0E6B57" } : person ? { background: "#FCEEDB", color: "#854F0B", border: "1px solid #F0C98A" } : { background: "#F0EEE7", color: "#8B897F" };
+                        return (
+                          <React.Fragment key={t.label}>
+                            <button type="button" onClick={() => onGoReelDetail(r.clientId, r.id)} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex items-center gap-0.5" style={tone}>
+                              {done ? <CircleCheck size={10} /> : <Circle size={10} />} {t.label}{person ? `：${person.name}` : "：募集中"}
+                            </button>
+                          </React.Fragment>
+                        );
+                      }
+                      const done = !!r[t.doneKey];
+                      const submitted = !!r[SUBMITTED_KEY_FOR_ROLE[t.key]];
+                      const hist = (r.revisionHistory || []).filter(rv => rv.stage === STAGE_KEY_FOR_ROLE[t.key]);
+                      const pendingRev = hist.length > 0 && hist[hist.length - 1].status === "requested";
+                      const statusLabel = done ? "完了" : pendingRev ? "修正依頼中" : submitted ? "チェック待ち" : person ? "作業中" : "募集中";
+                      const tone = done ? { background: "#D6F0EA", color: "#0E6B57" } : pendingRev ? { background: "#FCEBEB", color: "#A32D2D" } : submitted ? { background: "#F1E9FB", color: "#6B3FA0" } : person ? { background: "#FCEEDB", color: "#854F0B", border: "1px solid #F0C98A" } : { background: "#F0EEE7", color: "#8B897F" };
                       return (
                         <React.Fragment key={t.label}>
                           <button
                             type="button"
-                            disabled={!canToggle}
-                            title={!person ? "担当者未割当" : !done && !canToggle ? "前の工程がまだ完了していません" : "クリックで完了・未完了を切り替え"}
-                            onClick={() => t.doneKey ? toggleRoleDoneInline(r, t.doneKey) : submitCheckInline(r)}
+                            onClick={() => onGoReelDetail(r.clientId, r.id)}
+                            title="クリックで動画詳細を開く"
                             className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex items-center gap-0.5"
-                            style={{ ...tone, cursor: canToggle ? "pointer" : "default", opacity: !done && !canToggle ? 0.5 : 1 }}
+                            style={tone}
                           >
-                            {done ? <CircleCheck size={10} /> : <Circle size={10} />} {t.label}{person ? `：${person.name}` : "：募集中"}
+                            {done ? <CircleCheck size={10} /> : <Circle size={10} />} {t.label}{person ? `：${person.name}` : ""}（{statusLabel}）
                           </button>
                           {i < rows.length - 1 && <span style={{ color: "#C4A876", fontSize: 9 }}>→</span>}
                         </React.Fragment>
