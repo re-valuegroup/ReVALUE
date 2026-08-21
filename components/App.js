@@ -2931,6 +2931,34 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
   const overdue = reels.filter(r => r.completedStages < 5 && r.yearMonth < ym);
   const editors = users.filter(u => (u.roles || []).includes("editor"));
 
+  // 「編集中」「修正依頼」「修正チェック」共通の絞り込み（スタッフ・クライアント）
+  const [dashStaffFilter, setDashStaffFilter] = useState("");
+  const [dashClientFilter, setDashClientFilter] = useState("");
+  const reelMatchesDashFilter = (r) => {
+    if (dashClientFilter && r.clientId !== dashClientFilter) return false;
+    if (dashStaffFilter) {
+      const involved = [r.cutEditorId, r.telopEditorId, r.animationEditorId, r.sfxEditorId, r.editorSecondaryId, r.captionAssigneeId, r.postAssigneeId, r.assignedStaffId,
+        ...(r.revisionHistory || []).flatMap(rv => [rv.requestedBy, ...(rv.assignedEditorIds || [])])];
+      if (!involved.includes(dashStaffFilter)) return false;
+    }
+    return true;
+  };
+  const DashFilterBar = () => (
+    <div className="flex items-center gap-2 mb-3 flex-wrap">
+      <select value={dashStaffFilter} onChange={e => setDashStaffFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 160 }}>
+        <option value="">スタッフ（全員）</option>
+        {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+      </select>
+      <select value={dashClientFilter} onChange={e => setDashClientFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 180 }}>
+        <option value="">クライアント（全て）</option>
+        {clients.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
+      </select>
+      {(dashStaffFilter || dashClientFilter) && (
+        <button onClick={() => { setDashStaffFilter(""); setDashClientFilter(""); }} className="text-xs font-semibold" style={{ color: "#A32D2D" }}>絞り込みを解除</button>
+      )}
+    </div>
+  );
+
   const stats = [
     { label: "登録クライアント", value: clients.length, icon: Building2, tone: "gray" },
     { label: "今月の動画本数", value: reels.filter(r => r.yearMonth === ym).length, icon: Video, tone: "coral" },
@@ -2997,12 +3025,12 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
 
   // 編集中：いずれかの工程が割り当て済みで未完了の動画（分業モード）
   const inProgressReels = reels.filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions && !r.checkSubmitted && r.workMode !== "solo"
-    && (r.cutEditorId || r.telopEditorId || r.animationEditorId || r.sfxEditorId || r.editorSecondaryId))
+    && (r.cutEditorId || r.telopEditorId || r.animationEditorId || r.sfxEditorId || r.editorSecondaryId) && reelMatchesDashFilter(r))
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
 
   // 編集中：一括編集（旧：1人完結）モードの動画は①②③④まとめて1件として表示
   const inProgressSoloReels = reels.filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions && !r.checkSubmitted && r.workMode === "solo"
-    && editRolesForReel(r).some(f => r[f.key]))
+    && editRolesForReel(r).some(f => r[f.key]) && reelMatchesDashFilter(r))
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
 
   const updateReelField = (reelId, patch) => setReels(prev => prev.map(r => r.id === reelId ? { ...r, ...patch } : r));
@@ -3282,6 +3310,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
       {(["editor", "shooter", "designer", "admin"].some(r => (currentUser.roles || []).includes(r))) && (
         <div id="dashboard-inprogress" className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
           <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><Clock size={16} color="#F6934B" /> 編集中（{inProgressReels.length + inProgressSoloReels.length}）</p>
+          <DashFilterBar />
           {inProgressReels.length === 0 && inProgressSoloReels.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>現在編集中の動画はありません。</p>}
 
           {inProgressSoloReels.length > 0 && (
@@ -3371,10 +3400,11 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
       )}
 
       {(["editor", "shooter", "designer", "admin"].some(r => (currentUser.roles || []).includes(r))) && (() => {
-        const revisionReels = reels.filter(r => (r.revisionHistory || []).length > 0 && r.revisionHistory[r.revisionHistory.length - 1].status === "requested" && r.completedStages < 5);
+        const revisionReels = reels.filter(r => (r.revisionHistory || []).length > 0 && r.revisionHistory[r.revisionHistory.length - 1].status === "requested" && r.completedStages < 5 && reelMatchesDashFilter(r));
         return (
           <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
             <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><Sparkles size={16} color="#A32D2D" /> 修正依頼（{revisionReels.length}）</p>
+            <DashFilterBar />
             {revisionReels.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>現在、修正依頼中の動画はありません。</p>}
             <div className="grid md:grid-cols-2 gap-2">
               {revisionReels.map(r => {
@@ -3397,10 +3427,11 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
       })()}
 
       {(["editor", "shooter", "designer", "admin"].some(r => (currentUser.roles || []).includes(r))) && (() => {
-        const recheckReels = reels.filter(r => (r.revisionHistory || []).length > 0 && r.revisionHistory[r.revisionHistory.length - 1].status === "resubmitted" && !r.checkSubmitted && r.completedStages < 5);
+        const recheckReels = reels.filter(r => (r.revisionHistory || []).length > 0 && r.revisionHistory[r.revisionHistory.length - 1].status === "resubmitted" && !r.checkSubmitted && r.completedStages < 5 && reelMatchesDashFilter(r));
         return (
           <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
             <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><CircleCheck size={16} color="#0E90B8" /> 修正チェック（{recheckReels.length}）</p>
+            <DashFilterBar />
             {recheckReels.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>現在、再チェック待ちの動画はありません。</p>}
             <div className="grid md:grid-cols-2 gap-2">
               {recheckReels.map(r => {
@@ -3798,6 +3829,16 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoReelDetail,
   const ym = currentYearMonth();
   const editors = users.filter(u => (u.roles || []).includes("editor"));
   const [editorFilter, setEditorFilter] = useState("");
+  const [taskStaffFilter, setTaskStaffFilter] = useState("");
+  const [taskClientFilter, setTaskClientFilter] = useState("");
+  const reelMatchesTaskFilter = (r) => {
+    if (taskClientFilter && r.clientId !== taskClientFilter) return false;
+    if (taskStaffFilter) {
+      const involved = [r.cutEditorId, r.telopEditorId, r.animationEditorId, r.sfxEditorId, r.editorSecondaryId, r.captionAssigneeId, r.postAssigneeId, r.assignedStaffId];
+      if (!involved.includes(taskStaffFilter)) return false;
+    }
+    return true;
+  };
 
   const activeReels = reels.filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions);
 
@@ -3813,31 +3854,31 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoReelDetail,
   }).filter(Boolean);
 
   // ①カット待ち：カットがまだ完了していない動画
-  const cutWaitList = activeReels.filter(r => !r.cutDone)
+  const cutWaitList = activeReels.filter(r => !r.cutDone && reelMatchesTaskFilter(r))
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
 
   // ②テロップ待ち：カットは完了、テロップがまだ完了していない動画
-  const telopWaitList = activeReels.filter(r => r.cutDone && !r.telopDone)
+  const telopWaitList = activeReels.filter(r => r.cutDone && !r.telopDone && reelMatchesTaskFilter(r))
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
 
   // ③アニメーション・演出待ち：カットは完了、演出が必要な編集タイプでまだ完了していない動画
-  const animationWaitList = activeReels.filter(r => r.cutDone && editRolesForReel(r).some(f => f.key === "animationEditorId") && !r.animationDone)
+  const animationWaitList = activeReels.filter(r => r.cutDone && editRolesForReel(r).some(f => f.key === "animationEditorId") && !r.animationDone && reelMatchesTaskFilter(r))
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
 
   // ④効果音・BGM待ち：カットは完了、効果音が必要な編集タイプでまだ完了していない動画
-  const sfxWaitList = activeReels.filter(r => r.cutDone && editRolesForReel(r).some(f => f.key === "sfxEditorId") && !r.sfxDone)
+  const sfxWaitList = activeReels.filter(r => r.cutDone && editRolesForReel(r).some(f => f.key === "sfxEditorId") && !r.sfxDone && reelMatchesTaskFilter(r))
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
 
   // ⑤最終チェック待ち：必要な①②③④がすべて完了し、まだ提出されていない動画
-  const checkWaitList = activeReels.filter(r => editRolesForReel(r).every(f => r[DONE_KEY_FOR_ROLE[f.key]]) && !r.checkSubmitted)
+  const checkWaitList = activeReels.filter(r => editRolesForReel(r).every(f => r[DONE_KEY_FOR_ROLE[f.key]]) && !r.checkSubmitted && reelMatchesTaskFilter(r))
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
 
   // ⑥キャプション作成待ち：⑤最終チェックまで完了し、キャプションがまだ作られていない動画
-  const captionWaitList = reels.filter(r => r.completedStages >= 4 && r.completedStages < 5 && !r.captionDone)
+  const captionWaitList = reels.filter(r => r.completedStages >= 4 && r.completedStages < 5 && !r.captionDone && reelMatchesTaskFilter(r))
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
 
   // ⑦投稿待ち：キャプションは完成しているが、まだ投稿されていない動画（コピーしてすぐ使える）
-  const postWaitList = reels.filter(r => r.captionDone && r.completedStages < 5)
+  const postWaitList = reels.filter(r => r.captionDone && r.completedStages < 5 && reelMatchesTaskFilter(r))
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
   const [copiedId, setCopiedId] = useState("");
   const copyCaption = async (r) => {
@@ -3919,6 +3960,23 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoReelDetail,
           </div>
         )}
       </div>
+
+      {(showAll || ["cut", "telop", "animation", "sfx", "check", "caption", "post"].includes(section)) && (
+        <div className="flex items-center gap-2 mb-4 flex-wrap">
+          <span className="text-xs font-semibold" style={{ color: "#5F5E5A" }}>①〜⑦の絞り込み：</span>
+          <select value={taskStaffFilter} onChange={e => setTaskStaffFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 160 }}>
+            <option value="">スタッフ（全員）</option>
+            {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+          <select value={taskClientFilter} onChange={e => setTaskClientFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 180 }}>
+            <option value="">クライアント（全て）</option>
+            {clients.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
+          </select>
+          {(taskStaffFilter || taskClientFilter) && (
+            <button onClick={() => { setTaskStaffFilter(""); setTaskClientFilter(""); }} className="text-xs font-semibold" style={{ color: "#A32D2D" }}>絞り込みを解除</button>
+          )}
+        </div>
+      )}
 
       {section === "editors" && (
         <div className="space-y-4">
