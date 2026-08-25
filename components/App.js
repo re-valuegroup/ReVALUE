@@ -8,7 +8,7 @@ import {
   Link2, Loader2, Camera, Scissors, MessageSquare, Send, Clock,
   CircleCheck, Circle, ArrowLeft, Building2, User, MapPin, Info, Copy,
   ClipboardList, MessageCircle, Megaphone, UserCheck, Image as ImageIcon,
-  DollarSign, LogOut, RefreshCw
+  DollarSign, LogOut, RefreshCw, Mic
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { fetchAll, upsertRow, deleteRow, bulkUpsert } from "@/lib/db";
@@ -386,6 +386,54 @@ function effectiveMonthlyFee(f) {
   return 0;
 }
 
+
+function VoiceInputButton({ onResult, disabled, title }) {
+  const [recording, setRecording] = useState(false);
+  const recognitionRef = useRef(null);
+  const voiceSupported = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
+
+  const toggle = () => {
+    if (disabled) return;
+    if (recording) {
+      recognitionRef.current?.stop();
+      return;
+    }
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+    const recognition = new SpeechRecognition();
+    recognition.lang = "ja-JP";
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    let finalText = "";
+    recognition.onresult = (event) => {
+      let text = "";
+      for (let i = 0; i < event.results.length; i++) text += event.results[i][0].transcript;
+      finalText = text;
+    };
+    recognition.onend = () => {
+      setRecording(false);
+      if (finalText.trim()) onResult(finalText.trim());
+    };
+    recognition.onerror = () => setRecording(false);
+    recognitionRef.current = recognition;
+    recognition.start();
+    setRecording(true);
+  };
+
+  if (!voiceSupported) return null;
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      disabled={disabled}
+      title={title || (recording ? "録音を停止" : "音声入力")}
+      className="shrink-0 flex items-center justify-center rounded-lg disabled:opacity-40"
+      style={{ width: 28, height: 28, background: recording ? "#A32D2D" : "#F4F2EA", color: recording ? "#fff" : "#5F5E5A" }}
+    >
+      <Mic size={13} className={recording ? "animate-pulse" : ""} />
+    </button>
+  );
+}
 
 function Badge({ children, tone = "gray" }) {
   const tones = {
@@ -1272,6 +1320,13 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
   const deleteHistoryCaption = (id) => set({ captionHistory: (draft.captionHistory || []).filter(h => h.id !== id) });
 
   const toggleCheck = (key) => update({ checklist: { ...(reel.checklist || emptyChecklist()), [key]: !((reel.checklist || {})[key]) } });
+  const toggleCheckAll = () => {
+    const cur = reel.checklist || emptyChecklist();
+    const allChecked = CHECKLIST_ITEMS.every(item => cur[item.key]);
+    const next = { ...cur };
+    CHECKLIST_ITEMS.forEach(item => { next[item.key] = !allChecked; });
+    update({ checklist: next });
+  };
   const setCheckMemo = (memo) => update({ checklist: { ...(reel.checklist || emptyChecklist()), memo } });
   const [checkSubmitError, setCheckSubmitError] = useState("");
   const submitCheck = () => {
@@ -1797,7 +1852,16 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   )}
                   <div className="mt-1.5 pt-1.5" style={{ borderTop: "1px dashed #EFEDE4" }}>
                     <p className="text-[10px] mb-0.5" style={{ color: "#A9A79C" }}>コメント・申し送り（次の工程担当者にも表示されます）</p>
-                    <TextArea rows={2} value={draft[COMMENT_KEY_FOR_ROLE[f.key]] || ""} onChange={e => set({ [COMMENT_KEY_FOR_ROLE[f.key]]: e.target.value })} disabled={!canEdit} placeholder="意図・注意点・引き継ぎ事項など" style={{ fontSize: 12 }} />
+                    <div className="flex items-start gap-1">
+                      <TextArea rows={2} value={draft[COMMENT_KEY_FOR_ROLE[f.key]] || ""} onChange={e => set({ [COMMENT_KEY_FOR_ROLE[f.key]]: e.target.value })} disabled={!canEdit} placeholder="意図・注意点・引き継ぎ事項など" style={{ fontSize: 12 }} />
+                      <VoiceInputButton
+                        disabled={!canEdit}
+                        onResult={(text) => {
+                          const cur = draft[COMMENT_KEY_FOR_ROLE[f.key]] || "";
+                          set({ [COMMENT_KEY_FOR_ROLE[f.key]]: cur ? `${cur} ${text}` : text });
+                        }}
+                      />
+                    </div>
                   </div>
                   {stageRevisions(f.key).length > 0 && (
                     <div className="mt-1.5 pt-1.5" style={{ borderTop: "1px dashed #EFEDE4" }}>
@@ -1919,6 +1983,10 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   {showCheckDetail && (
                   <>
                   <div className="space-y-1.5 mt-1.5">
+                    <label className="flex items-start gap-2 text-xs font-semibold cursor-pointer pb-1 mb-0.5" style={{ borderBottom: "1px dashed #EFEDE4", color: "#0E90B8" }}>
+                      <input type="checkbox" checked={CHECKLIST_ITEMS.every(item => checklist[item.key])} onChange={() => canEdit && toggleCheckAll()} disabled={!canEdit} className="mt-0.5" />
+                      <span>すべて選択</span>
+                    </label>
                     {CHECKLIST_ITEMS.map((item, i) => (
                       <label key={item.key} className="flex items-start gap-2 text-xs cursor-pointer">
                         <input type="checkbox" checked={!!checklist[item.key]} onChange={() => canEdit && toggleCheck(item.key)} disabled={!canEdit} className="mt-0.5" />
@@ -1945,7 +2013,16 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                     {transcriptCleanError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{transcriptCleanError}</p>}
                   </Field>
                   <Field label="コメント・申し送り">
-                    <TextArea rows={2} value={draft.checkComment || ""} onChange={e => set({ checkComment: e.target.value })} disabled={!canEdit} placeholder="意図・注意点・引き継ぎ事項など" />
+                    <div className="flex items-start gap-1">
+                      <TextArea rows={2} value={draft.checkComment || ""} onChange={e => set({ checkComment: e.target.value })} disabled={!canEdit} placeholder="意図・注意点・引き継ぎ事項など" />
+                      <VoiceInputButton
+                        disabled={!canEdit}
+                        onResult={(text) => {
+                          const cur = draft.checkComment || "";
+                          set({ checkComment: cur ? `${cur} ${text}` : text });
+                        }}
+                      />
+                    </div>
                   </Field>
                   {checkSubmitError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{checkSubmitError}</p>}
                   </>
@@ -1981,7 +2058,16 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   {showCaptionDetail && (
                   <div className="mt-1.5">
                   <Field label="指示文（キャプション生成時にAIに伝える指示）">
-                    <TextArea rows={2} value={draft.captionInstruction || ""} onChange={e => set({ captionInstruction: e.target.value })} placeholder="例：親しみやすい口調で、絵文字を多めに使ってください" disabled={!canEdit} />
+                    <div className="flex items-start gap-1">
+                      <TextArea rows={2} value={draft.captionInstruction || ""} onChange={e => set({ captionInstruction: e.target.value })} placeholder="例：親しみやすい口調で、絵文字を多めに使ってください" disabled={!canEdit} />
+                      <VoiceInputButton
+                        disabled={!canEdit}
+                        onResult={(text) => {
+                          const cur = draft.captionInstruction || "";
+                          set({ captionInstruction: cur ? `${cur} ${text}` : text });
+                        }}
+                      />
+                    </div>
                     {canEdit && pastCaptionInstructions && pastCaptionInstructions.length > 0 && (
                       <select
                         value=""
