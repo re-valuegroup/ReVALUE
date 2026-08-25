@@ -24,12 +24,16 @@ export async function POST(req) {
   "memo": "動画の概要・伝えたいこと・補足メモ",
   "workMode": "「1人で全部やる」「一括で」のような話であれば solo、「カットと テロップで担当を分ける」「分業で」のような話であれば team",
   "shooterName": "撮影を担当する人の名前（話に出てきた場合のみ）",
+  "shooterNameReading": "shooterNameのひらがな読み（漢字変換が誤っている可能性があるため、聞こえた音そのものをひらがなで）",
   "deadline": "初稿の締切日（YYYY-MM-DD形式。話に出てきた場合のみ）",
   "postPlanDate": "投稿予定日（YYYY-MM-DD形式。話に出てきた場合のみ）",
   "editorName": "編集を担当する人の名前。1人がすべての工程（カット・テロップ・アニメーション・演出・効果音BGM）を担当する場合はここに入れる",
-  "editorAssignments": { "cut": "カット担当者の名前", "telop": "テロップ担当者の名前", "animation": "アニメーション・演出担当者の名前", "sfx": "効果音・BGM担当者の名前" }
+  "editorNameReading": "editorNameのひらがな読み（漢字変換が誤っている可能性があるため、聞こえた音そのものをひらがなで）",
+  "editorAssignments": { "cut": "カット担当者の名前", "telop": "テロップ担当者の名前", "animation": "アニメーション・演出担当者の名前", "sfx": "効果音・BGM担当者の名前" },
+  "editorAssignmentsReading": { "cut": "カット担当者名のひらがな読み", "telop": "テロップ担当者名のひらがな読み", "animation": "アニメーション・演出担当者名のひらがな読み", "sfx": "効果音・BGM担当者名のひらがな読み" }
 }
 
+音声認識では人名の漢字変換が誤りやすいため、名前を抽出した場合は必ず対応する読み（ひらがな）も一緒に出力してください。editorAssignmentsReadingは、editorAssignmentsに含めたキーとだけ対応させてください。
 editorAssignmentsは、工程ごとに違う人が話に出てきた場合のみ、該当する工程のキーだけを含めてください（触れられていない工程のキーは含めないでください）。1人がすべて担当する場合はeditorNameのみを使い、editorAssignmentsは省略してください。`;
 
     const res = await fetch("https://api.anthropic.com/v1/messages", {
