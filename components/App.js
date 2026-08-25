@@ -389,11 +389,29 @@ function effectiveMonthlyFee(f) {
 
 function VoiceInputButton({ onResult, disabled, title }) {
   const [recording, setRecording] = useState(false);
+  const [cleaning, setCleaning] = useState(false);
   const recognitionRef = useRef(null);
   const voiceSupported = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
 
+  const cleanupAndApply = async (rawText) => {
+    setCleaning(true);
+    try {
+      const res = await fetch("/api/voice-clean", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: rawText }),
+      });
+      const data = await res.json();
+      onResult(!res.ok || data.error ? rawText : (data.text || rawText));
+    } catch (e) {
+      onResult(rawText);
+    } finally {
+      setCleaning(false);
+    }
+  };
+
   const toggle = () => {
-    if (disabled) return;
+    if (disabled || cleaning) return;
     if (recording) {
       recognitionRef.current?.stop();
       return;
@@ -412,7 +430,7 @@ function VoiceInputButton({ onResult, disabled, title }) {
     };
     recognition.onend = () => {
       setRecording(false);
-      if (finalText.trim()) onResult(finalText.trim());
+      if (finalText.trim()) cleanupAndApply(finalText.trim());
     };
     recognition.onerror = () => setRecording(false);
     recognitionRef.current = recognition;
@@ -425,12 +443,12 @@ function VoiceInputButton({ onResult, disabled, title }) {
     <button
       type="button"
       onClick={toggle}
-      disabled={disabled}
-      title={title || (recording ? "録音を停止" : "音声入力")}
+      disabled={disabled || cleaning}
+      title={title || (recording ? "録音を停止" : cleaning ? "添削中..." : "音声入力（自動で誤字脱字を添削します）")}
       className="shrink-0 flex items-center justify-center rounded-lg disabled:opacity-40"
       style={{ width: 28, height: 28, background: recording ? "#A32D2D" : "#F4F2EA", color: recording ? "#fff" : "#5F5E5A" }}
     >
-      <Mic size={13} className={recording ? "animate-pulse" : ""} />
+      {cleaning ? <Loader2 size={13} className="animate-spin" /> : <Mic size={13} className={recording ? "animate-pulse" : ""} />}
     </button>
   );
 }
@@ -1616,7 +1634,18 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
               )}
             </Field>
             <Field label="編集指示">
-              <TextArea rows={2} value={draft.editInstructions} onChange={e => set({ editInstructions: e.target.value })} disabled={!canEdit || reel.completedStages >= 2} />
+              <div className="flex items-start gap-1">
+                <TextArea rows={2} value={draft.editInstructions} onChange={e => set({ editInstructions: e.target.value })} disabled={!canEdit || reel.completedStages >= 2} />
+                {reel.completedStages < 2 && (
+                  <VoiceInputButton
+                    disabled={!canEdit}
+                    onResult={(text) => {
+                      const cur = draft.editInstructions || "";
+                      set({ editInstructions: cur ? `${cur} ${text}` : text });
+                    }}
+                  />
+                )}
+              </div>
               {canEdit && reel.completedStages < 2 && pastInstructions && pastInstructions.length > 0 && (
                 <select
                   value=""
@@ -1739,7 +1768,16 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                     )}
                     <div className="mt-1.5 pt-1.5" style={{ borderTop: "1px dashed #EFEDE4" }}>
                       <p className="text-[10px] mb-0.5" style={{ color: "#A9A79C" }}>コメント・申し送り</p>
-                      <TextArea rows={2} value={draft.cutComment || ""} onChange={e => set({ cutComment: e.target.value })} disabled={!canEdit} placeholder="意図・注意点・引き継ぎ事項など" style={{ fontSize: 12 }} />
+                      <div className="flex items-start gap-1">
+                        <TextArea rows={2} value={draft.cutComment || ""} onChange={e => set({ cutComment: e.target.value })} disabled={!canEdit} placeholder="意図・注意点・引き継ぎ事項など" style={{ fontSize: 12 }} />
+                        <VoiceInputButton
+                          disabled={!canEdit}
+                          onResult={(text) => {
+                            const cur = draft.cutComment || "";
+                            set({ cutComment: cur ? `${cur} ${text}` : text });
+                          }}
+                        />
+                      </div>
                     </div>
                   </div>
                 );
