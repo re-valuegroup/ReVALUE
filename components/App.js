@@ -2217,7 +2217,7 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
         <div className="overflow-y-auto -mx-1 px-1" style={{ minHeight: 0 }}>
         {!initialClientId && (
           <Field label="クライアント">
-            <select value={selectedClientId} onChange={e => { setSelectedClientId(e.target.value); setDupSource(""); setForm({ theme: "", editInstructions: "", script: "", driveUrl: "", assignedStaffId: "" }); }} className={inputCls} style={inputStyle}>
+            <select value={selectedClientId} onChange={e => { setSelectedClientId(e.target.value); setDupSource(""); setForm({ theme: "", editInstructions: "", script: "", driveUrl: "", assignedStaffId: "", workMode: "solo", requiredRoles: ["cutEditorId", "telopEditorId", "animationEditorId", "sfxEditorId"] }); }} className={inputCls} style={inputStyle}>
               <option value="">クライアントを選択してください</option>
               {clients.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
             </select>
