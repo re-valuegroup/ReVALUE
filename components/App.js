@@ -68,6 +68,40 @@ const editRolesForReel = (reel) => {
 const DONE_KEY_FOR_ROLE = { cutEditorId: "cutDone", telopEditorId: "telopDone", animationEditorId: "animationDone", sfxEditorId: "sfxDone" };
 const SUBMITTED_KEY_FOR_ROLE = { cutEditorId: "cutSubmitted", telopEditorId: "telopSubmitted", animationEditorId: "animationSubmitted", sfxEditorId: "sfxSubmitted" };
 const STAGE_KEY_FOR_ROLE = { cutEditorId: "cut", telopEditorId: "telop", animationEditorId: "animation", sfxEditorId: "sfx" };
+
+function findUserByName(name, list) {
+  if (!name) return null;
+  const trimmed = String(name).trim();
+  if (!trimmed) return null;
+  return list.find(u => u.name === trimmed) || list.find(u => u.name.includes(trimmed) || trimmed.includes(u.name)) || null;
+}
+// 音声入力の解析結果（AIが抽出した名前・日付など）を、実際のreelのフィールド（担当者IDなど）に変換する
+function mapVoiceFieldsToReelPatch(fields, { shooters, editors, requiredRoles }) {
+  const patch = {};
+  ["theme", "editInstructions", "script", "memo", "deadline", "postPlanDate"].forEach(k => {
+    if (fields[k]) patch[k] = fields[k];
+  });
+  if (fields.workMode === "solo" || fields.workMode === "team") patch.workMode = fields.workMode;
+  if (fields.shooterName) {
+    const u = findUserByName(fields.shooterName, shooters);
+    if (u) patch.assignedStaffId = u.id;
+  }
+  const roles = requiredRoles && requiredRoles.length > 0 ? requiredRoles : EDIT_ROLE_FIELDS.map(f => f.key);
+  if (fields.editorName) {
+    const u = findUserByName(fields.editorName, editors);
+    if (u) roles.forEach(k => { patch[k] = u.id; });
+  } else if (fields.editorAssignments) {
+    const roleMap = { cut: "cutEditorId", telop: "telopEditorId", animation: "animationEditorId", sfx: "sfxEditorId" };
+    Object.entries(fields.editorAssignments).forEach(([stage, name]) => {
+      const key = roleMap[stage];
+      if (key && roles.includes(key)) {
+        const u = findUserByName(name, editors);
+        if (u) patch[key] = u.id;
+      }
+    });
+  }
+  return patch;
+}
 const WORKLOAD_KEY_FOR_ROLE = { cutEditorId: "cutWorkload", telopEditorId: "telopWorkload", animationEditorId: "animationWorkload", sfxEditorId: "sfxWorkload" };
 const COMMENT_KEY_FOR_ROLE = { cutEditorId: "cutComment", telopEditorId: "telopComment", animationEditorId: "animationComment", sfxEditorId: "sfxComment" };
 // ①②③④を順番通りにしか完了チェックできないようにする（かつ担当者が割り当てられていないとチェックできない）
@@ -2054,6 +2088,7 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
   const shooters = users.filter(u => (u.roles || []).includes("shooter"));
   const [form, setForm] = useState({
     theme: "", editInstructions: "", script: "", driveUrl: "", assignedStaffId: "", deadline: "", postPlanDate: "", requiredRoles: ["cutEditorId", "telopEditorId", "animationEditorId", "sfxEditorId"], rush: false,
+    workMode: "solo",
     cutEditorId: "", telopEditorId: "", animationEditorId: "", sfxEditorId: "", cutDone: false, telopDone: false, animationDone: false, sfxDone: false,
     editorSecondaryId: "", captionAssigneeId: "", postAssigneeId: "",
   });
@@ -2118,8 +2153,9 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
       });
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || "振り分けに失敗しました");
-      setForm(f => ({ ...f, ...data.fields }));
-      setVoiceFilledFields(Object.keys(data.fields || {}));
+      const patch = mapVoiceFieldsToReelPatch(data.fields || {}, { shooters, editors, requiredRoles: form.requiredRoles });
+      setForm(f => ({ ...f, ...patch }));
+      setVoiceFilledFields(Object.keys(patch));
     } catch (e) {
       setVoiceError("振り分けに失敗しました：" + (e.message || "不明なエラー"));
     } finally {
@@ -2132,7 +2168,7 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
     if (!id) return;
     const src = existingReels.find(r => r.id === id);
     if (!src) return;
-    setForm({ theme: src.theme, editInstructions: src.editInstructions, script: src.script, driveUrl: "", assignedStaffId: src.assignedStaffId || "", deadline: "", requiredRoles: src.requiredRoles && src.requiredRoles.length > 0 ? src.requiredRoles : ["cutEditorId", "telopEditorId", "animationEditorId", "sfxEditorId"] });
+    setForm({ theme: src.theme, editInstructions: src.editInstructions, script: src.script, driveUrl: "", assignedStaffId: src.assignedStaffId || "", deadline: "", requiredRoles: src.requiredRoles && src.requiredRoles.length > 0 ? src.requiredRoles : ["cutEditorId", "telopEditorId", "animationEditorId", "sfxEditorId"], workMode: src.workMode || "solo" });
     setInstructionsSubmitted(false);
   };
 
