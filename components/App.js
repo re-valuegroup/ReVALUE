@@ -73,7 +73,15 @@ function findUserByName(name, list) {
   if (!name) return null;
   const trimmed = String(name).trim();
   if (!trimmed) return null;
-  return list.find(u => u.name === trimmed) || list.find(u => u.name.includes(trimmed) || trimmed.includes(u.name)) || null;
+  // 「さん」「くん」などの敬称や空白を取り除いた上で照合する
+  const normalize = (s) => s.replace(/\s+/g, "").replace(/(さん|くん|君|ちゃん|様|さま|先生)$/u, "");
+  const norm = normalize(trimmed);
+  if (!norm) return null;
+  return (
+    list.find(u => normalize(u.name) === norm) ||
+    list.find(u => normalize(u.name).includes(norm) || norm.includes(normalize(u.name))) ||
+    null
+  );
 }
 // 音声入力の解析結果（AIが抽出した名前・日付など）を、実際のreelのフィールド（担当者IDなど）に変換する
 function mapVoiceFieldsToReelPatch(fields, { shooters, editors, requiredRoles }) {
@@ -2101,6 +2109,7 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [voiceError, setVoiceError] = useState("");
   const [voiceFilledFields, setVoiceFilledFields] = useState(null);
+  const [voiceUnmatchedNames, setVoiceUnmatchedNames] = useState([]);
   const recognitionRef = useRef(null);
   const voiceSupported = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
 
@@ -2145,6 +2154,7 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
     if (!voiceTranscript.trim()) return;
     setVoiceLoading(true);
     setVoiceError("");
+    setVoiceUnmatchedNames([]);
     try {
       const res = await fetch("/api/voice-fill", {
         method: "POST",
@@ -2153,9 +2163,22 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
       });
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || "振り分けに失敗しました");
-      const patch = mapVoiceFieldsToReelPatch(data.fields || {}, { shooters, editors, requiredRoles: form.requiredRoles });
+      const fields = data.fields || {};
+      const patch = mapVoiceFieldsToReelPatch(fields, { shooters, editors, requiredRoles: form.requiredRoles });
       setForm(f => ({ ...f, ...patch }));
       setVoiceFilledFields(Object.keys(patch));
+      // AIが名前を読み取ったのに、登録スタッフと一致しなかったものを検出して知らせる
+      const unmatched = [];
+      if (fields.shooterName && !patch.assignedStaffId) unmatched.push(`撮影：${fields.shooterName}`);
+      if (fields.editorName && !EDIT_ROLE_FIELDS.some(f2 => patch[f2.key])) unmatched.push(`編集：${fields.editorName}`);
+      if (fields.editorAssignments) {
+        const roleMap = { cut: "cutEditorId", telop: "telopEditorId", animation: "animationEditorId", sfx: "sfxEditorId" };
+        Object.entries(fields.editorAssignments).forEach(([stage, name]) => {
+          const key = roleMap[stage];
+          if (name && key && !patch[key]) unmatched.push(`${EDIT_ROLE_FIELDS.find(f2 => f2.key === key)?.label || stage}：${name}`);
+        });
+      }
+      setVoiceUnmatchedNames(unmatched);
     } catch (e) {
       setVoiceError("振り分けに失敗しました：" + (e.message || "不明なエラー"));
     } finally {
@@ -2232,6 +2255,11 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
               {voiceError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{voiceError}</p>}
               {voiceFilledFields && (
                 <p className="text-[11px] mt-1" style={{ color: "#96185E" }}>反映しました（{voiceFilledFields.join("・")}）。内容を確認してください。</p>
+              )}
+              {voiceUnmatchedNames.length > 0 && (
+                <p className="text-[11px] mt-1" style={{ color: "#A32D2D" }}>
+                  次の名前は登録スタッフと一致せず、反映されませんでした：{voiceUnmatchedNames.join("・")}（プルダウンから手動で選択してください）
+                </p>
               )}
             </div>
 
