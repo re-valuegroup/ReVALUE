@@ -69,19 +69,69 @@ const DONE_KEY_FOR_ROLE = { cutEditorId: "cutDone", telopEditorId: "telopDone", 
 const SUBMITTED_KEY_FOR_ROLE = { cutEditorId: "cutSubmitted", telopEditorId: "telopSubmitted", animationEditorId: "animationSubmitted", sfxEditorId: "sfxSubmitted" };
 const STAGE_KEY_FOR_ROLE = { cutEditorId: "cut", telopEditorId: "telop", animationEditorId: "animation", sfxEditorId: "sfx" };
 
-function findUserByName(name, list) {
-  if (!name) return null;
-  const trimmed = String(name).trim();
-  if (!trimmed) return null;
-  // 「さん」「くん」などの敬称や空白を取り除いた上で照合する
-  const normalize = (s) => s.replace(/\s+/g, "").replace(/(さん|くん|君|ちゃん|様|さま|先生)$/u, "");
-  const norm = normalize(trimmed);
-  if (!norm) return null;
-  return (
-    list.find(u => normalize(u.name) === norm) ||
-    list.find(u => normalize(u.name).includes(norm) || norm.includes(normalize(u.name))) ||
-    null
-  );
+// カタカナをひらがなに変換（読み仮名の比較を統一するため）
+function toHiragana(s) {
+  return String(s || "").replace(/[\u30a1-\u30f6]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60));
+}
+const stripHonorific = (s) => String(s || "").replace(/\s+/g, "").replace(/(さん|くん|君|ちゃん|様|さま|先生)$/u, "");
+// 簡易レーベンシュタイン距離（読み仮名の表記ゆれ・聞き取り誤りを許容するため）
+function editDistance(a, b) {
+  const m = a.length, n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  const dp = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)]);
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+function similarity(a, b) {
+  if (!a || !b) return 0;
+  const maxLen = Math.max(a.length, b.length);
+  if (maxLen === 0) return 1;
+  return 1 - editDistance(a, b) / maxLen;
+}
+// 音声入力で読み取った名前（漢字が誤変換されている可能性がある）から、登録スタッフを探す。
+// 読み仮名（reading）が近いスタッフを優先し、見つからなければ漢字の名前の類似度で判定する。
+function findUserByName(name, list, reading) {
+  const kanjiRaw = stripHonorificSafe(name);
+  const kanji = kanjiRaw ? toHiragana(kanjiRaw) : "";
+  const readingNorm = reading ? toHiragana(stripHonorific(reading)) : "";
+  if (!kanji && !readingNorm) return null;
+
+  // 1. 完全一致（漢字 or よみがな）
+  const exact = list.find(u => (u.name && stripHonorific(u.name) === kanjiRaw) || (u.reading && toHiragana(stripHonorific(u.reading)) === readingNorm && readingNorm));
+  if (exact) return exact;
+
+  // 2. 部分一致（漢字の名前に含まれる/含む）
+  if (kanjiRaw) {
+    const partial = list.find(u => u.name && (stripHonorific(u.name).includes(kanjiRaw) || kanjiRaw.includes(stripHonorific(u.name))));
+    if (partial) return partial;
+  }
+
+  // 3. よみがなの類似度（誤変換・聞き取りミスを許容）
+  let best = null, bestScore = 0;
+  list.forEach(u => {
+    if (u.reading) {
+      const uReading = toHiragana(stripHonorific(u.reading));
+      const score = readingNorm ? similarity(readingNorm, uReading) : 0;
+      if (score > bestScore) { bestScore = score; best = u; }
+    }
+    // 読み仮名が未登録のスタッフも、名前をひらがな変換前提で緩く比較（完全な代替にはならないが保険として）
+    if (u.name) {
+      const uNameNorm = toHiragana(stripHonorific(u.name));
+      const score2 = kanji ? similarity(kanji, uNameNorm) : 0;
+      if (score2 > bestScore) { bestScore = score2; best = u; }
+    }
+  });
+  return bestScore >= 0.6 ? best : null;
+}
+function stripHonorificSafe(name) {
+  if (!name) return "";
+  return stripHonorific(String(name).trim());
 }
 // 音声入力の解析結果（AIが抽出した名前・日付など）を、実際のreelのフィールド（担当者IDなど）に変換する
 function mapVoiceFieldsToReelPatch(fields, { shooters, editors, requiredRoles }) {
@@ -91,19 +141,20 @@ function mapVoiceFieldsToReelPatch(fields, { shooters, editors, requiredRoles })
   });
   if (fields.workMode === "solo" || fields.workMode === "team") patch.workMode = fields.workMode;
   if (fields.shooterName) {
-    const u = findUserByName(fields.shooterName, shooters);
+    const u = findUserByName(fields.shooterName, shooters, fields.shooterNameReading);
     if (u) patch.assignedStaffId = u.id;
   }
   const roles = requiredRoles && requiredRoles.length > 0 ? requiredRoles : EDIT_ROLE_FIELDS.map(f => f.key);
   if (fields.editorName) {
-    const u = findUserByName(fields.editorName, editors);
+    const u = findUserByName(fields.editorName, editors, fields.editorNameReading);
     if (u) roles.forEach(k => { patch[k] = u.id; });
   } else if (fields.editorAssignments) {
     const roleMap = { cut: "cutEditorId", telop: "telopEditorId", animation: "animationEditorId", sfx: "sfxEditorId" };
     Object.entries(fields.editorAssignments).forEach(([stage, name]) => {
       const key = roleMap[stage];
       if (key && roles.includes(key)) {
-        const u = findUserByName(name, editors);
+        const reading = fields.editorAssignmentsReading && fields.editorAssignmentsReading[stage];
+        const u = findUserByName(name, editors, reading);
         if (u) patch[key] = u.id;
       }
     });
@@ -143,7 +194,7 @@ const roleLabels = (roles) => (roles && roles.length ? roles.map(roleLabel).join
 
 function emptyUser() {
   return {
-    id: uid("user"), name: "", roles: ["shooter"],
+    id: uid("user"), name: "", reading: "", roles: ["shooter"],
     email: "", phone: "", joinDate: "", contractType: "業務委託",
     skills: "", availability: "", bankAccount: "",
     workStatus: "稼働中", notes: "", withdrawn: false, createdAt: new Date().toISOString(),
@@ -4678,6 +4729,7 @@ function StaffForm({ user, onSave, onCancel }) {
 
       <div className="grid md:grid-cols-2 gap-x-6 mt-3">
         <Field label="名前（必須）"><TextInput value={u.name} onChange={e => set("name", e.target.value)} placeholder="山田 太郎" /></Field>
+        <Field label="よみがな（音声入力での担当者認識に使用）"><TextInput value={u.reading || ""} onChange={e => set("reading", e.target.value)} placeholder="やまだ たろう" /></Field>
         <Field label="メールアドレス"><TextInput type="email" value={u.email} onChange={e => set("email", e.target.value)} placeholder="taro@example.com" /></Field>
         <p className="text-[11px] -mt-2 mb-3 md:col-span-2" style={{ color: "#A9A79C" }}>本人がこのメールアドレスでサインアップすると、このプロフィールに自動的に紐付きます。</p>
         <Field label="電話番号"><TextInput value={u.phone} onChange={e => set("phone", e.target.value)} placeholder="090-0000-0000" /></Field>
