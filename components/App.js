@@ -453,6 +453,76 @@ function VoiceInputButton({ onResult, disabled, title }) {
   );
 }
 
+// 日付・時間（＋任意で種別・担当者・メモ）を音声から読み取り、構造化されたフィールドとして返すボタン
+// full=true の場合は type / editTask / staffName / note まで含めて解析する
+function VoiceScheduleButton({ onResult, disabled, full, label }) {
+  const [recording, setRecording] = useState(false);
+  const [parsing, setParsing] = useState(false);
+  const recognitionRef = useRef(null);
+  const voiceSupported = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
+
+  const parseAndApply = async (rawText) => {
+    setParsing(true);
+    try {
+      const res = await fetch("/api/voice-schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript: rawText, full: !!full }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) return;
+      onResult(data.fields || {});
+    } catch (e) {
+      // 失敗時は何もしない（手動入力にフォールバック）
+    } finally {
+      setParsing(false);
+    }
+  };
+
+  const toggle = () => {
+    if (disabled || parsing) return;
+    if (recording) {
+      recognitionRef.current?.stop();
+      return;
+    }
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+    const recognition = new SpeechRecognition();
+    recognition.lang = "ja-JP";
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    let finalText = "";
+    recognition.onresult = (event) => {
+      let text = "";
+      for (let i = 0; i < event.results.length; i++) text += event.results[i][0].transcript;
+      finalText = text;
+    };
+    recognition.onend = () => {
+      setRecording(false);
+      if (finalText.trim()) parseAndApply(finalText.trim());
+    };
+    recognition.onerror = () => setRecording(false);
+    recognitionRef.current = recognition;
+    recognition.start();
+    setRecording(true);
+  };
+
+  if (!voiceSupported) return null;
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      disabled={disabled || parsing}
+      title={recording ? "録音を停止" : parsing ? "解析中..." : "音声で日時を入力"}
+      className="shrink-0 flex items-center gap-1 rounded-lg disabled:opacity-40 text-[11px] font-semibold px-2"
+      style={{ height: 28, background: recording ? "#A32D2D" : "#F4F2EA", color: recording ? "#fff" : "#5F5E5A" }}
+    >
+      {parsing ? <Loader2 size={13} className="animate-spin" /> : <Mic size={13} className={recording ? "animate-pulse" : ""} />}
+      {label && <span>{label}</span>}
+    </button>
+  );
+}
+
 function Badge({ children, tone = "gray" }) {
   const tones = {
     gray: { bg: "#EDEBE4", fg: "#5F5E5A" },
@@ -1752,6 +1822,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                         <TextInput type="time" step={600} value={sched.startTime} onChange={e => setRoleScheduleField("solo", { startTime: e.target.value })} style={{ width: 95, fontSize: 11 }} />
                         <span className="text-[10px]" style={{ color: "#8B897F" }}>〜</span>
                         <TextInput type="time" step={600} value={sched.endTime} onChange={e => setRoleScheduleField("solo", { endTime: e.target.value })} style={{ width: 95, fontSize: 11 }} />
+                        <VoiceScheduleButton onResult={(fields) => setRoleScheduleField("solo", fields)} />
                         <button
                           type="button"
                           disabled={!sched.startDate}
@@ -1874,6 +1945,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                       <TextInput type="time" step={600} value={sched.startTime} onChange={e => setRoleScheduleField(f.key, { startTime: e.target.value })} style={{ width: 95, fontSize: 11 }} />
                       <span className="text-[10px]" style={{ color: "#8B897F" }}>〜</span>
                       <TextInput type="time" step={600} value={sched.endTime} onChange={e => setRoleScheduleField(f.key, { endTime: e.target.value })} style={{ width: 95, fontSize: 11 }} />
+                      <VoiceScheduleButton onResult={(fields) => setRoleScheduleField(f.key, fields)} />
                       <button
                         type="button"
                         disabled={!sched.startDate}
@@ -2984,7 +3056,33 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients, on
       </div>
 
       {showForm && (
-        <div className="rounded-xl p-3 mb-3 grid md:grid-cols-6 gap-2 items-end" style={{ background: "#FAF8F3" }}>
+        <div className="rounded-xl p-3 mb-3" style={{ background: "#FAF8F3" }}>
+          <div className="flex items-center gap-2 mb-2">
+            <VoiceScheduleButton
+              full
+              label="音声で入力する"
+              onResult={(fields) => {
+                setForm(f => {
+                  const next = { ...f };
+                  if (fields.type === "shoot" || fields.type === "edit") next.type = fields.type;
+                  if (fields.editTask && EDIT_TASK_OPTIONS.some(t => t.key === fields.editTask)) next.editTask = fields.editTask;
+                  if (fields.startDate) next.startDate = fields.startDate;
+                  if (fields.endDate) next.endDate = fields.endDate;
+                  if (fields.startTime) next.startTime = fields.startTime;
+                  if (fields.endTime) next.endTime = fields.endTime;
+                  if (fields.note) next.note = fields.note;
+                  if (fields.staffName) {
+                    const pool = next.type === "shoot" ? users.filter(u => (u.roles || []).includes("shooter")) : users.filter(u => (u.roles || []).includes("editor"));
+                    const matched = findUserByName(fields.staffName, pool, fields.staffNameReading);
+                    if (matched) next.staffIds = [...new Set([...(next.staffIds || []), matched.id])];
+                  }
+                  return next;
+                });
+              }}
+            />
+            <p className="text-[11px]" style={{ color: "#8B897F" }}>種別・担当者・日時・工程などをまとめて話すと自動入力されます。内容を確認してから「登録する」を押してください。</p>
+          </div>
+          <div className="grid md:grid-cols-6 gap-2 items-end">
           <Field label="種別">
             <select value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value, reelIds: [] }))} className={inputCls} style={inputStyle}>
               {EVENT_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
@@ -3038,6 +3136,7 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients, on
             <TextInput value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="クライアント名など" />
           </Field>
           <button onClick={addEvent} disabled={!(form.staffIds || []).length || !form.startDate} className="text-xs font-semibold px-3 py-2 rounded-lg text-white disabled:opacity-40 h-fit" style={{ background: "#16171B" }}>登録する</button>
+          </div>
         </div>
       )}
 
@@ -3838,6 +3937,7 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
                       <TextInput type="time" step={600} value={choice.startTime} onChange={e => setSoloPickup(r.id, { startTime: e.target.value })} title="開始時刻（任意）" style={{ width: 95, fontSize: 11, padding: "5px 8px" }} />
                       <span className="text-xs shrink-0" style={{ color: "#8B897F" }}>〜</span>
                       <TextInput type="time" step={600} value={choice.endTime} onChange={e => setSoloPickup(r.id, { endTime: e.target.value })} title="終了時刻（任意）" style={{ width: 95, fontSize: 11, padding: "5px 8px" }} />
+                      <VoiceScheduleButton onResult={(fields) => setSoloPickup(r.id, fields)} />
                       <button onClick={() => confirmSoloPickup(r.id)} disabled={!choice.editorId} className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>
                         一括編集①②③④を担当する
                       </button>
@@ -3883,6 +3983,7 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
                         <TextInput type="time" step={600} value={choice.startTime} onChange={e => setRolePickup(section.roleKey, r.id, { startTime: e.target.value })} title="開始時刻（10分刻み・任意）" style={{ width: 95, fontSize: 11, padding: "5px 8px" }} />
                         <span className="text-xs shrink-0" style={{ color: "#8B897F" }}>〜</span>
                         <TextInput type="time" step={600} value={choice.endTime} onChange={e => setRolePickup(section.roleKey, r.id, { endTime: e.target.value })} title="終了時刻（10分刻み・任意）" style={{ width: 95, fontSize: 11, padding: "5px 8px" }} />
+                        <VoiceScheduleButton onResult={(fields) => setRolePickup(section.roleKey, r.id, fields)} />
                         <button onClick={() => confirmRolePickup(section.roleKey, r.id)} disabled={!choice.editorId} className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>
                           {section.btnLabel}
                         </button>
@@ -3928,6 +4029,7 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
                             <TextInput type="time" step={600} value={getCheckerChoice(r.id).startTime} onChange={e => setCheckerChoiceField(r.id, { startTime: e.target.value })} title="開始時刻（任意）" style={{ width: 95, fontSize: 11, padding: "5px 8px" }} />
                             <span className="text-xs shrink-0" style={{ color: "#8B897F" }}>〜</span>
                             <TextInput type="time" step={600} value={getCheckerChoice(r.id).endTime} onChange={e => setCheckerChoiceField(r.id, { endTime: e.target.value })} title="終了時刻（任意）" style={{ width: 95, fontSize: 11, padding: "5px 8px" }} />
+                            <VoiceScheduleButton onResult={(fields) => setCheckerChoiceField(r.id, fields)} />
                             <button onClick={() => confirmIndividualChecker(r.id)} disabled={!getCheckerChoice(r.id).editorId} className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>
                               ⑤最終チェックを担当する
                             </button>
