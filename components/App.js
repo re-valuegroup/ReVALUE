@@ -316,7 +316,7 @@ const emptyReel = (clientId, ym) => ({
   id: uid("reel"), clientId, yearMonth: ym,
   assignedStaffId: "",
   requiredRoles: ["cutEditorId", "telopEditorId", "animationEditorId", "sfxEditorId"], rush: false,
-  workMode: "team", revisionHistory: [], revisionMemo: "", revisionVideoUrl: "",
+  workMode: "team", revisionHistory: [], revisionMemo: "", revisionVideoUrl: "", resubmitComment: "",
   cutEditorId: "", telopEditorId: "", animationEditorId: "", sfxEditorId: "", editorSecondaryId: "",
   cutDone: false, telopDone: false, animationDone: false, sfxDone: false,
   cutSubmitted: false, telopSubmitted: false, animationSubmitted: false, sfxSubmitted: false,
@@ -1395,9 +1395,10 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
     });
   };
   const pendingRevision = (reel.revisionHistory || []).length > 0 && reel.revisionHistory[reel.revisionHistory.length - 1].status === "requested" ? reel.revisionHistory[reel.revisionHistory.length - 1] : null;
-  const markRevisionDone = (revId) => {
+  const markRevisionDone = (revId, comment) => {
     update({
-      revisionHistory: (reel.revisionHistory || []).map(rv => rv.id === revId ? { ...rv, status: "resubmitted", completedAt: rv.completedAt || new Date().toISOString(), resubmittedAt: new Date().toISOString() } : rv),
+      revisionHistory: (reel.revisionHistory || []).map(rv => rv.id === revId ? { ...rv, status: "resubmitted", completedAt: rv.completedAt || new Date().toISOString(), resubmittedAt: new Date().toISOString(), resubmitComment: comment || "" } : rv),
+      resubmitComment: "",
     });
   };
   const checklist = reel.checklist || emptyChecklist();
@@ -1949,22 +1950,44 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                       {pendingRevision.videoUrl && <a href={pendingRevision.videoUrl} target="_blank" rel="noreferrer" className="text-xs underline" style={{ color: "#0E90B8" }}>修正説明動画を見る</a>}
                     </div>
                     {canEdit && (
-                      <div className="flex justify-end">
-                        <button
-                          type="button"
-                          onClick={() => markRevisionDone(pendingRevision.id)}
-                          className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0"
-                          style={{ background: "#0E90B8" }}
-                        >
-                          修正完了したので再提出する
-                        </button>
-                      </div>
+                      <>
+                        <Field label="コメント・申し送り（修正内容の報告など・任意）">
+                          <div className="flex items-start gap-1">
+                            <TextArea rows={2} value={draft.resubmitComment || ""} onChange={e => set({ resubmitComment: e.target.value })} placeholder="例：ご指摘の箇所を修正しました" />
+                            <VoiceInputButton
+                              onResult={(text) => {
+                                const cur = draft.resubmitComment || "";
+                                set({ resubmitComment: cur ? `${cur} ${text}` : text });
+                              }}
+                            />
+                          </div>
+                        </Field>
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => markRevisionDone(pendingRevision.id, draft.resubmitComment)}
+                            className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0"
+                            style={{ background: "#0E90B8" }}
+                          >
+                            修正完了したので再提出する
+                          </button>
+                        </div>
+                      </>
                     )}
                   </div>
                 ) : (
                   <>
                     <Field label="修正依頼メモ（修正依頼を出す場合のみ入力）">
-                      <TextArea rows={2} value={draft.revisionMemo || ""} onChange={e => set({ revisionMemo: e.target.value })} disabled={!canEdit} placeholder="例：00:15〜00:20のカットを変更してください" />
+                      <div className="flex items-start gap-1">
+                        <TextArea rows={2} value={draft.revisionMemo || ""} onChange={e => set({ revisionMemo: e.target.value })} disabled={!canEdit} placeholder="例：00:15〜00:20のカットを変更してください" />
+                        <VoiceInputButton
+                          disabled={!canEdit}
+                          onResult={(text) => {
+                            const cur = draft.revisionMemo || "";
+                            set({ revisionMemo: cur ? `${cur} ${text}` : text });
+                          }}
+                        />
+                      </div>
                     </Field>
                     <Field label="修正説明動画URL（YouTube限定公開・任意）">
                       <TextInput value={draft.revisionVideoUrl || ""} onChange={e => set({ revisionVideoUrl: e.target.value })} disabled={!canEdit} placeholder="https://youtube.com/..." />
@@ -2004,6 +2027,12 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                           </div>
                           <p className="text-xs mt-1 whitespace-pre-wrap" style={{ color: "#5F5E5A" }}>{rv.memo}</p>
                           {rv.videoUrl && <a href={rv.videoUrl} target="_blank" rel="noreferrer" className="text-xs underline" style={{ color: "#0E90B8" }}>修正説明動画を見る</a>}
+                          {rv.resubmitComment && (
+                            <div className="mt-1.5 pt-1.5" style={{ borderTop: "1px dashed #F0C0C0" }}>
+                              <p className="text-[10px] font-semibold" style={{ color: "#0E6B57" }}>担当者からのコメント</p>
+                              <p className="text-xs whitespace-pre-wrap" style={{ color: "#5F5E5A" }}>{rv.resubmitComment}</p>
+                            </div>
+                          )}
                           <p className="text-[10px] mt-1" style={{ color: "#8B897F" }}>依頼日時：{timeAgo(rv.createdAt)}{rv.resubmittedAt ? ` ・ 再提出：${timeAgo(rv.resubmittedAt)}` : ""}</p>
                           {canEdit && rv.status !== "resubmitted" && (
                             <button onClick={() => markRevisionDone(rv.id)} className="text-[11px] font-semibold mt-1" style={{ color: "#0E90B8" }}>修正完了したので再提出する</button>
