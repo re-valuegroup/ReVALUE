@@ -52,8 +52,8 @@ const ROLES = [
 const SELECTABLE_ROLES = ROLES.filter(r => r.key !== "admin");
 const EDIT_WORKLOAD_OPTIONS = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4];
 const WORK_MODE_OPTIONS = [
-  { key: "team", label: "分業（工程ごとに担当者・チェック）", desc: "工程ごとに担当者を割り当て、各工程完了後にチェック（合格／修正依頼）を行います。" },
   { key: "solo", label: "一括編集（全工程を1人が担当）", desc: "1人の担当者がすべての工程を行い、全工程完了後に初稿チェックを1回だけ行います。" },
+  { key: "team", label: "分業（工程ごとに担当者・チェック）", desc: "工程ごとに担当者を割り当て、各工程完了後にチェック（合格／修正依頼）を行います。" },
 ];
 const EDIT_ROLE_FIELDS = [
   { key: "cutEditorId", label: "①カット" },
@@ -1434,11 +1434,13 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                 })}
               </div>
             </Field>
-            <Field label="Google Drive 保存先URL">
-              <div className="flex gap-1">
-                <TextInput value={draft.driveUrl} onChange={e => set({ driveUrl: e.target.value })} placeholder="https://drive.google.com/..." disabled={!canEdit} />
-                {draft.driveUrl && <a href={draft.driveUrl} target="_blank" rel="noreferrer" className="shrink-0 flex items-center justify-center w-9 rounded-lg border" style={{ borderColor: "#DEDACD" }}><Link2 size={14} /></a>}
-              </div>
+            <Field label="保存先URL">
+              <TextInput value={draft.driveUrl} onChange={e => set({ driveUrl: e.target.value })} placeholder="https://drive.google.com/..." disabled={!canEdit} />
+              {draft.driveUrl && (
+                <a href={draft.driveUrl} target="_blank" rel="noreferrer" className="mt-1.5 flex items-center justify-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border" style={{ borderColor: "#DEDACD", color: "#5F5E5A" }}>
+                  <Link2 size={13} /> 保存先URLを開く
+                </a>
+              )}
             </Field>
             <Field label="初稿日（編集期限）"><TextInput type="date" value={draft.deadline || ""} onChange={e => set({ deadline: e.target.value })} disabled={!canEdit} /></Field>
             <Field label="投稿予定日"><TextInput type="date" value={draft.postPlanDate || ""} onChange={e => set({ postPlanDate: e.target.value })} disabled={!canEdit} /></Field>
@@ -2279,7 +2281,7 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
               </div>
             </Field>
             <Field label="台本（任意）"><TextArea rows={2} value={form.script} onChange={e => setForm(f => ({ ...f, script: e.target.value }))} /></Field>
-            <Field label="Google Drive 保存先URL（任意）"><TextInput value={form.driveUrl} onChange={e => setForm(f => ({ ...f, driveUrl: e.target.value }))} placeholder="https://drive.google.com/..." /></Field>
+            <Field label="保存先URL（任意）"><TextInput value={form.driveUrl} onChange={e => setForm(f => ({ ...f, driveUrl: e.target.value }))} placeholder="https://drive.google.com/..." /></Field>
             <Field label="担当撮影者（任意）">
               <select value={form.assignedStaffId} onChange={e => setForm(f => ({ ...f, assignedStaffId: e.target.value }))} className={inputCls} style={inputStyle}>
                 <option value="">未割り当て</option>
@@ -2295,7 +2297,44 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
 
             <div className="rounded-xl p-3 my-2" style={{ background: "#FAF8F3" }}>
               <p className="text-xs font-bold mb-2 flex items-center gap-1.5"><Scissors size={13} color="#0E90B8" /> 編集進行管理（この時点で担当者・完了チェックも設定できます）</p>
-              {[
+              {form.workMode === "solo" ? (() => {
+                const soloRoles = editRolesForReel(form);
+                const soloEditorId = soloRoles.map(f => form[f.key]).find(Boolean) || "";
+                const allDone = soloRoles.length > 0 && soloRoles.every(f => form[DONE_KEY_FOR_ROLE[f.key]]);
+                return (
+                  <div className="rounded-lg p-2 mb-1.5 flex items-center gap-2 flex-wrap" style={{ background: "#fff", border: allDone ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
+                    <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>①②③④ 一括編集担当</span>
+                    <select
+                      value={soloEditorId}
+                      onChange={e => {
+                        const patch = {};
+                        soloRoles.forEach(f => { patch[f.key] = e.target.value; });
+                        setF(patch);
+                      }}
+                      className={inputCls}
+                      style={{ ...inputStyle, flex: 1, minWidth: 120 }}
+                    >
+                      <option value="">未割り当て</option>
+                      {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    </select>
+                    <button
+                      type="button"
+                      disabled={!soloEditorId}
+                      title={!soloEditorId ? "担当者を割り当ててください" : ""}
+                      onClick={() => {
+                        const nextDone = !allDone;
+                        const patch = {};
+                        soloRoles.forEach(f => { patch[DONE_KEY_FOR_ROLE[f.key]] = nextDone; });
+                        setF(patch);
+                      }}
+                      className="text-xs px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0 font-semibold disabled:opacity-40"
+                      style={{ background: allDone ? "#0E90B8" : "#D6248A" }}
+                    >
+                      {allDone ? <CircleCheck size={14} /> : <Circle size={14} />} {allDone ? "初稿提出済み" : !soloEditorId ? "担当者未割当" : "未完了（クリックで初稿提出）"}
+                    </button>
+                  </div>
+                );
+              })() : [
                 { key: "cutEditorId", doneKey: "cutDone", label: "①カット担当" },
                 { key: "telopEditorId", doneKey: "telopDone", label: "②テロップ担当" },
                 { key: "animationEditorId", doneKey: "animationDone", label: "③アニメーション・演出担当" },
