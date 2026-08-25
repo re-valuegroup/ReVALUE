@@ -7,7 +7,10 @@ export async function POST(req) {
       return Response.json({ error: "音声の内容が空です" }, { status: 400 });
     }
 
+    const today = new Date().toISOString().slice(0, 10);
     const prompt = `あなたはSNS運用代行会社の動画制作管理システムのアシスタントです。以下は、スタッフが音声入力で話した内容を文字起こししたものです。この内容を読み取り、動画の管理項目にふさわしい形で振り分けてください。
+
+今日の日付: ${today}（相対的な日付表現「明日」「来週の金曜」などはこの日付を基準に西暦の YYYY-MM-DD 形式に変換してください）
 
 音声の文字起こし:
 「${transcript}」
@@ -18,8 +21,16 @@ export async function POST(req) {
   "theme": "動画のテーマ・企画内容（一言で）",
   "editInstructions": "編集者への指示内容（テロップの入れ方、カットの仕方、演出の要望など）",
   "script": "台本・話す内容・構成の流れ",
-  "memo": "動画の概要・伝えたいこと・補足メモ"
-}`;
+  "memo": "動画の概要・伝えたいこと・補足メモ",
+  "workMode": "「1人で全部やる」「一括で」のような話であれば solo、「カットと テロップで担当を分ける」「分業で」のような話であれば team",
+  "shooterName": "撮影を担当する人の名前（話に出てきた場合のみ）",
+  "deadline": "初稿の締切日（YYYY-MM-DD形式。話に出てきた場合のみ）",
+  "postPlanDate": "投稿予定日（YYYY-MM-DD形式。話に出てきた場合のみ）",
+  "editorName": "編集を担当する人の名前。1人がすべての工程（カット・テロップ・アニメーション・演出・効果音BGM）を担当する場合はここに入れる",
+  "editorAssignments": { "cut": "カット担当者の名前", "telop": "テロップ担当者の名前", "animation": "アニメーション・演出担当者の名前", "sfx": "効果音・BGM担当者の名前" }
+}
+
+editorAssignmentsは、工程ごとに違う人が話に出てきた場合のみ、該当する工程のキーだけを含めてください（触れられていない工程のキーは含めないでください）。1人がすべて担当する場合はeditorNameのみを使い、editorAssignmentsは省略してください。`;
 
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
