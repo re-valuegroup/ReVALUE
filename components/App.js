@@ -187,12 +187,18 @@ const emptyClient = () => ({
   youtube: { url: "", id: "" },
   hashtag1: "", hashtag2: "", hashtag3: "",
   business: "", appeal: "", castInfo: "", plan: "", monthlyCount: 4, shortTermCount: "",
+  contractStatus: "active",
   contractEndDate: "", postDays: [],
   setupTasks: { profile: "pending", highlight: "pending", line: "pending", lp: "pending" },
   notes: "", createdAt: new Date().toISOString(),
 });
 
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+const CONTRACT_STATUS_OPTIONS = [
+  { key: "active", label: "契約中", tone: "teal" },
+  { key: "paused", label: "停止中", tone: "amber" },
+  { key: "cancelled", label: "解約中", tone: "red" },
+];
 const SETUP_TASK_FIELDS = [
   { key: "profile", label: "インスタプロフィール作成" },
   { key: "highlight", label: "ハイライト作成" },
@@ -537,6 +543,16 @@ function ClientForm({ client, finance, isAdmin, onSave, onCancel, onDirtyChange 
         <Field label="住所"><TextInput value={c.address} onChange={e => set("address", e.target.value)} placeholder="沖縄県那覇市..." /></Field>
         <Field label="Webサイト"><TextInput value={c.website} onChange={e => set("website", e.target.value)} placeholder="https://example.com" /></Field>
         <Field label="運用プラン"><TextInput value={c.plan} onChange={e => set("plan", e.target.value)} placeholder="スタンダードプラン" /></Field>
+        <Field label="契約状況">
+          <div className="flex items-center gap-2 flex-wrap">
+            {CONTRACT_STATUS_OPTIONS.map(o => (
+              <label key={o.key} className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border cursor-pointer" style={{ borderColor: (c.contractStatus || "active") === o.key ? "#D6248A" : "#DEDACD", background: (c.contractStatus || "active") === o.key ? "#FBE4F1" : "#fff", color: (c.contractStatus || "active") === o.key ? "#D6248A" : "#5F5E5A" }}>
+                <input type="radio" checked={(c.contractStatus || "active") === o.key} onChange={() => set("contractStatus", o.key)} />
+                {o.label}
+              </label>
+            ))}
+          </div>
+        </Field>
         <Field label="契約終了予定日"><TextInput type="date" value={c.contractEndDate} onChange={e => set("contractEndDate", e.target.value)} /></Field>
         <Field label="事業内容"><TextArea rows={2} value={c.business} onChange={e => set("business", e.target.value)} placeholder="美容室経営 / ヘアサロン" /></Field>
         <Field label="アピールポイント"><TextArea rows={2} value={c.appeal} onChange={e => set("appeal", e.target.value)} placeholder="低価格、地域No.1の技術力など" /></Field>
@@ -637,6 +653,7 @@ function ClientForm({ client, finance, isAdmin, onSave, onCancel, onDirtyChange 
 function ClientsPage({ clients, setClients, finance, setFinance, currentUser, onOpenClient, onDirtyChange }) {
   const [editing, setEditing] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [statusFilter, setStatusFilter] = useState("");
   const canEdit = true;
   const isAdmin = (currentUser.roles || []).includes("admin");
 
@@ -660,23 +677,31 @@ function ClientsPage({ clients, setClients, finance, setFinance, currentUser, on
 
   if (editing) return <ClientForm client={editing} finance={finance.find(x => x.clientId === editing.id)} isAdmin={isAdmin} onSave={save} onCancel={() => setEditing(null)} onDirtyChange={onDirtyChange} />;
 
+  const filteredClients = clients.filter(c => !statusFilter || (c.contractStatus || "active") === statusFilter);
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <h2 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700 }}>クライアント管理</h2>
-        {canEdit && (
-          <button onClick={() => setEditing(emptyClient())} className="flex items-center gap-1 text-sm font-semibold px-4 py-2 rounded-lg text-white" style={{ background: "#D6248A" }}>
-            <Plus size={15} /> クライアント追加
-          </button>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 160 }}>
+            <option value="">契約状況（全て）</option>
+            {CONTRACT_STATUS_OPTIONS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+          </select>
+          {canEdit && (
+            <button onClick={() => setEditing(emptyClient())} className="flex items-center gap-1 text-sm font-semibold px-4 py-2 rounded-lg text-white" style={{ background: "#D6248A" }}>
+              <Plus size={15} /> クライアント追加
+            </button>
+          )}
+        </div>
       </div>
-      {clients.length === 0 && (
+      {filteredClients.length === 0 && (
         <div className="text-center py-16 rounded-2xl border border-dashed" style={{ borderColor: "#DEDACD", color: "#8B897F" }}>
-          まだクライアントが登録されていません。
+          該当するクライアントがいません。
         </div>
       )}
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
-        {clients.map(c => (
+        {filteredClients.map(c => (
           <div key={c.id} className="rounded-2xl p-4 border cursor-pointer hover:shadow-sm transition" style={{ borderColor: "#DEDACD", background: "#fff" }} onClick={() => onOpenClient(c.id)}>
             <div className="flex items-start justify-between">
               <div>
@@ -700,7 +725,8 @@ function ClientsPage({ clients, setClients, finance, setFinance, currentUser, on
               )}
             </div>
             <p className="text-xs mt-2 line-clamp-2" style={{ color: "#5F5E5A" }}>{c.business}</p>
-            <div className="flex items-center gap-1.5 mt-3">
+            <div className="flex items-center gap-1.5 mt-3 flex-wrap">
+              <Badge tone={CONTRACT_STATUS_OPTIONS.find(o => o.key === (c.contractStatus || "active"))?.tone}>{CONTRACT_STATUS_OPTIONS.find(o => o.key === (c.contractStatus || "active"))?.label}</Badge>
               <Badge tone="coral">{c.plan || "プラン未設定"}</Badge>
               <Badge tone="gray">月{c.monthlyCount || 0}本</Badge>
             </div>
@@ -759,6 +785,10 @@ function ClientDetail({ client, clients, setClients, finance, setFinance, reels,
           <div>
             <p className="text-xs font-semibold mb-1" style={{ color: "#8B897F" }}>登場人物</p>
             <p className="text-sm">{client.castInfo || "―"}</p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold mb-1" style={{ color: "#8B897F" }}>契約状況</p>
+            <Badge tone={CONTRACT_STATUS_OPTIONS.find(o => o.key === (client.contractStatus || "active"))?.tone}>{CONTRACT_STATUS_OPTIONS.find(o => o.key === (client.contractStatus || "active"))?.label}</Badge>
           </div>
           <div>
             <p className="text-xs font-semibold mb-1" style={{ color: "#8B897F" }}>プラン / 月間本数</p>
@@ -1234,7 +1264,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             {showClient && <p className="text-[11px] font-semibold truncate" style={{ color: "#D6248A" }}>{client?.companyName || "クライアント不明"} ・ {monthLabel(reel.yearMonth)}</p>}
-            <p className="font-bold truncate">{number ? `No.${number} ・ ` : ""}{reel.rush && "🔥 "}{reel.theme || "（テーマ未設定）"}</p>
+            <p className="font-bold break-words">{number ? `No.${number} ・ ` : ""}{reel.rush && "🔥 "}{reel.theme || "（テーマ未設定）"}</p>
             <p className="text-xs mt-0.5 truncate" style={{ color: "#8B897F" }}>{reel.editInstructions || "編集指示未入力"}</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -2337,11 +2367,13 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
   const [stageFilter, setStageFilter] = useState("");
   const [rushOnly, setRushOnly] = useState(false);
   const [sortOrder, setSortOrder] = useState("");
+  const [contractStatusFilter, setContractStatusFilter] = useState("active");
   const [showAllMonths, setShowAllMonths] = useState(!focusClientId);
   const canEdit = true;
   const isAdmin = (currentUser.roles || []).includes("admin");
   const client = clients.find(c => c.id === clientId);
   const allClientsMode = clientId === "__all__";
+  const pickableClients = clients.filter(c => !contractStatusFilter || (c.contractStatus || "active") === contractStatusFilter);
 
   const numberMap = useMemo(() => {
     const sorted = [...reels].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
@@ -2356,6 +2388,8 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
         setShowAllMonths(true);
         setStageFilter("");
         setStaffFilter("");
+        setContractStatusFilter("");
+        setRushOnly(false);
       } else {
         setShowAllMonths(false);
       }
@@ -2365,6 +2399,11 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
   const [showNew, setShowNew] = useState(false);
   const list = reels
     .filter(r => allClientsMode || r.clientId === clientId)
+    .filter(r => {
+      if (!contractStatusFilter) return true;
+      const c = clients.find(cl => cl.id === r.clientId);
+      return c ? (c.contractStatus || "active") === contractStatusFilter : true;
+    })
     .filter(r => showAllMonths || r.yearMonth === ym)
     .filter(r => !staffFilter || r.assignedStaffId === staffFilter)
     .filter(r => !stageFilter || STAGE_FILTER_OPTIONS.find(o => o.key === stageFilter)?.test(r))
@@ -2408,9 +2447,13 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
+        <select value={contractStatusFilter} onChange={e => setContractStatusFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 150 }}>
+          <option value="">契約状況（全て）</option>
+          {CONTRACT_STATUS_OPTIONS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+        </select>
         <select value={clientId} onChange={e => setClientId(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 220 }}>
           <option value="__all__">すべてのクライアントを表示</option>
-          {clients.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
+          {pickableClients.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
         </select>
         <select
           value={showAllMonths ? "__all__" : ym}
@@ -2740,7 +2783,7 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients, on
                       <button key={r.id} onClick={() => goToReelStage(r)} className="w-full text-left flex items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-black/5" style={{ background: "#fff" }}>
                         <span className="rounded-full shrink-0" style={{ width: 10, height: 10, background: postDeadlineColor(r) }} />
                         <div className="min-w-0 flex-1">
-                          <p className="text-xs font-semibold truncate">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
+                          <p className="text-xs font-semibold break-words">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
                           <p className="text-[11px]" style={{ color: "#8B897F" }}>{postDeadlineStageLabel(r)}</p>
                         </div>
                       </button>
@@ -2923,7 +2966,11 @@ function CalendarWidget({ events, setEvents, users, reels, setReels, clients, on
   );
 }
 
-function DashboardPage({ clients, reels, setReels, users, currentUser, finance, boardPosts, setBoardPosts, calendarEvents, setCalendarEvents, onGoReels, onGoReelDetail, onGoTaskSection }) {
+function DashboardPage({ clients: allClients, reels: allReels, setReels, users, currentUser, finance, boardPosts, setBoardPosts, calendarEvents, setCalendarEvents, onGoReels, onGoReelDetail, onGoTaskSection }) {
+  // 契約中でないクライアント（停止中・解約中）は、ダッシュボードの表示から除外する
+  const clients = allClients.filter(c => (c.contractStatus || "active") === "active");
+  const activeClientIds = new Set(clients.map(c => c.id));
+  const reels = allReels.filter(r => activeClientIds.has(r.clientId));
   const ym = currentYearMonth();
   const totalReels = reels.length;
   const posted = reels.filter(r => r.completedStages >= 5).length;
@@ -3325,7 +3372,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                 const statusTone = pending ? { background: "#FCEBEB", color: "#A32D2D" } : allDone ? { background: "#F1E9FB", color: "#6B3FA0" } : { background: "#F0EEE7", color: "#8B897F" };
                 return (
                   <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="text-left rounded-lg p-2 hover:opacity-90" style={{ background: "#EDEBE4" }}>
-                    <p className="font-semibold text-xs truncate">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
+                    <p className="font-semibold text-xs break-words">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
                     <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                       <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: "#16171B", color: "#fff" }}>一括編集①②③④：{person ? person.name : "未割当"}</span>
                       <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={statusTone}>{statusLabel}</span>
@@ -3350,7 +3397,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
               return (
                 <div key={r.id} className="rounded-lg p-2" style={{ background: "#FCEEDB" }}>
                   <button onClick={() => onGoReelDetail(r.clientId, r.id)} className="w-full text-left mb-1">
-                    <p className="font-semibold text-xs truncate">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
+                    <p className="font-semibold text-xs break-words">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
                   </button>
                   <div className="flex items-center gap-1 flex-wrap">
                     {rows.map((t, i) => {
@@ -3414,7 +3461,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                 const assignedNames = (rv.assignedEditorIds || []).map(id => users.find(u => u.id === id)?.name).filter(Boolean);
                 return (
                   <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="text-left text-xs p-2.5 rounded-xl hover:bg-black/5" style={{ background: "#FCEBEB" }}>
-                    <p className="font-semibold truncate">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
+                    <p className="font-semibold break-words">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
                     <p style={{ color: "#A32D2D" }}>第{rv.revisionNumber}回修正 ・ 依頼者：{requestedByUser?.name || "不明"}</p>
                     <p style={{ color: "#8B897F" }}>依頼先：{assignedNames.length > 0 ? assignedNames.join("・") : "未割当"}</p>
                     <p className="mt-1 line-clamp-2" style={{ color: "#5F5E5A" }}>{rv.memo}</p>
@@ -3441,7 +3488,7 @@ function DashboardPage({ clients, reels, setReels, users, currentUser, finance, 
                 const checker = users.find(u => u.id === r.editorSecondaryId);
                 return (
                   <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="text-left text-xs p-2.5 rounded-xl hover:bg-black/5" style={{ background: "#D6F0EA" }}>
-                    <p className="font-semibold truncate">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
+                    <p className="font-semibold break-words">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
                     <p style={{ color: "#0E6B57" }}>第{rv.revisionNumber}回修正 ・ 再提出済み</p>
                     <p style={{ color: "#8B897F" }}>依頼者：{requestedByUser?.name || "不明"} ・ チェック担当：{checker?.name || "未割当"}</p>
                   </button>
@@ -5026,7 +5073,7 @@ function AppInner() {
                           navigateTo("tasks");
                           setTaskSection("");
                           setTaskNavOpen(true);
-                          setNavOpen(false);
+                          // ここでは閉じない：サブメニュー（全体表示〜投稿完了一覧）から選んでもらう
                         }
                       }}
                       className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition"
