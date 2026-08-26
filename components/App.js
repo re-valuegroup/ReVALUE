@@ -1212,6 +1212,9 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
   const [showCheckDetail, setShowCheckDetail] = useState(false);
   const [showCaptionDetail, setShowCaptionDetail] = useState(false);
   const [showPostDetail, setShowPostDetail] = useState(false);
+  const [showShootDetail, setShowShootDetail] = useState(false);
+  const [editingRevisionId, setEditingRevisionId] = useState(null);
+  const [revisionEditDraft, setRevisionEditDraft] = useState({ memo: "", videoUrl: "" });
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [voiceError, setVoiceError] = useState("");
@@ -1488,6 +1491,23 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
       resubmitComment: "",
     });
   };
+  // ⑤最終チェックの修正履歴（修正依頼部分）の編集・削除
+  const startEditRevision = (rv) => {
+    setEditingRevisionId(rv.id);
+    setRevisionEditDraft({ memo: rv.memo || "", videoUrl: rv.videoUrl || "" });
+  };
+  const cancelEditRevision = () => setEditingRevisionId(null);
+  const saveEditRevision = (revId) => {
+    update({
+      revisionHistory: (reel.revisionHistory || []).map(rv => rv.id === revId ? { ...rv, memo: revisionEditDraft.memo, videoUrl: revisionEditDraft.videoUrl } : rv),
+    });
+    setEditingRevisionId(null);
+  };
+  const deleteRevision = (revId) => {
+    if (typeof window !== "undefined" && !window.confirm("この修正依頼の履歴を削除しますか？削除すると元に戻せません。")) return;
+    update({ revisionHistory: (reel.revisionHistory || []).filter(rv => rv.id !== revId) });
+    if (editingRevisionId === revId) setEditingRevisionId(null);
+  };
   const checklist = reel.checklist || emptyChecklist();
   const checkedCount = CHECKLIST_ITEMS.filter(i => checklist[i.key]).length;
 
@@ -1701,7 +1721,26 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
           </div>
 
           <div className="rounded-xl p-3 my-2" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
-            <p className="text-xs font-bold mb-2 flex items-center gap-1.5"><Camera size={13} color="#854F0B" /> 撮影・編集指示</p>
+            <button
+              type="button"
+              onClick={() => setShowShootDetail(s => !s)}
+              className="w-full flex items-center justify-between mb-2"
+            >
+              <p className="text-xs font-bold flex items-center gap-1.5"><Camera size={13} color="#854F0B" /> 撮影・編集指示</p>
+              {reel.completedStages >= 2 && (
+                <span className="flex items-center gap-1.5">
+                  <Badge tone="teal">編集指示完了</Badge>
+                  <ChevronRight size={13} color="#854F0B" style={{ transform: (showShootDetail || reel.completedStages < 2) ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+                </span>
+              )}
+            </button>
+            {reel.completedStages >= 2 && !showShootDetail && (
+              <p className="text-xs mb-1" style={{ color: "#8B897F" }}>
+                担当撮影者：{shooters.find(u => u.id === reel.assignedStaffId)?.name || "未割当"} ／ 編集指示：{(reel.editInstructions || "").length > 50 ? reel.editInstructions.slice(0, 50) + "…" : (reel.editInstructions || "未入力")}
+              </p>
+            )}
+            {(showShootDetail || reel.completedStages < 2) && (
+            <>
             <Field label="担当撮影者">
               <select value={reel.assignedStaffId || ""} onChange={e => update({ assignedStaffId: e.target.value })} disabled={!canEdit} className={inputCls} style={inputStyle}>
                 <option value="">未割り当て</option>
@@ -1777,6 +1816,8 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
               <input type="checkbox" checked={!!reel.rush} onChange={e => canEdit && update({ rush: e.target.checked })} disabled={!canEdit} />
               🔥 即納案件（納期が短い）
             </label>
+            </>
+            )}
           </div>
 
           <div className="rounded-xl p-3 my-2" style={{ background: "#FAF8F3" }}>
@@ -2116,8 +2157,25 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                             <span className="text-xs font-semibold" style={{ color: "#A32D2D" }}>第{rv.revisionNumber}回修正</span>
                             <Badge tone={rv.status === "resubmitted" ? "teal" : "red"}>{rv.status === "resubmitted" ? "再提出済み" : "対応待ち"}</Badge>
                           </div>
-                          <p className="text-xs mt-1 whitespace-pre-wrap" style={{ color: "#5F5E5A" }}>{rv.memo}</p>
-                          {rv.videoUrl && <a href={rv.videoUrl} target="_blank" rel="noreferrer" className="text-xs underline" style={{ color: "#0E90B8" }}>修正説明動画を見る</a>}
+                          {editingRevisionId === rv.id ? (
+                            <div className="mt-1.5">
+                              <Field label="修正依頼メモ">
+                                <TextArea rows={2} value={revisionEditDraft.memo} onChange={e => setRevisionEditDraft(d => ({ ...d, memo: e.target.value }))} />
+                              </Field>
+                              <Field label="修正説明動画URL（任意）">
+                                <TextInput value={revisionEditDraft.videoUrl} onChange={e => setRevisionEditDraft(d => ({ ...d, videoUrl: e.target.value }))} placeholder="https://youtube.com/..." />
+                              </Field>
+                              <div className="flex justify-end gap-2">
+                                <button onClick={cancelEditRevision} className="text-[11px] font-semibold px-2 py-1 rounded-lg border" style={{ borderColor: "#DEDACD", color: "#5F5E5A" }}>キャンセル</button>
+                                <button onClick={() => saveEditRevision(rv.id)} disabled={!revisionEditDraft.memo?.trim()} className="text-[11px] font-semibold px-2 py-1 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>保存する</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <p className="text-xs mt-1 whitespace-pre-wrap" style={{ color: "#5F5E5A" }}>{rv.memo}</p>
+                              {rv.videoUrl && <a href={rv.videoUrl} target="_blank" rel="noreferrer" className="text-xs underline" style={{ color: "#0E90B8" }}>修正説明動画を見る</a>}
+                            </>
+                          )}
                           <p className="text-[10px] mt-1" style={{ color: "#8B897F" }}>依頼者：{personName(rv.requestedBy) || "不明"} ・ 再提出：{assigneeNoteMulti(rv.assignedEditorIds)}</p>
                           {rv.resubmitComment && (
                             <div className="mt-1.5 pt-1.5" style={{ borderTop: "1px dashed #F0C0C0" }}>
@@ -2126,8 +2184,14 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                             </div>
                           )}
                           <p className="text-[10px] mt-1" style={{ color: "#8B897F" }}>依頼日時：{timeAgo(rv.createdAt)}{rv.resubmittedAt ? ` ・ 再提出：${timeAgo(rv.resubmittedAt)}` : ""}</p>
-                          {canEdit && rv.status !== "resubmitted" && (
-                            <button onClick={() => markRevisionDone(rv.id)} className="text-[11px] font-semibold mt-1" style={{ color: "#0E90B8" }}>修正完了したので再提出する</button>
+                          {canEdit && editingRevisionId !== rv.id && (
+                            <div className="flex items-center gap-2 flex-wrap mt-1">
+                              {rv.status !== "resubmitted" && (
+                                <button onClick={() => markRevisionDone(rv.id)} className="text-[11px] font-semibold" style={{ color: "#0E90B8" }}>修正完了したので再提出する</button>
+                              )}
+                              <button onClick={() => startEditRevision(rv)} className="text-[11px] font-semibold" style={{ color: "#5F5E5A" }}>編集</button>
+                              <button onClick={() => deleteRevision(rv.id)} className="text-[11px] font-semibold" style={{ color: "#A32D2D" }}>削除</button>
+                            </div>
                           )}
                         </div>
                       ))}
@@ -3883,7 +3947,8 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
               {revisionReels.map(r => {
                 const c = clients.find(x => x.id === r.clientId);
                 const rv = r.revisionHistory[r.revisionHistory.length - 1];
-                const requestedByUser = users.find(u => u.id === rv.requestedBy);
+                // 依頼者は、実際にボタンを押した人ではなく、そのチェック工程の担当者（チェック担当者）の名前を表示する
+                const requestedByUser = users.find(u => u.id === r.editorSecondaryId);
                 const assignedNames = (rv.assignedEditorIds || []).map(id => users.find(u => u.id === id)?.name).filter(Boolean);
                 return (
                   <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="text-left text-xs p-2.5 rounded-xl hover:bg-black/5" style={{ background: "#FCEBEB" }}>
@@ -3910,13 +3975,13 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
               {recheckReels.map(r => {
                 const c = clients.find(x => x.id === r.clientId);
                 const rv = r.revisionHistory[r.revisionHistory.length - 1];
-                const requestedByUser = users.find(u => u.id === rv.requestedBy);
+                // 依頼者は、そのチェック工程の担当者（チェック担当者）の名前を表示する
                 const checker = users.find(u => u.id === r.editorSecondaryId);
                 return (
                   <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="text-left text-xs p-2.5 rounded-xl hover:bg-black/5" style={{ background: "#D6F0EA" }}>
                     <p className="font-semibold break-words">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
                     <p style={{ color: "#0E6B57" }}>第{rv.revisionNumber}回修正 ・ 再提出済み</p>
-                    <p style={{ color: "#8B897F" }}>依頼者：{requestedByUser?.name || "不明"} ・ チェック担当：{checker?.name || "未割当"}</p>
+                    <p style={{ color: "#8B897F" }}>依頼者（チェック担当）：{checker?.name || "未割当"}</p>
                   </button>
                 );
               })}
