@@ -1214,7 +1214,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
   const [showPostDetail, setShowPostDetail] = useState(false);
   const [showShootDetail, setShowShootDetail] = useState(false);
   const [editingRevisionId, setEditingRevisionId] = useState(null);
-  const [revisionEditDraft, setRevisionEditDraft] = useState({ memo: "", videoUrl: "" });
+  const [revisionEditDraft, setRevisionEditDraft] = useState({ memo: "", videoUrl: "", resubmitComment: "" });
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [voiceError, setVoiceError] = useState("");
@@ -1494,12 +1494,12 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
   // ⑤最終チェックの修正履歴（修正依頼部分）の編集・削除
   const startEditRevision = (rv) => {
     setEditingRevisionId(rv.id);
-    setRevisionEditDraft({ memo: rv.memo || "", videoUrl: rv.videoUrl || "" });
+    setRevisionEditDraft({ memo: rv.memo || "", videoUrl: rv.videoUrl || "", resubmitComment: rv.resubmitComment || "" });
   };
   const cancelEditRevision = () => setEditingRevisionId(null);
   const saveEditRevision = (revId) => {
     update({
-      revisionHistory: (reel.revisionHistory || []).map(rv => rv.id === revId ? { ...rv, memo: revisionEditDraft.memo, videoUrl: revisionEditDraft.videoUrl } : rv),
+      revisionHistory: (reel.revisionHistory || []).map(rv => rv.id === revId ? { ...rv, memo: revisionEditDraft.memo, videoUrl: revisionEditDraft.videoUrl, resubmitComment: revisionEditDraft.resubmitComment } : rv),
     });
     setEditingRevisionId(null);
   };
@@ -2165,6 +2165,9 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                               <Field label="修正説明動画URL（任意）">
                                 <TextInput value={revisionEditDraft.videoUrl} onChange={e => setRevisionEditDraft(d => ({ ...d, videoUrl: e.target.value }))} placeholder="https://youtube.com/..." />
                               </Field>
+                              <Field label="担当者からのコメント（空欄にすると削除されます）">
+                                <TextArea rows={2} value={revisionEditDraft.resubmitComment} onChange={e => setRevisionEditDraft(d => ({ ...d, resubmitComment: e.target.value }))} placeholder="例：ご指摘の箇所を修正しました" />
+                              </Field>
                               <div className="flex justify-end gap-2">
                                 <button onClick={cancelEditRevision} className="text-[11px] font-semibold px-2 py-1 rounded-lg border" style={{ borderColor: "#DEDACD", color: "#5F5E5A" }}>キャンセル</button>
                                 <button onClick={() => saveEditRevision(rv.id)} disabled={!revisionEditDraft.memo?.trim()} className="text-[11px] font-semibold px-2 py-1 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>保存する</button>
@@ -2176,8 +2179,8 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                               {rv.videoUrl && <a href={rv.videoUrl} target="_blank" rel="noreferrer" className="text-xs underline" style={{ color: "#0E90B8" }}>修正説明動画を見る</a>}
                             </>
                           )}
-                          <p className="text-[10px] mt-1" style={{ color: "#8B897F" }}>依頼者：{personName(rv.requestedBy) || "不明"} ・ 再提出：{assigneeNoteMulti(rv.assignedEditorIds)}</p>
-                          {rv.resubmitComment && (
+                          <p className="text-[10px] mt-1" style={{ color: "#8B897F" }}>依頼者：{personName(reel.editorSecondaryId) || "不明（⑤最終チェック担当が未設定です）"} ・ 再提出：{assigneeNoteMulti(rv.assignedEditorIds)}</p>
+                          {editingRevisionId !== rv.id && rv.resubmitComment && (
                             <div className="mt-1.5 pt-1.5" style={{ borderTop: "1px dashed #F0C0C0" }}>
                               <p className="text-[10px] font-semibold" style={{ color: "#0E6B57" }}>担当者からのコメント</p>
                               <p className="text-xs whitespace-pre-wrap" style={{ color: "#5F5E5A" }}>{rv.resubmitComment}</p>
