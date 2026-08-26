@@ -1283,6 +1283,23 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
   const shooters = users.filter(u => (u.roles || []).includes("shooter"));
   const isAdmin = currentUser?.roles?.includes("admin");
 
+  // 「誰が記入すべきか」を表示するためのヘルパー（担当者の名前を「〇〇さんが記入する」の形で返す）
+  const personName = (id) => users.find(u => u.id === id)?.name || "";
+  const assigneeNote = (id) => personName(id) ? `${personName(id)}さんが記入する` : "担当者未設定";
+  const assigneeNoteMulti = (ids) => {
+    const names = [...new Set((ids || []).map(personName).filter(Boolean))];
+    return names.length ? `${names.join("・")}さんが記入する` : "担当者未設定";
+  };
+  // 工程①②③④の「修正依頼」は、次の工程の担当者（＝前工程の成果物を受け取ってチェックする人）が行う想定。
+  // 最後の工程（多くの場合④効果音・BGM）の場合は、⑤最終チェック担当が行う想定。
+  const stageReviewerId = (roleKey) => {
+    const ordered = editRolesForReel(reel).map(f => f.key);
+    const idx = ordered.indexOf(roleKey);
+    if (idx === -1) return "";
+    const nextKey = ordered[idx + 1];
+    return nextKey ? reel[nextKey] : reel.editorSecondaryId;
+  };
+
   const syncEditCalendar = (updated) => {
     syncReelEditCalendar(setCalendarEvents, updated.id, updated.editStartDate, updated.editEndDate);
   };
@@ -1839,7 +1856,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                       </div>
                     )}
                     <div className="mt-1.5 pt-1.5" style={{ borderTop: "1px dashed #EFEDE4" }}>
-                      <p className="text-[10px] mb-0.5" style={{ color: "#A9A79C" }}>コメント・申し送り</p>
+                      <p className="text-[10px] mb-0.5" style={{ color: "#A9A79C" }}>コメント・申し送り <span style={{ color: "#0E90B8", fontWeight: 600 }}>（{assigneeNote(soloEditorId)}）</span></p>
                       <div className="flex items-start gap-1">
                         <TextArea rows={2} value={draft.cutComment || ""} onChange={e => set({ cutComment: e.target.value })} disabled={!canEdit} placeholder="意図・注意点・引き継ぎ事項など" style={{ fontSize: 12 }} />
                         <VoiceInputButton
@@ -1896,6 +1913,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                         <p className="text-xs font-semibold" style={{ color: "#A32D2D" }}>修正依頼中（第{pendingRev.revisionNumber}回）</p>
                         <p className="text-xs mt-1 whitespace-pre-wrap" style={{ color: "#5F5E5A" }}>{pendingRev.memo}</p>
                         {pendingRev.videoUrl && <a href={pendingRev.videoUrl} target="_blank" rel="noreferrer" className="text-xs underline" style={{ color: "#0E90B8" }}>修正説明動画を見る</a>}
+                        <p className="text-[10px] mt-1 font-semibold" style={{ color: "#A32D2D" }}>再提出：{assigneeNoteMulti(pendingRev.assignedEditorIds)}</p>
                       </div>
                       {canEdit && (
                         <div className="flex justify-end">
@@ -1907,7 +1925,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                     </div>
                   ) : submitted ? (
                     <div className="mt-1.5">
-                      <Field label="修正依頼メモ（修正依頼を出す場合のみ入力）">
+                      <Field label={`修正依頼メモ（${assigneeNote(stageReviewerId(f.key))}・修正依頼を出す場合のみ入力）`}>
                         <TextArea rows={2} value={revDraft.memo} onChange={e => setStageRevisionDraftField(f.key, { memo: e.target.value })} disabled={!canEdit} placeholder="例：00:15〜00:20のカットを変更してください" />
                       </Field>
                       <Field label="修正説明動画URL（YouTube限定公開・任意）">
@@ -1962,7 +1980,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                     </div>
                   )}
                   <div className="mt-1.5 pt-1.5" style={{ borderTop: "1px dashed #EFEDE4" }}>
-                    <p className="text-[10px] mb-0.5" style={{ color: "#A9A79C" }}>コメント・申し送り（次の工程担当者にも表示されます）</p>
+                    <p className="text-[10px] mb-0.5" style={{ color: "#A9A79C" }}>コメント・申し送り（次の工程担当者にも表示されます） <span style={{ color: "#0E90B8", fontWeight: 600 }}>（{assigneeNote(reel[f.key])}）</span></p>
                     <div className="flex items-start gap-1">
                       <TextArea rows={2} value={draft[COMMENT_KEY_FOR_ROLE[f.key]] || ""} onChange={e => set({ [COMMENT_KEY_FOR_ROLE[f.key]]: e.target.value })} disabled={!canEdit} placeholder="意図・注意点・引き継ぎ事項など" style={{ fontSize: 12 }} />
                       <VoiceInputButton
@@ -1985,6 +2003,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                               <Badge tone={rv.status === "resubmitted" ? "teal" : "red"}>{rv.status === "resubmitted" ? "再提出済み" : "対応待ち"}</Badge>
                             </div>
                             <p className="text-[11px] mt-0.5" style={{ color: "#5F5E5A" }}>{rv.memo}</p>
+                            <p className="text-[10px] mt-0.5" style={{ color: "#8B897F" }}>依頼者：{personName(rv.requestedBy) || "不明"} ・ 再提出：{assigneeNoteMulti(rv.assignedEditorIds)}</p>
                           </div>
                         ))}
                       </div>
@@ -2023,7 +2042,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                     </div>
                     {canEdit && (
                       <>
-                        <Field label="コメント・申し送り（修正内容の報告など・任意）">
+                        <Field label={`コメント・申し送り（${assigneeNoteMulti(pendingRevision.assignedEditorIds)}・修正内容の報告など・任意）`}>
                           <div className="flex items-start gap-1">
                             <TextArea rows={2} value={draft.resubmitComment || ""} onChange={e => set({ resubmitComment: e.target.value })} placeholder="例：ご指摘の箇所を修正しました" />
                             <VoiceInputButton
@@ -2049,7 +2068,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   </div>
                 ) : (
                   <>
-                    <Field label="修正依頼メモ（修正依頼を出す場合のみ入力）">
+                    <Field label={`修正依頼メモ（${assigneeNote(reel.editorSecondaryId)}・修正依頼を出す場合のみ入力）`}>
                       <div className="flex items-start gap-1">
                         <TextArea rows={2} value={draft.revisionMemo || ""} onChange={e => set({ revisionMemo: e.target.value })} disabled={!canEdit} placeholder="例：00:15〜00:20のカットを変更してください" />
                         <VoiceInputButton
@@ -2099,6 +2118,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                           </div>
                           <p className="text-xs mt-1 whitespace-pre-wrap" style={{ color: "#5F5E5A" }}>{rv.memo}</p>
                           {rv.videoUrl && <a href={rv.videoUrl} target="_blank" rel="noreferrer" className="text-xs underline" style={{ color: "#0E90B8" }}>修正説明動画を見る</a>}
+                          <p className="text-[10px] mt-1" style={{ color: "#8B897F" }}>依頼者：{personName(rv.requestedBy) || "不明"} ・ 再提出：{assigneeNoteMulti(rv.assignedEditorIds)}</p>
                           {rv.resubmitComment && (
                             <div className="mt-1.5 pt-1.5" style={{ borderTop: "1px dashed #F0C0C0" }}>
                               <p className="text-[10px] font-semibold" style={{ color: "#0E6B57" }}>担当者からのコメント</p>
@@ -2151,7 +2171,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                     {transcriptFileError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{transcriptFileError}</p>}
                     {transcriptCleanError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{transcriptCleanError}</p>}
                   </Field>
-                  <Field label="コメント・申し送り">
+                  <Field label={`コメント・申し送り（${assigneeNote(reel.editorSecondaryId)}）`}>
                     <div className="flex items-start gap-1">
                       <TextArea rows={2} value={draft.checkComment || ""} onChange={e => set({ checkComment: e.target.value })} disabled={!canEdit} placeholder="意図・注意点・引き継ぎ事項など" />
                       <VoiceInputButton
