@@ -70,6 +70,14 @@ const SUBMITTED_KEY_FOR_ROLE = { cutEditorId: "cutSubmitted", telopEditorId: "te
 const STAGE_KEY_FOR_ROLE = { cutEditorId: "cut", telopEditorId: "telop", animationEditorId: "animation", sfxEditorId: "sfx" };
 // 工程ごとに「その工程の合否をチェックする担当者」を個別に指定できるようにするためのキー
 const CHECKER_KEY_FOR_ROLE = { cutEditorId: "cutCheckerId", telopEditorId: "telopCheckerId", animationEditorId: "animationCheckerId", sfxEditorId: "sfxCheckerId" };
+// STAGE_KEY_FOR_ROLE（roleKey→"cut"等）の逆引き（"cut"等→roleKey）
+const ROLE_KEY_FOR_STAGE = Object.fromEntries(Object.entries(STAGE_KEY_FOR_ROLE).map(([roleKey, stage]) => [stage, roleKey]));
+// 修正履歴1件（rv）から、その依頼を出した「依頼者」の担当者IDを求める
+// rv.stage がある（①②③④の工程別修正）場合はその工程のチェック担当、無い（⑤最終チェックの修正）場合は⑤最終チェック担当を返す
+const revisionRequesterId = (reel, rv) => {
+  if (rv?.stage && ROLE_KEY_FOR_STAGE[rv.stage]) return reel[CHECKER_KEY_FOR_ROLE[ROLE_KEY_FOR_STAGE[rv.stage]]] || "";
+  return reel?.editorSecondaryId || "";
+};
 
 // カタカナをひらがなに変換（読み仮名の比較を統一するため）
 function toHiragana(s) {
@@ -2604,6 +2612,7 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
     workMode: "solo",
     cutEditorId: "", telopEditorId: "", animationEditorId: "", sfxEditorId: "", cutDone: false, telopDone: false, animationDone: false, sfxDone: false,
     editorSecondaryId: "", captionAssigneeId: "", postAssigneeId: "",
+    registeredDate: new Date().toISOString().slice(0, 10),
   });
   const setF = (patch) => setForm(f => ({ ...f, ...patch }));
   const [dupSource, setDupSource] = useState("");
@@ -2696,7 +2705,7 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
     if (!id) return;
     const src = existingReels.find(r => r.id === id);
     if (!src) return;
-    setForm({ theme: src.theme, editInstructions: src.editInstructions, script: src.script, driveUrl: "", assignedStaffId: src.assignedStaffId || "", deadline: "", requiredRoles: src.requiredRoles && src.requiredRoles.length > 0 ? src.requiredRoles : ["cutEditorId", "telopEditorId", "animationEditorId", "sfxEditorId"], workMode: src.workMode || "solo" });
+    setForm(prev => ({ ...prev, theme: src.theme, editInstructions: src.editInstructions, script: src.script, driveUrl: "", assignedStaffId: src.assignedStaffId || "", deadline: "", requiredRoles: src.requiredRoles && src.requiredRoles.length > 0 ? src.requiredRoles : ["cutEditorId", "telopEditorId", "animationEditorId", "sfxEditorId"], workMode: src.workMode || "solo" }));
     setInstructionsSubmitted(false);
   };
 
@@ -2708,7 +2717,13 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
     if (stage >= 2 && editRolesForReel(form).every(f => form[DONE_KEY_FOR_ROLE[f.key]])) {
       stage = 3;
     }
-    onCreate({ ...base, ...form, completedStages: stage });
+    // 「登録日」で指定された日付を登録日時として保存する（未指定の場合は本日）
+    const { registeredDate, ...formRest } = form;
+    const now = new Date();
+    const createdAt = registeredDate
+      ? new Date(`${registeredDate}T${now.toTimeString().slice(0, 8)}`).toISOString()
+      : now.toISOString();
+    onCreate({ ...base, ...formRest, createdAt, completedStages: stage });
   };
 
   return (
@@ -2722,7 +2737,7 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
         <div className="overflow-y-auto -mx-1 px-1" style={{ minHeight: 0 }}>
         {!initialClientId && (
           <Field label="クライアント">
-            <select value={selectedClientId} onChange={e => { setSelectedClientId(e.target.value); setDupSource(""); setForm({ theme: "", editInstructions: "", script: "", driveUrl: "", assignedStaffId: "", workMode: "solo", requiredRoles: ["cutEditorId", "telopEditorId", "animationEditorId", "sfxEditorId"] }); }} className={inputCls} style={inputStyle}>
+            <select value={selectedClientId} onChange={e => { setSelectedClientId(e.target.value); setDupSource(""); setForm(prev => ({ ...prev, theme: "", editInstructions: "", script: "", driveUrl: "", assignedStaffId: "", workMode: "solo", requiredRoles: ["cutEditorId", "telopEditorId", "animationEditorId", "sfxEditorId"] })); }} className={inputCls} style={inputStyle}>
               <option value="">クライアントを選択してください</option>
               {clients.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
             </select>
@@ -2777,6 +2792,9 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
               </Field>
             )}
 
+            <Field label="登録日">
+              <TextInput type="date" value={form.registeredDate || new Date().toISOString().slice(0, 10)} onChange={e => setForm(f => ({ ...f, registeredDate: e.target.value }))} style={{ width: 160 }} />
+            </Field>
             <Field label="テーマ"><TextInput value={form.theme} onChange={e => setForm(f => ({ ...f, theme: e.target.value }))} placeholder="今月のリールテーマ" /></Field>
             <Field label="編集方式">
               <div className="flex items-center gap-2 flex-wrap">
@@ -4111,8 +4129,8 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
               {revisionReels.map(r => {
                 const c = clients.find(x => x.id === r.clientId);
                 const rv = r.revisionHistory[r.revisionHistory.length - 1];
-                // 依頼者は、実際にボタンを押した人ではなく、そのチェック工程の担当者（チェック担当者）の名前を表示する
-                const requestedByUser = users.find(u => u.id === r.editorSecondaryId);
+                // 依頼者は、実際にボタンを押した人ではなく、その修正が①②③④の工程別のものなら該当工程のチェック担当、⑤最終チェックのものなら⑤最終チェック担当の名前を表示する
+                const requestedByUser = users.find(u => u.id === revisionRequesterId(r, rv));
                 const assignedNames = (rv.assignedEditorIds || []).map(id => users.find(u => u.id === id)?.name).filter(Boolean);
                 return (
                   <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="text-left text-xs p-2.5 rounded-xl hover:bg-black/5" style={{ background: "#FCEBEB" }}>
@@ -4139,8 +4157,8 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
               {recheckReels.map(r => {
                 const c = clients.find(x => x.id === r.clientId);
                 const rv = r.revisionHistory[r.revisionHistory.length - 1];
-                // 依頼者は、そのチェック工程の担当者（チェック担当者）の名前を表示する
-                const checker = users.find(u => u.id === r.editorSecondaryId);
+                // 依頼者は、その修正が①②③④の工程別のものなら該当工程のチェック担当、⑤最終チェックのものなら⑤最終チェック担当の名前を表示する
+                const checker = users.find(u => u.id === revisionRequesterId(r, rv));
                 return (
                   <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="text-left text-xs p-2.5 rounded-xl hover:bg-black/5" style={{ background: "#D6F0EA" }}>
                     <p className="font-semibold break-words">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
