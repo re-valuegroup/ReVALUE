@@ -4154,6 +4154,38 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
         );
       })()}
 
+      {(["editor", "shooter", "designer", "admin"].some(r => (currentUser.roles || []).includes(r))) && (() => {
+        // 分業モードで、各工程（①②③④）の初稿がすでに提出され、チェック担当の確認待ちになっているものを一覧表示する
+        const stageCheckWaitItems = reels
+          .filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions && r.workMode !== "solo" && reelMatchesDashFilter(r))
+          .flatMap(r => editRolesForReel(r)
+            .filter(f => r[SUBMITTED_KEY_FOR_ROLE[f.key]] && !r[DONE_KEY_FOR_ROLE[f.key]])
+            .map(f => ({ reel: r, field: f }))
+          )
+          .sort((a, b) => (a.reel.deadline || "9999-99-99").localeCompare(b.reel.deadline || "9999-99-99"));
+        return (
+          <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
+            <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><Eye size={16} color="#854F0B" /> 初稿チェック待ち（{stageCheckWaitItems.length}）</p>
+            <DashFilterBar />
+            {stageCheckWaitItems.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>現在、初稿チェック待ちの工程はありません。</p>}
+            <div className="grid md:grid-cols-2 gap-2">
+              {stageCheckWaitItems.map(({ reel: r, field: f }) => {
+                const c = clients.find(x => x.id === r.clientId);
+                const editorName = users.find(u => u.id === r[f.key])?.name || "未割当";
+                const checkerName = users.find(u => u.id === r[CHECKER_KEY_FOR_ROLE[f.key]])?.name;
+                return (
+                  <button key={`${r.id}:${f.key}`} onClick={() => onGoReelDetail(r.clientId, r.id)} className="text-left text-xs p-2.5 rounded-xl hover:bg-black/5" style={{ background: "#FCEEDB" }}>
+                    <p className="font-semibold break-words">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
+                    <p style={{ color: "#854F0B" }}>{f.label}・初稿提出済み（提出者：{editorName}）</p>
+                    <p style={{ color: "#8B897F" }}>チェック担当：{checkerName || "未設定（工程内で選択してください）"}</p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
       {(["editor", "shooter", "designer", "admin"].some(r => (currentUser.roles || []).includes(r))) && (
         <div id="dashboard-pickup" className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
           <p className="font-bold mb-2 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><MessageSquare size={16} color="#D6248A" /> 編集指示一覧</p>
