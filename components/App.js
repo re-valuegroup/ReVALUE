@@ -68,6 +68,8 @@ const editRolesForReel = (reel) => {
 const DONE_KEY_FOR_ROLE = { cutEditorId: "cutDone", telopEditorId: "telopDone", animationEditorId: "animationDone", sfxEditorId: "sfxDone" };
 const SUBMITTED_KEY_FOR_ROLE = { cutEditorId: "cutSubmitted", telopEditorId: "telopSubmitted", animationEditorId: "animationSubmitted", sfxEditorId: "sfxSubmitted" };
 const STAGE_KEY_FOR_ROLE = { cutEditorId: "cut", telopEditorId: "telop", animationEditorId: "animation", sfxEditorId: "sfx" };
+// 工程ごとに「その工程の合否をチェックする担当者」を個別に指定できるようにするためのキー
+const CHECKER_KEY_FOR_ROLE = { cutEditorId: "cutCheckerId", telopEditorId: "telopCheckerId", animationEditorId: "animationCheckerId", sfxEditorId: "sfxCheckerId" };
 
 // カタカナをひらがなに変換（読み仮名の比較を統一するため）
 function toHiragana(s) {
@@ -318,6 +320,7 @@ const emptyReel = (clientId, ym) => ({
   requiredRoles: ["cutEditorId", "telopEditorId", "animationEditorId", "sfxEditorId"], rush: false,
   workMode: "team", revisionHistory: [], revisionMemo: "", revisionVideoUrl: "", resubmitComment: "",
   cutEditorId: "", telopEditorId: "", animationEditorId: "", sfxEditorId: "", editorSecondaryId: "",
+  cutCheckerId: "", telopCheckerId: "", animationCheckerId: "", sfxCheckerId: "",
   cutDone: false, telopDone: false, animationDone: false, sfxDone: false,
   cutSubmitted: false, telopSubmitted: false, animationSubmitted: false, sfxSubmitted: false,
   editStartDate: "", editEndDate: "", deadline: "", postPlanDate: "",
@@ -1140,15 +1143,16 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
     return ev ? { startDate: ev.startDate || "", endDate: ev.endDate || "", startTime: ev.startTime || "", endTime: ev.endTime || "" } : { startDate: "", endDate: "", startTime: "", endTime: "" };
   };
   const [stageRevisionDraft, setStageRevisionDraft] = useState({});
-  const getStageRevisionDraft = (roleKey) => stageRevisionDraft[roleKey] || { memo: "", videoUrl: "" };
+  const getStageRevisionDraft = (roleKey) => stageRevisionDraft[roleKey] || { memo: "", videoUrl: "", resubmitComment: "" };
   const setStageRevisionDraftField = (roleKey, patch) => setStageRevisionDraft(prev => ({ ...prev, [roleKey]: { ...getStageRevisionDraft(roleKey), ...patch } }));
-  const canSubmitStage = (roleKey) => {
-    if (!reel[roleKey]) return false;
+  // 分業モードでは、前の工程が「合格・完了」してからでないと、次の工程には着手できない
+  const stagePrereqDone = (roleKey) => {
     const ordered = editRolesForReel(reel).map(f => f.key);
     const idx = ordered.indexOf(roleKey);
     if (idx <= 0) return true;
     return ordered.slice(0, idx).every(k => reel[DONE_KEY_FOR_ROLE[k]]);
   };
+  const canSubmitStage = (roleKey) => !!reel[roleKey] && stagePrereqDone(roleKey);
   const stageRevisions = (roleKey) => (reel.revisionHistory || []).filter(rv => rv.stage === STAGE_KEY_FOR_ROLE[roleKey]);
   const pendingStageRevision = (roleKey) => {
     const hist = stageRevisions(roleKey);
@@ -1193,13 +1197,14 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
       revisionHistory: [...(reel.revisionHistory || []), record],
       [SUBMITTED_KEY_FOR_ROLE[roleKey]]: false,
     });
-    setStageRevisionDraft(prev => ({ ...prev, [roleKey]: { memo: "", videoUrl: "" } }));
+    setStageRevisionDraft(prev => ({ ...prev, [roleKey]: { memo: "", videoUrl: "", resubmitComment: "" } }));
   };
-  const markStageRevisionDone = (roleKey, revId) => {
+  const markStageRevisionDone = (roleKey, revId, comment) => {
     update({
-      revisionHistory: (reel.revisionHistory || []).map(rv => rv.id === revId ? { ...rv, status: "resubmitted", completedAt: rv.completedAt || new Date().toISOString(), resubmittedAt: new Date().toISOString() } : rv),
+      revisionHistory: (reel.revisionHistory || []).map(rv => rv.id === revId ? { ...rv, status: "resubmitted", completedAt: rv.completedAt || new Date().toISOString(), resubmittedAt: new Date().toISOString(), resubmitComment: comment || "" } : rv),
       [SUBMITTED_KEY_FOR_ROLE[roleKey]]: true,
     });
+    setStageRevisionDraft(prev => ({ ...prev, [roleKey]: { ...getStageRevisionDraft(roleKey), resubmitComment: "" } }));
   };
   const [transcriptCleanError, setTranscriptCleanError] = useState("");
   const [showHistory, setShowHistory] = useState(false);
@@ -1300,15 +1305,8 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
     const names = [...new Set((ids || []).map(personName).filter(Boolean))];
     return names.length ? `${names.join("・")}さんが記入する` : "担当者未設定";
   };
-  // 工程①②③④の「修正依頼」は、次の工程の担当者（＝前工程の成果物を受け取ってチェックする人）が行う想定。
-  // 最後の工程（多くの場合④効果音・BGM）の場合は、⑤最終チェック担当が行う想定。
-  const stageReviewerId = (roleKey) => {
-    const ordered = editRolesForReel(reel).map(f => f.key);
-    const idx = ordered.indexOf(roleKey);
-    if (idx === -1) return "";
-    const nextKey = ordered[idx + 1];
-    return nextKey ? reel[nextKey] : reel.editorSecondaryId;
-  };
+  // 工程①②③④の「修正依頼」は、その工程ごとに指定された「チェック担当」が行う
+  const stageReviewerId = (roleKey) => reel[CHECKER_KEY_FOR_ROLE[roleKey]] || "";
 
   const syncEditCalendar = (updated) => {
     syncReelEditCalendar(setCalendarEvents, updated.id, updated.editStartDate, updated.editEndDate);
@@ -1933,6 +1931,18 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                     </div>
                   );
                 }
+                const prereqDone = stagePrereqDone(f.key);
+                if (!reel[f.key] && !prereqDone) {
+                  const ordered = editRolesForReel(draft);
+                  const idx = ordered.findIndex(r => r.key === f.key);
+                  const prevLabel = idx > 0 ? ordered[idx - 1].label : "";
+                  return (
+                    <div key={f.key} className="rounded-lg p-2 flex items-center gap-2" style={{ background: "#F4F2EA", border: "1px solid #EFEDE4" }}>
+                      <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#A9A79C" }}>{f.label}</span>
+                      <span className="text-xs font-semibold" style={{ color: "#A9A79C" }}>前の工程（{prevLabel}）が合格・完了してから割り当てできます</span>
+                    </div>
+                  );
+                }
                 const done = !!reel[f.doneKey];
                 const submitted = !!reel[SUBMITTED_KEY_FOR_ROLE[f.key]];
                 const canSubmit = canSubmitStage(f.key);
@@ -1945,6 +1955,13 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>{f.label}</span>
                     <select value={reel[f.key] || ""} onChange={e => update({ [f.key]: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
+                      <option value="">未割り当て</option>
+                      {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap mt-1.5">
+                    <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>チェック担当</span>
+                    <select value={reel[CHECKER_KEY_FOR_ROLE[f.key]] || ""} onChange={e => update({ [CHECKER_KEY_FOR_ROLE[f.key]]: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
                       <option value="">未割り当て</option>
                       {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                     </select>
@@ -1964,17 +1981,39 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                         <p className="text-[10px] mt-1 font-semibold" style={{ color: "#A32D2D" }}>再提出：{assigneeNoteMulti(pendingRev.assignedEditorIds)}</p>
                       </div>
                       {canEdit && (
-                        <div className="flex justify-end">
-                          <button type="button" onClick={() => markStageRevisionDone(f.key, pendingRev.id)} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0" style={{ background: "#0E90B8" }}>
-                            修正完了したので再提出する
-                          </button>
-                        </div>
+                        <>
+                          <Field label={`コメント・申し送り（${assigneeNoteMulti(pendingRev.assignedEditorIds)}・修正内容の報告など・任意）`}>
+                            <div className="flex items-start gap-1">
+                              <TextArea rows={2} value={revDraft.resubmitComment} onChange={e => setStageRevisionDraftField(f.key, { resubmitComment: e.target.value })} placeholder="例：ご指摘の箇所を修正しました" />
+                              <VoiceInputButton
+                                onResult={(text) => {
+                                  const cur = revDraft.resubmitComment || "";
+                                  setStageRevisionDraftField(f.key, { resubmitComment: cur ? `${cur} ${text}` : text });
+                                }}
+                              />
+                            </div>
+                          </Field>
+                          <div className="flex justify-end">
+                            <button type="button" onClick={() => markStageRevisionDone(f.key, pendingRev.id, revDraft.resubmitComment)} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0" style={{ background: "#0E90B8" }}>
+                              修正完了したので再提出する
+                            </button>
+                          </div>
+                        </>
                       )}
                     </div>
                   ) : submitted ? (
                     <div className="mt-1.5">
                       <Field label={`修正依頼メモ（${assigneeNote(stageReviewerId(f.key))}・修正依頼を出す場合のみ入力）`}>
-                        <TextArea rows={2} value={revDraft.memo} onChange={e => setStageRevisionDraftField(f.key, { memo: e.target.value })} disabled={!canEdit} placeholder="例：00:15〜00:20のカットを変更してください" />
+                        <div className="flex items-start gap-1">
+                          <TextArea rows={2} value={revDraft.memo} onChange={e => setStageRevisionDraftField(f.key, { memo: e.target.value })} disabled={!canEdit} placeholder="例：00:15〜00:20のカットを変更してください" />
+                          <VoiceInputButton
+                            disabled={!canEdit}
+                            onResult={(text) => {
+                              const cur = revDraft.memo || "";
+                              setStageRevisionDraftField(f.key, { memo: cur ? `${cur} ${text}` : text });
+                            }}
+                          />
+                        </div>
                       </Field>
                       <Field label="修正説明動画URL（YouTube限定公開・任意）">
                         <TextInput value={revDraft.videoUrl} onChange={e => setStageRevisionDraftField(f.key, { videoUrl: e.target.value })} disabled={!canEdit} placeholder="https://youtube.com/..." />
@@ -2050,8 +2089,57 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                               <span className="text-[10px] font-semibold" style={{ color: "#A32D2D" }}>第{rv.revisionNumber}回</span>
                               <Badge tone={rv.status === "resubmitted" ? "teal" : "red"}>{rv.status === "resubmitted" ? "再提出済み" : "対応待ち"}</Badge>
                             </div>
-                            <p className="text-[11px] mt-0.5" style={{ color: "#5F5E5A" }}>{rv.memo}</p>
-                            <p className="text-[10px] mt-0.5" style={{ color: "#8B897F" }}>依頼者：{personName(rv.requestedBy) || "不明"} ・ 再提出：{assigneeNoteMulti(rv.assignedEditorIds)}</p>
+                            {editingRevisionId === rv.id ? (
+                              <div className="mt-1">
+                                <Field label="修正依頼メモ">
+                                  <div className="flex items-start gap-1">
+                                    <TextArea rows={2} value={revisionEditDraft.memo} onChange={e => setRevisionEditDraft(d => ({ ...d, memo: e.target.value }))} />
+                                    <VoiceInputButton
+                                      onResult={(text) => {
+                                        const cur = revisionEditDraft.memo || "";
+                                        setRevisionEditDraft(d => ({ ...d, memo: cur ? `${cur} ${text}` : text }));
+                                      }}
+                                    />
+                                  </div>
+                                </Field>
+                                <Field label="修正説明動画URL（任意）">
+                                  <TextInput value={revisionEditDraft.videoUrl} onChange={e => setRevisionEditDraft(d => ({ ...d, videoUrl: e.target.value }))} placeholder="https://youtube.com/..." />
+                                </Field>
+                                <Field label="担当者からのコメント（空欄にすると削除されます）">
+                                  <div className="flex items-start gap-1">
+                                    <TextArea rows={2} value={revisionEditDraft.resubmitComment} onChange={e => setRevisionEditDraft(d => ({ ...d, resubmitComment: e.target.value }))} placeholder="例：ご指摘の箇所を修正しました" />
+                                    <VoiceInputButton
+                                      onResult={(text) => {
+                                        const cur = revisionEditDraft.resubmitComment || "";
+                                        setRevisionEditDraft(d => ({ ...d, resubmitComment: cur ? `${cur} ${text}` : text }));
+                                      }}
+                                    />
+                                  </div>
+                                </Field>
+                                <div className="flex justify-end gap-2">
+                                  <button onClick={cancelEditRevision} className="text-[11px] font-semibold px-2 py-1 rounded-lg border" style={{ borderColor: "#DEDACD", color: "#5F5E5A" }}>キャンセル</button>
+                                  <button onClick={() => saveEditRevision(rv.id)} disabled={!revisionEditDraft.memo?.trim()} className="text-[11px] font-semibold px-2 py-1 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>保存する</button>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <p className="text-[11px] mt-0.5" style={{ color: "#5F5E5A" }}>{rv.memo}</p>
+                                {rv.videoUrl && <a href={rv.videoUrl} target="_blank" rel="noreferrer" className="text-[11px] underline" style={{ color: "#0E90B8" }}>修正説明動画を見る</a>}
+                              </>
+                            )}
+                            <p className="text-[10px] mt-0.5" style={{ color: "#8B897F" }}>依頼者：{personName(reel[CHECKER_KEY_FOR_ROLE[f.key]]) || "不明（チェック担当が未設定です）"} ・ 再提出：{assigneeNoteMulti(rv.assignedEditorIds)}</p>
+                            {editingRevisionId !== rv.id && rv.resubmitComment && (
+                              <div className="mt-1 pt-1" style={{ borderTop: "1px dashed #F0C0C0" }}>
+                                <p className="text-[10px] font-semibold" style={{ color: "#0E6B57" }}>担当者からのコメント</p>
+                                <p className="text-[11px] whitespace-pre-wrap" style={{ color: "#5F5E5A" }}>{rv.resubmitComment}</p>
+                              </div>
+                            )}
+                            {canEdit && editingRevisionId !== rv.id && (
+                              <div className="flex items-center gap-2 flex-wrap mt-1">
+                                <button onClick={() => startEditRevision(rv)} className="text-[11px] font-semibold" style={{ color: "#5F5E5A" }}>編集</button>
+                                <button onClick={() => deleteRevision(rv.id)} className="text-[11px] font-semibold" style={{ color: "#A32D2D" }}>削除</button>
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
