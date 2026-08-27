@@ -1685,6 +1685,20 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
           )}
 
           <div className="grid md:grid-cols-2 gap-x-4">
+            <Field label="登録日">
+              <TextInput
+                type="date"
+                value={draft.createdAt ? draft.createdAt.slice(0, 10) : ""}
+                onChange={e => {
+                  const d = e.target.value;
+                  if (!d) return;
+                  const prevTime = draft.createdAt ? draft.createdAt.slice(11, 19) : new Date().toTimeString().slice(0, 8);
+                  set({ createdAt: new Date(`${d}T${prevTime}`).toISOString() });
+                }}
+                disabled={!canEdit}
+                style={{ width: 160 }}
+              />
+            </Field>
             <Field label="テーマ"><TextInput value={draft.theme} onChange={e => set({ theme: e.target.value })} disabled={!canEdit} /></Field>
             <Field label="編集方式">
               <div className="flex items-center gap-2 flex-wrap">
@@ -3037,6 +3051,8 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
     .sort((a, b) => {
       if (sortOrder === "deadline") return (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99");
       if (sortOrder === "postPlanDate") return (a.postPlanDate || "9999-99-99").localeCompare(b.postPlanDate || "9999-99-99");
+      if (sortOrder === "registeredDesc") return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+      if (sortOrder === "registeredAsc") return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
       return b.yearMonth.localeCompare(a.yearMonth);
     });
 
@@ -3115,6 +3131,8 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
           <option value="">並び順（通常）</option>
           <option value="deadline">初稿日順</option>
           <option value="postPlanDate">投稿予定日順</option>
+          <option value="registeredDesc">登録日（新しい順）</option>
+          <option value="registeredAsc">登録日（古い順）</option>
         </select>
         {clientId && (
           <button onClick={addReel} className="flex items-center gap-1 text-sm font-semibold px-3 py-2 rounded-lg text-white ml-auto" style={{ background: "#D6248A" }}>
