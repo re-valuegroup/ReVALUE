@@ -1164,7 +1164,12 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
     if (!canSubmitStage(roleKey)) return;
     update({ [SUBMITTED_KEY_FOR_ROLE[roleKey]]: true });
   };
+  // 誤って初稿提出してしまった場合などに、提出前の状態に取り戻す
+  const unsubmitStage = (roleKey) => {
+    update({ [SUBMITTED_KEY_FOR_ROLE[roleKey]]: false });
+  };
   const approveStage = (roleKey) => {
+    if (!reel[CHECKER_KEY_FOR_ROLE[roleKey]]) return;
     const patch = { [DONE_KEY_FOR_ROLE[roleKey]]: true };
     const stillNeeded = editRolesForReel(reel).some(f => f.key !== roleKey && !reel[DONE_KEY_FOR_ROLE[f.key]]);
     if (!stillNeeded) patch.completedStages = Math.max(reel.completedStages, 3);
@@ -1176,6 +1181,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
     update(patch);
   };
   const requestStageRevision = (roleKey) => {
+    if (!reel[CHECKER_KEY_FOR_ROLE[roleKey]]) return;
     const draftRev = getStageRevisionDraft(roleKey);
     if (!draftRev.memo?.trim()) return;
     const hist = stageRevisions(roleKey);
@@ -2003,6 +2009,9 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                     </div>
                   ) : submitted ? (
                     <div className="mt-1.5">
+                      {!reel[CHECKER_KEY_FOR_ROLE[f.key]] && (
+                        <p className="text-[11px] font-semibold mb-1" style={{ color: "#A32D2D" }}>「チェック担当」を選択すると、修正依頼・合格の操作ができるようになります。</p>
+                      )}
                       <Field label={`修正依頼メモ（${assigneeNote(stageReviewerId(f.key))}・修正依頼を出す場合のみ入力）`}>
                         <div className="flex items-start gap-1">
                           <TextArea rows={2} value={revDraft.memo} onChange={e => setStageRevisionDraftField(f.key, { memo: e.target.value })} disabled={!canEdit} placeholder="例：00:15〜00:20のカットを変更してください" />
@@ -2019,10 +2028,20 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                         <TextInput value={revDraft.videoUrl} onChange={e => setStageRevisionDraftField(f.key, { videoUrl: e.target.value })} disabled={!canEdit} placeholder="https://youtube.com/..." />
                       </Field>
                       <div className="flex justify-end gap-2 mt-1.5 flex-wrap">
-                        <button type="button" disabled={!canEdit || !revDraft.memo?.trim()} onClick={() => requestStageRevision(f.key)} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0 disabled:opacity-40" style={{ background: "#A32D2D" }}>
+                        <button
+                          type="button"
+                          disabled={!canEdit}
+                          onClick={() => unsubmitStage(f.key)}
+                          title="初稿提出を取り消して、提出前の状態に戻します"
+                          className="text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 shrink-0 disabled:opacity-40"
+                          style={{ background: "#fff", border: "1px solid #C4C2B8", color: "#5F5E5A" }}
+                        >
+                          提出を取り戻す
+                        </button>
+                        <button type="button" disabled={!canEdit || !revDraft.memo?.trim() || !reel[CHECKER_KEY_FOR_ROLE[f.key]]} title={!reel[CHECKER_KEY_FOR_ROLE[f.key]] ? "チェック担当を選択してください" : ""} onClick={() => requestStageRevision(f.key)} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0 disabled:opacity-40" style={{ background: "#A32D2D" }}>
                           修正依頼を出す
                         </button>
-                        <button type="button" disabled={!canEdit} onClick={() => approveStage(f.key)} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0" style={{ background: "#D6248A" }}>
+                        <button type="button" disabled={!canEdit || !reel[CHECKER_KEY_FOR_ROLE[f.key]]} title={!reel[CHECKER_KEY_FOR_ROLE[f.key]] ? "チェック担当を選択してください" : ""} onClick={() => approveStage(f.key)} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0 disabled:opacity-40" style={{ background: "#D6248A" }}>
                           合格にする
                         </button>
                       </div>
@@ -3009,7 +3028,14 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
   };
   const createReel = (r) => { setReels(prev => [...prev, r]); setShowNew(false); };
   const updateReel = (r) => setReels(prev => prev.map(x => x.id === r.id ? r : x));
-  const deleteReel = (id) => setReels(prev => prev.filter(x => x.id !== id));
+  const deleteReel = (id) => {
+    setReels(prev => prev.filter(x => x.id !== id));
+    // その動画に紐づくカレンダー予定も削除する（複数動画をまとめたイベントは、このIDだけ取り除く）
+    setCalendarEvents(prev => prev
+      .map(e => (e.reelIds || []).includes(id) ? { ...e, reelIds: e.reelIds.filter(rid => rid !== id) } : e)
+      .filter(e => !(e.reelIds && e.reelIds.length === 0))
+    );
+  };
   const duplicateReelInPlace = (r) => setReels(prev => [...prev, duplicateReel(r, r.clientId, ym)]);
 
   const shiftMonth = (delta) => {
