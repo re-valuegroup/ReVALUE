@@ -1638,6 +1638,21 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
       {expanded && (
         <div className="px-4 pb-4 pt-1 border-t" style={{ borderColor: "#EFEDE4" }} onClick={e => e.stopPropagation()}>
           {canEdit && (
+            confirmDelete ? (
+              <div className="rounded-xl p-2.5 my-2 flex items-center justify-between gap-2 flex-wrap" style={{ background: "#FCEBEB", border: "1px solid #A32D2D" }}>
+                <span className="text-xs font-semibold" style={{ color: "#A32D2D" }}>本当にこの動画を削除しますか？（元に戻せません）</span>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => onDelete(reel.id)} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#A32D2D" }}>本当に削除する</button>
+                  <button onClick={() => setConfirmDelete(false)} className="text-xs font-semibold" style={{ color: "#8B897F" }}>キャンセル</button>
+                </div>
+              </div>
+            ) : (
+              <button onClick={() => setConfirmDelete(true)} className="text-xs font-semibold flex items-center gap-1 my-2 px-3 py-1.5 rounded-lg" style={{ color: "#A32D2D", background: "#FCEBEB" }}>
+                <Trash2 size={13} /> この動画を削除
+              </button>
+            )
+          )}
+          {canEdit && (
             <div className="rounded-xl p-3 my-2" style={{ background: "#FBE4F1" }}>
               <button onClick={() => setShowVoiceInput(s => !s)} className="w-full flex items-center justify-between text-left">
                 <span className="text-xs font-bold flex items-center gap-1.5" style={{ color: "#96185E" }}><Sparkles size={13} /> 音声で入力する</span>
