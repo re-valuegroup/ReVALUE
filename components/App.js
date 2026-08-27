@@ -1132,6 +1132,13 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
   const [transcriptFileError, setTranscriptFileError] = useState("");
   const [roleSchedule, setRoleSchedule] = useState({});
   const setRoleScheduleField = (roleKey, patch) => setRoleSchedule(prev => ({ ...prev, [roleKey]: { ...(prev[roleKey] || { startDate: "", endDate: "", startTime: "", endTime: "" }), ...patch } }));
+  // 入力中でない項目は、ダッシュボード側で登録された最新のカレンダー予定を初期値として表示する（ダッシュボードとの自動反映）
+  const clearRoleScheduleOverride = (roleKey) => setRoleSchedule(prev => { const next = { ...prev }; delete next[roleKey]; return next; });
+  const currentRoleEvent = (editTask) => (calendarEvents || []).find(e => e.type === "edit" && e.editTask === editTask && e.reelIds && e.reelIds.length === 1 && e.reelIds[0] === reel.id);
+  const savedRoleSchedule = (editTask) => {
+    const ev = currentRoleEvent(editTask);
+    return ev ? { startDate: ev.startDate || "", endDate: ev.endDate || "", startTime: ev.startTime || "", endTime: ev.endTime || "" } : { startDate: "", endDate: "", startTime: "", endTime: "" };
+  };
   const [stageRevisionDraft, setStageRevisionDraft] = useState({});
   const getStageRevisionDraft = (roleKey) => stageRevisionDraft[roleKey] || { memo: "", videoUrl: "" };
   const setStageRevisionDraftField = (roleKey, patch) => setStageRevisionDraft(prev => ({ ...prev, [roleKey]: { ...getStageRevisionDraft(roleKey), ...patch } }));
@@ -1831,7 +1838,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                 const soloEditorId = soloRoles.map(f => reel[f.key]).find(Boolean) || "";
                 const allDone = soloRoles.length > 0 && soloRoles.every(f => reel[DONE_KEY_FOR_ROLE[f.key]]);
                 const canToggleSolo = allDone || !!soloEditorId;
-                const sched = roleSchedule.solo || { startDate: "", endDate: "", startTime: "", endTime: "" };
+                const sched = roleSchedule.solo || savedRoleSchedule("all");
                 return (
                   <div className="rounded-lg p-2" style={{ background: "#fff", border: allDone ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
                     <div className="flex items-center gap-2 flex-wrap">
@@ -1887,7 +1894,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                           onClick={() => {
                             const endDate = sched.endDate || sched.startDate;
                             syncRoleCalendar(setCalendarEvents, reel.id, "all", soloEditorId, sched.startDate, endDate, sched.startTime, sched.endTime);
-                            setRoleSchedule(prev => ({ ...prev, solo: { startDate: "", endDate: "", startTime: "", endTime: "" } }));
+                            clearRoleScheduleOverride("solo");
                           }}
                           className="text-[11px] font-semibold px-2 py-1 rounded-lg text-white disabled:opacity-40"
                           style={{ background: "#0E90B8" }}
@@ -1931,7 +1938,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                 const canSubmit = canSubmitStage(f.key);
                 const pendingRev = pendingStageRevision(f.key);
                 const wlKey = WORKLOAD_KEY_FOR_ROLE[f.key];
-                const sched = roleSchedule[f.key] || { startDate: "", endDate: "", startTime: "", endTime: "" };
+                const sched = roleSchedule[f.key] || savedRoleSchedule(f.task);
                 const revDraft = getStageRevisionDraft(f.key);
                 return (
                   <div key={f.key} className="rounded-lg p-2" style={{ background: "#fff", border: done ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
@@ -2011,7 +2018,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                         onClick={() => {
                           const endDate = sched.endDate || sched.startDate;
                           syncRoleCalendar(setCalendarEvents, reel.id, f.task, reel[f.key], sched.startDate, endDate, sched.startTime, sched.endTime);
-                          setRoleSchedule(prev => ({ ...prev, [f.key]: { startDate: "", endDate: "", startTime: "", endTime: "" } }));
+                          clearRoleScheduleOverride(f.key);
                         }}
                         className="text-[11px] font-semibold px-2 py-1 rounded-lg text-white disabled:opacity-40"
                         style={{ background: "#0E90B8" }}
@@ -2062,6 +2069,34 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                     {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                   </select>
                 </div>
+                {canEdit && reel.editorSecondaryId && (() => {
+                  const checkSched = roleSchedule.check || savedRoleSchedule("check");
+                  return (
+                    <div className="flex items-center gap-1.5 flex-wrap mt-1.5 pt-1.5" style={{ borderTop: "1px dashed #EFEDE4" }}>
+                      <span className="text-[10px] shrink-0" style={{ color: "#A9A79C" }}>稼働日時（カレンダー登録・再登録）</span>
+                      <TextInput type="date" value={checkSched.startDate} onChange={e => setRoleScheduleField("check", { startDate: e.target.value })} title="開始日" style={{ width: 115, fontSize: 11 }} />
+                      <span className="text-[10px]" style={{ color: "#8B897F" }}>〜</span>
+                      <TextInput type="date" value={checkSched.endDate} onChange={e => setRoleScheduleField("check", { endDate: e.target.value })} title="終了日（省略可）" style={{ width: 115, fontSize: 11 }} />
+                      <TextInput type="time" step={600} value={checkSched.startTime} onChange={e => setRoleScheduleField("check", { startTime: e.target.value })} style={{ width: 95, fontSize: 11 }} />
+                      <span className="text-[10px]" style={{ color: "#8B897F" }}>〜</span>
+                      <TextInput type="time" step={600} value={checkSched.endTime} onChange={e => setRoleScheduleField("check", { endTime: e.target.value })} style={{ width: 95, fontSize: 11 }} />
+                      <VoiceScheduleButton onResult={(fields) => setRoleScheduleField("check", fields)} />
+                      <button
+                        type="button"
+                        disabled={!checkSched.startDate}
+                        onClick={() => {
+                          const endDate = checkSched.endDate || checkSched.startDate;
+                          syncRoleCalendar(setCalendarEvents, reel.id, "check", reel.editorSecondaryId, checkSched.startDate, endDate, checkSched.startTime, checkSched.endTime);
+                          clearRoleScheduleOverride("check");
+                        }}
+                        className="text-[11px] font-semibold px-2 py-1 rounded-lg text-white disabled:opacity-40"
+                        style={{ background: "#0E90B8" }}
+                      >
+                        予定を登録
+                      </button>
+                    </div>
+                  );
+                })()}
                 {reel.checkSubmitted ? (
                   <div className="flex justify-end mt-1.5">
                     <button
@@ -3767,8 +3802,14 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
       <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
         <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><Megaphone size={16} color="#D6248A" /> 掲示板（情報共有）</p>
         <div className="flex items-center gap-2 mb-2 flex-wrap">
-          <div className="flex-1 min-w-[160px]">
+          <div className="flex-1 min-w-[160px] flex items-center gap-1">
             <TextInput value={boardTheme} onChange={e => setBoardTheme(e.target.value)} placeholder="テーマ（例：連絡・相談・お知らせ）" />
+            <VoiceInputButton
+              onResult={(text) => {
+                const cur = boardTheme || "";
+                setBoardTheme(cur ? `${cur} ${text}` : text);
+              }}
+            />
           </div>
           <select value={boardAuthorId} onChange={e => setBoardAuthorId(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 160 }}>
             {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
@@ -3776,6 +3817,12 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
         </div>
         <div className="flex items-start gap-2 mb-3">
           <TextArea rows={2} value={boardText} onChange={e => setBoardText(e.target.value)} placeholder="スタッフ全員に共有したい連絡事項を書き込む" />
+          <VoiceInputButton
+            onResult={(text) => {
+              const cur = boardText || "";
+              setBoardText(cur ? `${cur} ${text}` : text);
+            }}
+          />
           <button onClick={postBoard} disabled={!boardText.trim()} className="shrink-0 text-sm font-semibold px-4 py-2 rounded-lg text-white disabled:opacity-40" style={{ background: "#D6248A" }}>投稿</button>
         </div>
         <div className="space-y-2 max-h-80 overflow-y-auto">
