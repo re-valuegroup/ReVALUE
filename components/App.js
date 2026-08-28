@@ -4167,7 +4167,7 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
                 const assignedNames = (rv.assignedEditorIds || []).map(id => users.find(u => u.id === id)?.name).filter(Boolean);
                 return (
                   <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="text-left text-xs p-2.5 rounded-xl hover:bg-black/5" style={{ background: "#FCEBEB" }}>
-                    <p className="font-semibold break-words">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
+                    <p className="font-semibold break-words mb-1">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"} <Badge tone={r.workMode === "solo" ? "gray" : "purple"}>{r.workMode === "solo" ? "一括編集" : "分業"}</Badge></p>
                     <p style={{ color: "#A32D2D" }}>第{rv.revisionNumber}回修正 ・ 依頼者：{requestedByUser?.name || "不明"}</p>
                     <p style={{ color: "#8B897F" }}>依頼先：{assignedNames.length > 0 ? assignedNames.join("・") : "未割当"}</p>
                     <p className="mt-1 line-clamp-2" style={{ color: "#5F5E5A" }}>{rv.memo}</p>
@@ -4194,7 +4194,7 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
                 const checker = users.find(u => u.id === revisionRequesterId(r, rv));
                 return (
                   <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="text-left text-xs p-2.5 rounded-xl hover:bg-black/5" style={{ background: "#D6F0EA" }}>
-                    <p className="font-semibold break-words">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
+                    <p className="font-semibold break-words mb-1">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"} <Badge tone={r.workMode === "solo" ? "gray" : "purple"}>{r.workMode === "solo" ? "一括編集" : "分業"}</Badge></p>
                     <p style={{ color: "#0E6B57" }}>第{rv.revisionNumber}回修正 ・ 再提出済み</p>
                     <p style={{ color: "#8B897F" }}>依頼者（チェック担当）：{checker?.name || "未割当"}</p>
                   </button>
@@ -4216,7 +4216,8 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
           .sort((a, b) => (a.reel.deadline || "9999-99-99").localeCompare(b.reel.deadline || "9999-99-99"));
         return (
           <div className="rounded-2xl p-5 mb-6" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
-            <p className="font-bold mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><Eye size={16} color="#854F0B" /> 初稿チェック待ち（{stageCheckWaitItems.length}）</p>
+            <p className="font-bold mb-1 flex items-center gap-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}><Eye size={16} color="#854F0B" /> 初稿チェック待ち（{stageCheckWaitItems.length}） <Badge tone="purple">分業のみ</Badge></p>
+            <p className="text-[11px] mb-3" style={{ color: "#8B897F" }}>この欄は「分業」（工程ごとに担当・チェックを行う編集方式）の動画のみを表示します。「一括編集」の動画は、①〜④の担当者が作業を終えると下の「⑤最終チェック担当の指定」欄に表示されます。</p>
             <DashFilterBar />
             {stageCheckWaitItems.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>現在、初稿チェック待ちの工程はありません。</p>}
             <div className="grid md:grid-cols-2 gap-2">
@@ -4343,6 +4344,7 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
                           <div className="flex items-center gap-2 flex-wrap">
                             {isAdmin && <input type="checkbox" checked={selectedForBulk.includes(r.id)} onChange={() => toggleBulk(r.id)} title="一括指定に含める" />}
                             <button onClick={() => onGoReelDetail(r.clientId, r.id)} className="font-semibold text-xs hover:underline text-left">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "（テーマ未設定）"}</button>
+                            <Badge tone={r.workMode === "solo" ? "gray" : "purple"}>{r.workMode === "solo" ? "一括編集" : "分業"}</Badge>
                             {(() => {
                               const totalWl = [r.cutWorkload, r.telopWorkload, r.sfxWorkload, r.checkWorkload].reduce((s, v) => s + (parseFloat(v) || 0), 0);
                               return totalWl > 0 ? <Badge tone="amber">合計工数 {totalWl}</Badge> : null;
