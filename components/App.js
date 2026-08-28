@@ -3081,8 +3081,11 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
     .filter(r => !stageFilter || STAGE_FILTER_OPTIONS.find(o => o.key === stageFilter)?.test(r))
     .filter(r => !rushOnly || r.rush)
     .sort((a, b) => {
-      if (sortOrder === "deadline") return (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99");
-      if (sortOrder === "postPlanDate") return (a.postPlanDate || "9999-99-99").localeCompare(b.postPlanDate || "9999-99-99");
+      // 初稿日順・投稿予定日順は、日付未設定のものを常に末尾に置いた上で、新しい順／古い順を切り替える
+      if (sortOrder === "deadlineAsc") return (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99");
+      if (sortOrder === "deadlineDesc") return (b.deadline || "0000-00-00").localeCompare(a.deadline || "0000-00-00");
+      if (sortOrder === "postPlanDateAsc") return (a.postPlanDate || "9999-99-99").localeCompare(b.postPlanDate || "9999-99-99");
+      if (sortOrder === "postPlanDateDesc") return (b.postPlanDate || "0000-00-00").localeCompare(a.postPlanDate || "0000-00-00");
       if (sortOrder === "registeredDesc") return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
       if (sortOrder === "registeredAsc") return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
       return b.yearMonth.localeCompare(a.yearMonth);
@@ -3161,8 +3164,10 @@ function ReelsPage({ clients, reels, setReels, users, calendarEvents, setCalenda
         </button>
         <select value={sortOrder} onChange={e => setSortOrder(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 160 }}>
           <option value="">並び順（通常）</option>
-          <option value="deadline">初稿日順</option>
-          <option value="postPlanDate">投稿予定日順</option>
+          <option value="deadlineAsc">初稿日順（古い順）</option>
+          <option value="deadlineDesc">初稿日順（新しい順）</option>
+          <option value="postPlanDateAsc">投稿予定日順（古い順）</option>
+          <option value="postPlanDateDesc">投稿予定日順（新しい順）</option>
           <option value="registeredDesc">登録日（新しい順）</option>
           <option value="registeredAsc">登録日（古い順）</option>
         </select>
