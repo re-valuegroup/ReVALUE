@@ -551,6 +551,22 @@ function Badge({ children, tone = "gray" }) {
   );
 }
 
+// 「初稿日（編集期限）」と「投稿予定日」を、一目で分かるように並べて表示する共通バッジ
+// どの案件がいつまでに作らなければならないか（ダッシュボード・動画制作管理の各カードで共通）
+function DeadlineBadges({ reel }) {
+  if (!reel) return null;
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const deadlineOverdue = !!reel.deadline && !reel.checkSubmitted && reel.deadline < todayStr;
+  const postOverdue = !!reel.postPlanDate && reel.completedStages < 5 && reel.postPlanDate < todayStr;
+  return (
+    <>
+      {reel.deadline && <Badge tone={deadlineOverdue ? "red" : "gray"}>初稿日 {reel.deadline}</Badge>}
+      {reel.postPlanDate && <Badge tone={postOverdue ? "red" : "teal"}>投稿予定日 {reel.postPlanDate}</Badge>}
+      {!reel.deadline && !reel.postPlanDate && <Badge tone="gray">初稿日・投稿予定日 未設定</Badge>}
+    </>
+  );
+}
+
 function Field({ label, children }) {
   return (
     <label className="block mb-3">
@@ -1559,6 +1575,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
             {showClient && <p className="text-[11px] font-semibold truncate" style={{ color: "#D6248A" }}>{client?.companyName || "クライアント不明"} ・ {monthLabel(reel.yearMonth)}</p>}
             <p className="font-bold break-words">{number ? `No.${number} ・ ` : ""}{reel.rush && "🔥 "}{reel.theme || "（テーマ未設定）"}</p>
             <p className="text-xs mt-0.5 truncate" style={{ color: "#8B897F" }}>{reel.editInstructions || "編集指示未入力"}</p>
+            <div className="flex items-center gap-1.5 flex-wrap mt-1"><DeadlineBadges reel={reel} /></div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {reel.rush && <Badge tone="red">🔥 即納案件</Badge>}
@@ -4078,6 +4095,7 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
                 return (
                   <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="text-left rounded-lg p-2 hover:opacity-90" style={{ background: "#EDEBE4" }}>
                     <p className="font-semibold text-xs break-words">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
+                    <div className="flex items-center gap-1.5 mt-1 flex-wrap"><DeadlineBadges reel={r} /></div>
                     <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                       <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: "#16171B", color: "#fff" }}>一括編集①②③④：{person ? person.name : "未割当"}</span>
                       <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={statusTone}>{statusLabel}</span>
@@ -4104,6 +4122,7 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
                   <button onClick={() => onGoReelDetail(r.clientId, r.id)} className="w-full text-left mb-1">
                     <p className="font-semibold text-xs break-words">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
                   </button>
+                  <div className="flex items-center gap-1.5 mb-1 flex-wrap"><DeadlineBadges reel={r} /></div>
                   <div className="flex items-center gap-1 flex-wrap">
                     {rows.map((t, i) => {
                       if (t.notRequired) {
@@ -4168,6 +4187,7 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
                 return (
                   <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="text-left text-xs p-2.5 rounded-xl hover:bg-black/5" style={{ background: "#FCEBEB" }}>
                     <p className="font-semibold break-words mb-1">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"} <Badge tone={r.workMode === "solo" ? "gray" : "purple"}>{r.workMode === "solo" ? "一括編集" : "分業"}</Badge></p>
+                    <div className="flex items-center gap-1.5 mb-1 flex-wrap"><DeadlineBadges reel={r} /></div>
                     <p style={{ color: "#A32D2D" }}>第{rv.revisionNumber}回修正 ・ 依頼者：{requestedByUser?.name || "不明"}</p>
                     <p style={{ color: "#8B897F" }}>依頼先：{assignedNames.length > 0 ? assignedNames.join("・") : "未割当"}</p>
                     <p className="mt-1 line-clamp-2" style={{ color: "#5F5E5A" }}>{rv.memo}</p>
@@ -4195,6 +4215,7 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
                 return (
                   <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="text-left text-xs p-2.5 rounded-xl hover:bg-black/5" style={{ background: "#D6F0EA" }}>
                     <p className="font-semibold break-words mb-1">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"} <Badge tone={r.workMode === "solo" ? "gray" : "purple"}>{r.workMode === "solo" ? "一括編集" : "分業"}</Badge></p>
+                    <div className="flex items-center gap-1.5 mb-1 flex-wrap"><DeadlineBadges reel={r} /></div>
                     <p style={{ color: "#0E6B57" }}>第{rv.revisionNumber}回修正 ・ 再提出済み</p>
                     <p style={{ color: "#8B897F" }}>依頼者（チェック担当）：{checker?.name || "未割当"}</p>
                   </button>
@@ -4227,7 +4248,8 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
                 const checkerName = users.find(u => u.id === r[CHECKER_KEY_FOR_ROLE[f.key]])?.name;
                 return (
                   <button key={`${r.id}:${f.key}`} onClick={() => onGoReelDetail(r.clientId, r.id)} className="text-left text-xs p-2.5 rounded-xl hover:bg-black/5" style={{ background: "#FCEEDB" }}>
-                    <p className="font-semibold break-words">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
+                    <p className="font-semibold break-words mb-1">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
+                    <div className="flex items-center gap-1.5 mb-1 flex-wrap"><DeadlineBadges reel={r} /></div>
                     <p style={{ color: "#854F0B" }}>{f.label}・初稿提出済み（提出者：{editorName}）</p>
                     <p style={{ color: "#8B897F" }}>チェック担当：{checkerName || "未設定（工程内で選択してください）"}</p>
                   </button>
@@ -4256,7 +4278,7 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
                   <div key={r.id} className="rounded-lg p-2" style={{ background: "#FAF8F3" }}>
                     <div className="flex items-center gap-2 flex-wrap">
                       <button onClick={() => onGoReelDetail(r.clientId, r.id)} className="font-semibold text-xs hover:underline text-left">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "（テーマ未設定）"}</button>
-                      {r.deadline && <Badge tone={r.deadline < new Date().toISOString().slice(0, 10) ? "red" : "gray"}>投稿予定日 {r.deadline}</Badge>}
+                      <DeadlineBadges reel={r} />
                     </div>
                     <p className="text-[11px] mt-0.5 truncate" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>
                     <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
@@ -4302,7 +4324,7 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
                           const totalWl = [r.cutWorkload, r.telopWorkload, r.animationWorkload, r.sfxWorkload, r.checkWorkload].reduce((s, v) => s + (parseFloat(v) || 0), 0);
                           return totalWl > 0 ? <Badge tone="amber">合計工数 {totalWl}</Badge> : null;
                         })()}
-                        {r.deadline && <Badge tone={r.deadline < new Date().toISOString().slice(0, 10) ? "red" : "gray"}>投稿予定日 {r.deadline}</Badge>}
+                        <DeadlineBadges reel={r} />
                       </div>
                       <p className="text-[11px] mt-0.5 truncate" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>
                       <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
@@ -4349,7 +4371,7 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
                               const totalWl = [r.cutWorkload, r.telopWorkload, r.sfxWorkload, r.checkWorkload].reduce((s, v) => s + (parseFloat(v) || 0), 0);
                               return totalWl > 0 ? <Badge tone="amber">合計工数 {totalWl}</Badge> : null;
                             })()}
-                                                {r.deadline && <Badge tone={r.deadline < new Date().toISOString().slice(0, 10) ? "red" : "gray"}>投稿予定日 {r.deadline}</Badge>}
+                                                <DeadlineBadges reel={r} />
                           </div>
                           <p className="text-[11px] mt-0.5 truncate" style={{ color: "#8B897F" }}>{names}</p>
                           <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
@@ -4396,9 +4418,12 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
             {overdue.slice(0, 5).map(r => {
               const c = clients.find(x => x.id === r.clientId);
               return (
-                <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="w-full text-left text-sm flex items-center justify-between px-3 py-2 rounded-lg bg-white/60 hover:bg-white">
+                <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="w-full text-left text-sm flex items-center justify-between px-3 py-2 rounded-lg bg-white/60 hover:bg-white flex-wrap gap-1">
                   <span>{c?.companyName} ・ {r.theme || "（テーマ未設定）"}</span>
-                  <Badge tone="amber">{STAGES[r.completedStages]?.label}待ち</Badge>
+                  <span className="flex items-center gap-1.5 flex-wrap">
+                    <DeadlineBadges reel={r} />
+                    <Badge tone="amber">{STAGES[r.completedStages]?.label}待ち</Badge>
+                  </span>
                 </button>
               );
             })}
@@ -4728,7 +4753,8 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoReelDetail,
         return (
           <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-black/5" style={{ background: "#FAF8F3" }}>
             <p className="font-semibold">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
-            <p style={{ color: "#8B897F" }}>{extra ? extra(r) : (r.deadline ? `投稿予定 ${r.deadline}` : "投稿予定日未設定")}</p>
+            <div className="flex items-center gap-1.5 my-0.5 flex-wrap"><DeadlineBadges reel={r} /></div>
+            {extra && <p style={{ color: "#8B897F" }}>{extra(r)}</p>}
             <p className="mt-0.5" style={{ color: "#A9A79C", fontSize: 10 }}>{roleSummary(r)}</p>
           </button>
         );
