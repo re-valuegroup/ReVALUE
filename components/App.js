@@ -2579,8 +2579,8 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   <div className="flex justify-end mt-1.5">
                     <button
                       type="button"
-                      disabled={reel.completedStages < 5 && !(reel.checkSubmitted && reel.captionDone)}
-                      title={reel.completedStages >= 5 ? "もう一度押すと未投稿に戻せます" : !(reel.checkSubmitted && reel.captionDone) ? "⑤最終チェック・⑥キャプション作成が完了してから投稿完了にできます" : "クリックで完了・未完了を切り替え"}
+                      disabled={reel.completedStages < 5 && !(reel.checkSubmitted && reel.captionDone && reel.postAssigneeId)}
+                      title={reel.completedStages >= 5 ? "もう一度押すと未投稿に戻せます" : !(reel.checkSubmitted && reel.captionDone) ? "⑤最終チェック・⑥キャプション作成が完了してから投稿完了にできます" : !reel.postAssigneeId ? "⑦投稿担当を選択してから投稿完了にできます" : "クリックで完了・未完了を切り替え"}
                       onClick={() => update({ postedDate: draft.postedDate || new Date().toISOString().slice(0, 10), completedStages: reel.completedStages >= 5 ? 4 : 5 })}
                       className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0 disabled:opacity-40"
                       style={{ background: reel.completedStages >= 5 ? "#0E90B8" : "#D6248A" }}
@@ -4967,13 +4967,20 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoReelDetail,
                   <p className="font-semibold text-xs">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
                   <p className="mt-0.5" style={{ color: "#A9A79C", fontSize: 10 }}>{roleSummary(r)}</p>
                 </button>
+                <div className="flex items-center gap-2 flex-wrap mt-1.5">
+                  <span className="text-xs font-semibold shrink-0" style={{ color: "#5F5E5A" }}>⑦投稿担当</span>
+                  <select value={r.postAssigneeId || ""} onChange={e => updateReelField({ postAssigneeId: e.target.value })} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120, fontSize: 11, padding: "5px 8px" }}>
+                    <option value="">未割り当て</option>
+                    {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  </select>
+                </div>
                 <button onClick={() => copyCaption(r)} className="text-xs font-semibold px-2.5 py-1 rounded-lg text-white flex items-center gap-1 mt-1.5" style={{ background: copiedId === r.id ? "#0E90B8" : "#16171B" }}>
                   {copiedId === r.id ? <CircleCheck size={12} /> : <Copy size={12} />} {copiedId === r.id ? "コピーしました" : "キャプションをコピー"}
                 </button>
                 <button
                   onClick={() => updateReelField({ postedDate: r.postedDate || new Date().toISOString().slice(0, 10), completedStages: 5 })}
-                  disabled={!r.checkSubmitted}
-                  title={!r.checkSubmitted ? "⑤最終チェックが完了してから投稿完了にできます" : ""}
+                  disabled={!r.checkSubmitted || !r.postAssigneeId}
+                  title={!r.checkSubmitted ? "⑤最終チェックが完了してから投稿完了にできます" : !r.postAssigneeId ? "⑦投稿担当を選択してから投稿完了にできます" : ""}
                   className="text-xs font-semibold px-2.5 py-1 rounded-lg text-white flex items-center gap-1 mt-1.5 ml-1.5 disabled:opacity-40"
                   style={{ background: "#0E90B8" }}
                 >
