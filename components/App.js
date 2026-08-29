@@ -987,8 +987,13 @@ function ClientsPage({ clients, setClients, finance, setFinance, currentUser, on
               <Badge tone="coral">{c.plan || "プラン未設定"}</Badge>
               <Badge tone="gray">月{c.monthlyCount || 0}本</Badge>
             </div>
-            {(c.instagram?.url || c.tiktok?.url || c.youtube?.url) && (
+            {(c.website || c.instagram?.url || c.tiktok?.url || c.youtube?.url) && (
               <div className="flex items-center gap-1.5 mt-2 flex-wrap" onClick={e => e.stopPropagation()}>
+                {c.website && (
+                  <a href={c.website} target="_blank" rel="noreferrer" className="text-[11px] font-semibold px-2 py-1 rounded-lg flex items-center gap-1" style={{ background: "#E1F4FA", color: "#0E90B8" }}>
+                    <Link2 size={11} /> Webサイト
+                  </a>
+                )}
                 {c.instagram?.url && (
                   <a href={c.instagram.url} target="_blank" rel="noreferrer" className="text-[11px] font-semibold px-2 py-1 rounded-lg flex items-center gap-1" style={{ background: "#FBE4F1", color: "#96185E" }}>
                     <Instagram size={11} /> Instagram
