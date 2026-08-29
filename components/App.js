@@ -910,7 +910,8 @@ function ClientsPage({ clients, setClients, finance, setFinance, currentUser, on
   const [editing, setEditing] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [statusFilter, setStatusFilter] = useState("");
-  const canEdit = true;
+  // クライアント情報の編集は、統括管理者・動画撮影者・画像作成者のみ
+  const canEdit = ["admin", "shooter", "designer"].some(r => (currentUser.roles || []).includes(r));
   const isAdmin = (currentUser.roles || []).includes("admin");
 
   const save = (c, f) => {
@@ -986,6 +987,25 @@ function ClientsPage({ clients, setClients, finance, setFinance, currentUser, on
               <Badge tone="coral">{c.plan || "プラン未設定"}</Badge>
               <Badge tone="gray">月{c.monthlyCount || 0}本</Badge>
             </div>
+            {(c.instagram?.url || c.tiktok?.url || c.youtube?.url) && (
+              <div className="flex items-center gap-1.5 mt-2 flex-wrap" onClick={e => e.stopPropagation()}>
+                {c.instagram?.url && (
+                  <a href={c.instagram.url} target="_blank" rel="noreferrer" className="text-[11px] font-semibold px-2 py-1 rounded-lg flex items-center gap-1" style={{ background: "#FBE4F1", color: "#96185E" }}>
+                    <Instagram size={11} /> Instagram
+                  </a>
+                )}
+                {c.tiktok?.url && (
+                  <a href={c.tiktok.url} target="_blank" rel="noreferrer" className="text-[11px] font-semibold px-2 py-1 rounded-lg flex items-center gap-1" style={{ background: "#EDEBE4", color: "#16171B" }}>
+                    <ExternalLink size={11} /> TikTok
+                  </a>
+                )}
+                {c.youtube?.url && (
+                  <a href={c.youtube.url} target="_blank" rel="noreferrer" className="text-[11px] font-semibold px-2 py-1 rounded-lg flex items-center gap-1" style={{ background: "#FCEBEB", color: "#A32D2D" }}>
+                    <ExternalLink size={11} /> YouTube
+                  </a>
+                )}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -995,7 +1015,8 @@ function ClientsPage({ clients, setClients, finance, setFinance, currentUser, on
 
 function ClientDetail({ client, clients, setClients, finance, setFinance, reels, currentUser, onBack, onGoReels, onDirtyChange }) {
   const [editing, setEditing] = useState(false);
-  const canEdit = true;
+  // クライアント情報の編集は、統括管理者・動画撮影者・画像作成者のみ
+  const canEdit = ["admin", "shooter", "designer"].some(r => (currentUser.roles || []).includes(r));
   const isAdmin = (currentUser.roles || []).includes("admin");
 
   const clientReels = reels.filter(r => r.clientId === client.id);
