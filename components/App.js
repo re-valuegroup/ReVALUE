@@ -1409,6 +1409,28 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
     }
   };
 
+  // 「動画の文字起こし」欄（編集進行管理の先頭・分業の場合は①カット担当の上に表示する）
+  const renderTranscriptField = () => (
+    <Field label="動画の文字起こし（任意・AIキャプション生成にも使用されます）">
+      <TextArea rows={3} value={draft.transcript} onChange={e => set({ transcript: e.target.value })} placeholder="完成した動画の文字起こしを貼り付け（なくても生成可）" disabled={!canEdit} />
+      {canEdit && (
+        <div className="flex items-center gap-2 flex-wrap mt-1.5">
+          <label className="text-xs font-semibold px-3 py-1.5 rounded-lg border flex items-center gap-1.5 cursor-pointer" style={{ borderColor: "#DEDACD", color: "#5F5E5A" }}>
+            <ClipboardList size={12} /> テキストファイルを読み込む
+            <input type="file" accept=".txt,text/plain" className="hidden" onChange={handleTranscriptFile} />
+          </label>
+          {draft.transcript && (
+            <button onClick={cleanTranscript} disabled={transcriptCleanLoading} className="text-xs font-semibold px-3 py-1.5 rounded-lg border flex items-center gap-1.5 disabled:opacity-50" style={{ borderColor: "#DEDACD", color: "#5F5E5A" }}>
+              {transcriptCleanLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {transcriptCleanLoading ? "添削中..." : "文章を添削"}
+            </button>
+          )}
+        </div>
+      )}
+      {transcriptFileError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{transcriptFileError}</p>}
+      {transcriptCleanError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{transcriptCleanError}</p>}
+    </Field>
+  );
+
   const genCaption = async () => {
     setGenLoading(true);
     setGenError("");
@@ -1962,6 +1984,9 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                       </div>
                     )}
                     <div className="mt-1.5 pt-1.5" style={{ borderTop: "1px dashed #EFEDE4" }}>
+                      {renderTranscriptField()}
+                    </div>
+                    <div className="mt-1.5 pt-1.5" style={{ borderTop: "1px dashed #EFEDE4" }}>
                       <p className="text-[10px] mb-0.5" style={{ color: "#A9A79C" }}>コメント・申し送り <span style={{ color: "#0E90B8", fontWeight: 600 }}>（{assigneeNote(soloEditorId)}）</span></p>
                       <div className="flex items-start gap-1">
                         <TextArea rows={2} value={draft.cutComment || ""} onChange={e => set({ cutComment: e.target.value })} disabled={!canEdit} placeholder="意図・注意点・引き継ぎ事項など" style={{ fontSize: 12 }} />
@@ -2137,6 +2162,12 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                       >
                         予定を登録
                       </button>
+                    </div>
+                  )}
+                  {/* 分業の場合は、この動画で最初に必要な工程（通常は①カット担当）のコメント・申し送りの上に表示する */}
+                  {editRolesForReel(reel)[0]?.key === f.key && (
+                    <div className="mt-1.5 pt-1.5" style={{ borderTop: "1px dashed #EFEDE4" }}>
+                      {renderTranscriptField()}
                     </div>
                   )}
                   <div className="mt-1.5 pt-1.5" style={{ borderTop: "1px dashed #EFEDE4" }}>
@@ -2416,24 +2447,6 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                       </label>
                     ))}
                   </div>
-                  <Field label="動画の文字起こし（任意・AIキャプション生成にも使用されます）">
-                    <TextArea rows={3} value={draft.transcript} onChange={e => set({ transcript: e.target.value })} placeholder="完成した動画の文字起こしを貼り付け（なくても生成可）" disabled={!canEdit} />
-                    {canEdit && (
-                      <div className="flex items-center gap-2 flex-wrap mt-1.5">
-                        <label className="text-xs font-semibold px-3 py-1.5 rounded-lg border flex items-center gap-1.5 cursor-pointer" style={{ borderColor: "#DEDACD", color: "#5F5E5A" }}>
-                          <ClipboardList size={12} /> テキストファイルを読み込む
-                          <input type="file" accept=".txt,text/plain" className="hidden" onChange={handleTranscriptFile} />
-                        </label>
-                        {draft.transcript && (
-                          <button onClick={cleanTranscript} disabled={transcriptCleanLoading} className="text-xs font-semibold px-3 py-1.5 rounded-lg border flex items-center gap-1.5 disabled:opacity-50" style={{ borderColor: "#DEDACD", color: "#5F5E5A" }}>
-                            {transcriptCleanLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {transcriptCleanLoading ? "添削中..." : "文章を添削"}
-                          </button>
-                        )}
-                      </div>
-                    )}
-                    {transcriptFileError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{transcriptFileError}</p>}
-                    {transcriptCleanError && <p className="text-xs mt-1" style={{ color: "#A32D2D" }}>{transcriptCleanError}</p>}
-                  </Field>
                   <Field label={`コメント・申し送り（${assigneeNote(reel.editorSecondaryId)}）`}>
                     <div className="flex items-start gap-1">
                       <TextArea rows={2} value={draft.checkComment || ""} onChange={e => set({ checkComment: e.target.value })} disabled={!canEdit} placeholder="意図・注意点・引き継ぎ事項など" />
