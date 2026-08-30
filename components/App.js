@@ -5683,6 +5683,8 @@ function AppInner() {
   const [taskSection, setTaskSection] = useState("");
   const [taskNavOpen, setTaskNavOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
+  // PCで表示した時に、左メニューを折りたたんでコンパクトにできるようにする
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [pageHistory, setPageHistory] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [justRefreshed, setJustRefreshed] = useState(false);
@@ -5916,18 +5918,31 @@ function AppInner() {
       `}</style>
 
       <div className="flex">
-        <aside className={`fixed md:static z-40 top-0 left-0 h-full md:h-auto md:min-h-screen w-64 shrink-0 transition-transform flex flex-col ${navOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0`} style={{ background: "#16171B" }}>
+        <aside className={`fixed md:sticky z-40 top-0 left-0 h-full md:h-screen shrink-0 transition-all flex flex-col ${navOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0 w-64 ${sidebarCollapsed ? "md:w-20" : "md:w-64"}`} style={{ background: "#16171B" }}>
           <div className="p-5 flex items-center gap-2 shrink-0">
-            <div className="flex items-center justify-center" style={{ width: 38, height: 38 }}><img src="/logo-mark.png" alt="ReVALUE" style={{ width: "100%", height: "100%", objectFit: "contain" }} /></div>
-            <div>
-              <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, color: "#fff", fontSize: 15, lineHeight: 1.1 }}>ReVALUE</p>
-              <p style={{ color: "#8B897F", fontSize: 11 }}>Studio Manager</p>
-            </div>
-            <button onClick={refreshData} disabled={refreshing} className="ml-auto p-1.5 rounded-lg hover:bg-white/10" title="最新の情報に更新">
-              <RefreshCw size={16} color={justRefreshed ? "#0E90B8" : "#8B897F"} className={refreshing ? "animate-spin" : ""} />
-            </button>
-            <button className="md:hidden" onClick={() => setNavOpen(false)}><X size={18} color="#fff" /></button>
+            <div className="flex items-center justify-center shrink-0" style={{ width: 38, height: 38 }}><img src="/logo-mark.png" alt="ReVALUE" style={{ width: "100%", height: "100%", objectFit: "contain" }} /></div>
+            {!sidebarCollapsed && (
+              <div className="min-w-0">
+                <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, color: "#fff", fontSize: 15, lineHeight: 1.1 }}>ReVALUE</p>
+                <p style={{ color: "#8B897F", fontSize: 11 }}>Studio Manager</p>
+              </div>
+            )}
+            {!sidebarCollapsed && (
+              <button onClick={refreshData} disabled={refreshing} className="ml-auto p-1.5 rounded-lg hover:bg-white/10 shrink-0" title="最新の情報に更新">
+                <RefreshCw size={16} color={justRefreshed ? "#0E90B8" : "#8B897F"} className={refreshing ? "animate-spin" : ""} />
+              </button>
+            )}
+            <button className="md:hidden shrink-0" onClick={() => setNavOpen(false)}><X size={18} color="#fff" /></button>
           </div>
+          <button
+            onClick={() => setSidebarCollapsed(s => !s)}
+            className="hidden md:flex items-center justify-center gap-1.5 mx-3 mb-2 py-1.5 rounded-lg hover:bg-white/10 shrink-0 text-[11px] font-semibold"
+            style={{ color: "#8B897F" }}
+            title={sidebarCollapsed ? "メニューを開く" : "メニューを折りたたむ"}
+          >
+            <ChevronRight size={14} style={{ transform: sidebarCollapsed ? "none" : "rotate(180deg)", transition: "transform .15s" }} />
+            {!sidebarCollapsed && "折りたたむ"}
+          </button>
           <nav className="px-3 mt-2 space-y-1 flex-1 min-h-0 overflow-y-auto pb-3">
             {navItems.map(item => {
               if (item.key === "tasks") {
@@ -5936,6 +5951,11 @@ function AppInner() {
                   <div key={item.key}>
                     <button
                       onClick={() => {
+                        if (sidebarCollapsed) {
+                          navigateTo("tasks");
+                          setTaskSection("");
+                          return;
+                        }
                         if (isOnTasks) {
                           setTaskNavOpen(s => !s);
                         } else {
@@ -5945,13 +5965,19 @@ function AppInner() {
                           // ここでは閉じない：サブメニュー（全体表示〜投稿完了一覧）から選んでもらう
                         }
                       }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition"
+                      title={sidebarCollapsed ? item.label : ""}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${sidebarCollapsed ? "justify-center" : ""}`}
                       style={{ background: isOnTasks ? "#D6248A" : "transparent", color: isOnTasks ? "#fff" : "#B9B7AD" }}
                     >
-                      <item.icon size={17} /> {item.label}
-                      <ChevronRight size={14} className="ml-auto" style={{ transform: taskNavOpen ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+                      <item.icon size={17} />
+                      {!sidebarCollapsed && (
+                        <>
+                          {item.label}
+                          <ChevronRight size={14} className="ml-auto" style={{ transform: taskNavOpen ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+                        </>
+                      )}
                     </button>
-                    {taskNavOpen && (
+                    {!sidebarCollapsed && taskNavOpen && (
                       <div className="mt-1 ml-3 pl-3 space-y-0.5" style={{ borderLeft: "1px solid #3A3B42" }}>
                         {TASK_SUBSECTIONS.map(sub => (
                           <button
@@ -5970,26 +5996,29 @@ function AppInner() {
               }
               return (
                 <button key={item.key} onClick={() => { navigateTo(item.key); setNavOpen(false); }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition"
+                  title={sidebarCollapsed ? item.label : ""}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${sidebarCollapsed ? "justify-center" : ""}`}
                   style={{ background: page === item.key ? "#D6248A" : "transparent", color: page === item.key ? "#fff" : "#B9B7AD" }}>
-                  <item.icon size={17} /> {item.label}
+                  <item.icon size={17} /> {!sidebarCollapsed && item.label}
                 </button>
               );
             })}
           </nav>
           <div className="w-full p-4 shrink-0">
             <div className="rounded-xl p-3" style={{ background: "#222329" }}>
-              <div className="flex items-center gap-2 mb-2">
-                <div className="rounded-full flex items-center justify-center shrink-0" style={{ width: 32, height: 32, background: "#D6248A", color: "#fff", fontWeight: 700, fontSize: 12 }}>
+              <div className={`flex items-center gap-2 ${sidebarCollapsed ? "flex-col" : "mb-2"}`}>
+                <div className="rounded-full flex items-center justify-center shrink-0" style={{ width: 32, height: 32, background: "#D6248A", color: "#fff", fontWeight: 700, fontSize: 12 }} title={sidebarCollapsed ? currentUser.name : ""}>
                   {currentUser.name.slice(0, 1)}
                 </div>
-                <div className="min-w-0">
-                  <p style={{ color: "#fff", fontSize: 13, fontWeight: 600 }} className="truncate">{currentUser.name}</p>
-                  <p style={{ color: "#8B897F", fontSize: 11 }}>{roleLabels(currentUser.roles)}</p>
-                </div>
-                <button onClick={logout} className="ml-auto shrink-0" title="ログアウト"><LogOut size={15} color="#8B897F" /></button>
+                {!sidebarCollapsed && (
+                  <div className="min-w-0">
+                    <p style={{ color: "#fff", fontSize: 13, fontWeight: 600 }} className="truncate">{currentUser.name}</p>
+                    <p style={{ color: "#8B897F", fontSize: 11 }}>{roleLabels(currentUser.roles)}</p>
+                  </div>
+                )}
+                <button onClick={logout} className={sidebarCollapsed ? "shrink-0" : "ml-auto shrink-0"} title="ログアウト"><LogOut size={15} color="#8B897F" /></button>
               </div>
-              {(currentUser.roles || []).includes("admin") && (
+              {!sidebarCollapsed && (currentUser.roles || []).includes("admin") && (
                 <>
                   <select
                     value=""
