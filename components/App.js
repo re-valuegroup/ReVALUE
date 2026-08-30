@@ -4771,6 +4771,13 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoReelDetail,
   const postWaitList = reels.filter(r => r.captionDone && r.completedStages < 5 && reelMatchesTaskFilter(r))
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
   const [copiedId, setCopiedId] = useState("");
+  // ⑦投稿待ちの一覧をコンパクトにするため、投稿URL入力欄は既定で折りたたんでおく
+  const [expandedPostUrlIds, setExpandedPostUrlIds] = useState(() => new Set());
+  const togglePostUrlExpanded = (id) => setExpandedPostUrlIds(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
   const copyCaption = async (r) => {
     try {
       await navigator.clipboard.writeText(r.caption);
@@ -5043,13 +5050,21 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoReelDetail,
                 >
                   <CircleCheck size={12} /> 投稿完了
                 </button>
-                <div className="mt-2 pt-2 space-y-1" style={{ borderTop: "1px dashed #DEDACD" }}>
-                  <Field label="投稿日">
-                    <TextInput type="date" value={r.postedDate || ""} onChange={e => updateReelField({ postedDate: e.target.value })} />
-                  </Field>
-                  <Field label="Instagram投稿URL"><TextInput value={r.instagramUrl || ""} onChange={e => updateReelField({ instagramUrl: e.target.value })} placeholder="https://instagram.com/..." /></Field>
-                  <Field label="TikTok投稿URL"><TextInput value={r.tiktokUrl || ""} onChange={e => updateReelField({ tiktokUrl: e.target.value })} placeholder="https://tiktok.com/..." /></Field>
-                  <Field label="YouTube投稿URL"><TextInput value={r.youtubeUrl || ""} onChange={e => updateReelField({ youtubeUrl: e.target.value })} placeholder="https://youtube.com/..." /></Field>
+                <div className="mt-2 pt-2" style={{ borderTop: "1px dashed #DEDACD" }}>
+                  <button type="button" onClick={() => togglePostUrlExpanded(r.id)} className="w-full flex items-center justify-between">
+                    <span className="text-[11px] font-semibold flex items-center gap-1.5" style={{ color: "#5F5E5A" }}><Link2 size={12} /> 投稿日・各SNS投稿URL</span>
+                    <ChevronRight size={13} color="#5F5E5A" style={{ transform: expandedPostUrlIds.has(r.id) ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+                  </button>
+                  {expandedPostUrlIds.has(r.id) && (
+                    <div className="mt-1.5 space-y-1">
+                      <Field label="投稿日">
+                        <TextInput type="date" value={r.postedDate || ""} onChange={e => updateReelField({ postedDate: e.target.value })} />
+                      </Field>
+                      <Field label="Instagram投稿URL"><TextInput value={r.instagramUrl || ""} onChange={e => updateReelField({ instagramUrl: e.target.value })} placeholder="https://instagram.com/..." /></Field>
+                      <Field label="TikTok投稿URL"><TextInput value={r.tiktokUrl || ""} onChange={e => updateReelField({ tiktokUrl: e.target.value })} placeholder="https://tiktok.com/..." /></Field>
+                      <Field label="YouTube投稿URL"><TextInput value={r.youtubeUrl || ""} onChange={e => updateReelField({ youtubeUrl: e.target.value })} placeholder="https://youtube.com/..." /></Field>
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -5835,6 +5850,7 @@ function AppInner() {
       { key: "dashboard", label: "ダッシュボード", icon: LayoutDashboard, roles: ["admin", "editor", "shooter", "designer"] },
       { key: "clients", label: "クライアント", icon: Users, roles: ["admin", "editor", "shooter", "designer"] },
       { key: "reels", label: "動画制作管理", icon: Video, roles: ["admin", "editor", "shooter", "designer"] },
+      { key: "postwait", label: "投稿待ち", icon: Send, roles: ["admin", "editor", "shooter", "designer"] },
       { key: "research", label: "リサーチ・企画", icon: Sparkles, roles: ["admin", "editor", "shooter", "designer"] },
       { key: "tasks", label: "タスク管理", icon: CheckSquare, roles: ["admin", "editor", "shooter", "designer"] },
       { key: "analytics", label: "分析資料", icon: BarChart3, roles: ["admin", "editor", "shooter", "designer"] },
@@ -5881,6 +5897,7 @@ function AppInner() {
       case "dashboard": return <DashboardPage clients={clients} reels={reels} setReels={setReels} users={activeUsers} currentUser={currentUser} finance={finance} boardPosts={boardPosts} setBoardPosts={setBoardPosts} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} onGoReels={goReels} onGoReelDetail={goReelDetail} onGoTaskSection={goTaskSection} />;
       case "clients": return <ClientsPage clients={clients} setClients={setClients} finance={finance} setFinance={setFinance} currentUser={currentUser} onOpenClient={setOpenClientId} onDirtyChange={registerDirtyReel} />;
       case "reels": return <ReelsPage clients={clients} reels={reels} setReels={setReels} users={activeUsers} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} currentUser={currentUser} focusClientId={reelsFocusClient} focusReelId={reelsFocusReelId} onDirtyChange={registerDirtyReel} />;
+      case "postwait": return <TasksPage clients={clients} reels={reels} setReels={setReels} users={activeUsers} onGoReels={goReels} onGoReelDetail={goReelDetail} onGoClient={goClientDetail} section="post" />;
       case "research": return <ResearchPage clients={clients} reels={reels} setReels={setReels} />;
       case "tasks": return <TasksPage clients={clients} reels={reels} setReels={setReels} users={activeUsers} onGoReels={goReels} onGoReelDetail={goReelDetail} onGoClient={goClientDetail} section={taskSection} />;
       case "analytics": return <AnalyticsPage clients={clients} reels={reels} users={users} />;
@@ -5899,8 +5916,8 @@ function AppInner() {
       `}</style>
 
       <div className="flex">
-        <aside className={`fixed md:static z-40 top-0 left-0 h-full md:h-auto md:min-h-screen w-64 shrink-0 transition-transform ${navOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0`} style={{ background: "#16171B" }}>
-          <div className="p-5 flex items-center gap-2">
+        <aside className={`fixed md:static z-40 top-0 left-0 h-full md:h-auto md:min-h-screen w-64 shrink-0 transition-transform flex flex-col ${navOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0`} style={{ background: "#16171B" }}>
+          <div className="p-5 flex items-center gap-2 shrink-0">
             <div className="flex items-center justify-center" style={{ width: 38, height: 38 }}><img src="/logo-mark.png" alt="ReVALUE" style={{ width: "100%", height: "100%", objectFit: "contain" }} /></div>
             <div>
               <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, color: "#fff", fontSize: 15, lineHeight: 1.1 }}>ReVALUE</p>
@@ -5911,7 +5928,7 @@ function AppInner() {
             </button>
             <button className="md:hidden" onClick={() => setNavOpen(false)}><X size={18} color="#fff" /></button>
           </div>
-          <nav className="px-3 mt-2 space-y-1">
+          <nav className="px-3 mt-2 space-y-1 flex-1 min-h-0 overflow-y-auto pb-3">
             {navItems.map(item => {
               if (item.key === "tasks") {
                 const isOnTasks = page === "tasks";
@@ -5960,7 +5977,7 @@ function AppInner() {
               );
             })}
           </nav>
-          <div className="absolute bottom-0 left-0 w-full p-4">
+          <div className="w-full p-4 shrink-0">
             <div className="rounded-xl p-3" style={{ background: "#222329" }}>
               <div className="flex items-center gap-2 mb-2">
                 <div className="rounded-full flex items-center justify-center shrink-0" style={{ width: 32, height: 32, background: "#D6248A", color: "#fff", fontWeight: 700, fontSize: 12 }}>
