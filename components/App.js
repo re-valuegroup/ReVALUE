@@ -48,6 +48,8 @@ const ROLES = [
   { key: "editor", label: "動画編集者", color: "teal", icon: Scissors },
   { key: "shooter", label: "動画撮影者", color: "amber", icon: Camera },
   { key: "designer", label: "画像作成者", color: "purple", icon: ImageIcon },
+  { key: "director", label: "ディレクター", color: "gray", icon: UserCog },
+  { key: "sns", label: "SNS運用担当", color: "red", icon: Send },
 ];
 const SELECTABLE_ROLES = ROLES.filter(r => r.key !== "admin");
 const EDIT_WORKLOAD_OPTIONS = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4];
@@ -1352,6 +1354,9 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
 
   const editors = users.filter(u => (u.roles || []).includes("editor"));
   const shooters = users.filter(u => (u.roles || []).includes("shooter"));
+  const directors = users.filter(u => (u.roles || []).includes("director"));
+  const snsStaff = users.filter(u => (u.roles || []).includes("sns"));
+  const captionAssigneePool = users.filter(u => (u.roles || []).includes("director") || (u.roles || []).includes("sns"));
   const isAdmin = currentUser?.roles?.includes("admin");
 
   // 「誰が記入すべきか」を表示するためのヘルパー（担当者の名前を「〇〇さんが記入する」の形で返す）
@@ -2304,7 +2309,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>⑤最終チェック担当</span>
                   <select value={reel.editorSecondaryId || ""} onChange={e => update({ editorSecondaryId: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
                     <option value="">未割り当て</option>
-                    {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    {directors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                   </select>
                 </div>
                 {canEdit && reel.editorSecondaryId && (() => {
@@ -2516,7 +2521,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>⑥完成動画・キャプション作成担当</span>
                   <select value={reel.captionAssigneeId || ""} onChange={e => update({ captionAssigneeId: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
                     <option value="">未割り当て</option>
-                    {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    {captionAssigneePool.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                   </select>
                 </div>
                 <div className="flex justify-end mt-1.5">
@@ -2628,7 +2633,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>⑦投稿担当</span>
                   <select value={reel.postAssigneeId || ""} onChange={e => update({ postAssigneeId: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
                     <option value="">未割り当て</option>
-                    {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    {snsStaff.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                   </select>
                 </div>
                 {canEdit && (
@@ -2722,6 +2727,9 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
   const existingReels = allReels.filter(r => r.clientId === selectedClientId);
   const editors = users.filter(u => (u.roles || []).includes("editor"));
   const shooters = users.filter(u => (u.roles || []).includes("shooter"));
+  const directors = users.filter(u => (u.roles || []).includes("director"));
+  const snsStaff = users.filter(u => (u.roles || []).includes("sns"));
+  const captionAssigneePool = users.filter(u => (u.roles || []).includes("director") || (u.roles || []).includes("sns"));
   const [form, setForm] = useState({
     theme: "", editInstructions: "", script: "", driveUrl: "", referenceVideoUrl: "", assignedStaffId: "", deadline: "", postPlanDate: "", requiredRoles: ["cutEditorId", "telopEditorId", "animationEditorId", "sfxEditorId"], rush: false,
     workMode: "solo",
@@ -3069,21 +3077,21 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
                 <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>⑤最終チェック担当</span>
                 <select value={form.editorSecondaryId} onChange={e => setF({ editorSecondaryId: e.target.value })} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
                   <option value="">未割り当て</option>
-                  {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  {directors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                 </select>
               </div>
               <div className="rounded-lg p-2 mb-1.5 flex items-center gap-2 flex-wrap" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
                 <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>⑥完成動画・キャプション作成担当</span>
                 <select value={form.captionAssigneeId} onChange={e => setF({ captionAssigneeId: e.target.value })} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
                   <option value="">未割り当て</option>
-                  {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  {captionAssigneePool.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                 </select>
               </div>
               <div className="rounded-lg p-2 flex items-center gap-2 flex-wrap" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
                 <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>⑦投稿担当</span>
                 <select value={form.postAssigneeId} onChange={e => setF({ postAssigneeId: e.target.value })} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
                   <option value="">未割り当て</option>
-                  {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  {snsStaff.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                 </select>
               </div>
             </div>
@@ -3762,6 +3770,7 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
   const inProgress = totalReels - posted;
   const overdue = reels.filter(r => r.completedStages < 5 && r.yearMonth < ym);
   const editors = users.filter(u => (u.roles || []).includes("editor"));
+  const directors = users.filter(u => (u.roles || []).includes("director"));
 
   // 「編集中」「修正依頼」「修正チェック」共通の絞り込み（スタッフ・クライアント）
   const [dashStaffFilter, setDashStaffFilter] = useState("");
@@ -4471,8 +4480,8 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
                           <p className="text-[11px] mt-0.5 truncate" style={{ color: "#8B897F" }}>{names}</p>
                           <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                             <select value={getCheckerChoice(r.id).editorId} onChange={e => setCheckerChoiceField(r.id, { editorId: e.target.value })} className={inputCls} style={{ ...inputStyle, width: 140, fontSize: 11, padding: "5px 8px" }}>
-                              <option value="">動画編集者を選択</option>
-                              {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                              <option value="">ディレクターを選択</option>
+                              {directors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                             </select>
                             <TextInput type="date" value={getCheckerChoice(r.id).startDate} onChange={e => setCheckerChoiceField(r.id, { startDate: e.target.value })} title="開始日（カレンダーに反映されます）" style={{ width: 120, fontSize: 11, padding: "5px 8px" }} />
                             <span className="text-xs shrink-0" style={{ color: "#8B897F" }}>〜</span>
@@ -4494,7 +4503,7 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
                       <span className="text-xs" style={{ color: "#8B897F" }}>チェックを入れた動画をまとめて指定：</span>
                       <select value={bulkChecker} onChange={e => setBulkChecker(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 200 }}>
                         <option value="">チェック担当者を選択</option>
-                        {editors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                        {directors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                       </select>
                       <button onClick={applyBulkChecker} disabled={!bulkChecker || selectedForBulk.length === 0} className="text-xs font-semibold px-3 py-2 rounded-lg text-white disabled:opacity-40" style={{ background: "#16171B" }}>選択した{selectedForBulk.length}件に一括指定</button>
                     </div>
@@ -4738,6 +4747,7 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoReelDetail,
   const sectionTitle = TASK_SUBSECTIONS.find(s => s.key === section)?.label || "タスク管理";
   const ym = currentYearMonth();
   const editors = users.filter(u => (u.roles || []).includes("editor"));
+  const snsStaff = users.filter(u => (u.roles || []).includes("sns"));
   const [editorFilter, setEditorFilter] = useState("");
   const [taskStaffFilter, setTaskStaffFilter] = useState("");
   const [taskClientFilter, setTaskClientFilter] = useState("");
@@ -5055,7 +5065,7 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoReelDetail,
                   <span className="text-xs font-semibold shrink-0" style={{ color: "#5F5E5A" }}>⑦投稿担当</span>
                   <select value={r.postAssigneeId || ""} onChange={e => updateReelField({ postAssigneeId: e.target.value })} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120, fontSize: 11, padding: "5px 8px" }}>
                     <option value="">未割り当て</option>
-                    {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    {snsStaff.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                   </select>
                 </div>
                 <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
