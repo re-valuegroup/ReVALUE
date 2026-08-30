@@ -1802,7 +1802,16 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   <input
                     type="checkbox"
                     checked={(draft.requiredRoles || []).length === EDIT_ROLE_FIELDS.length}
-                    onChange={e => set({ requiredRoles: e.target.checked ? EDIT_ROLE_FIELDS.map(f => f.key) : [] })}
+                    onChange={e => {
+                      const next = e.target.checked ? EDIT_ROLE_FIELDS.map(f => f.key) : [];
+                      const patch = { requiredRoles: next };
+                      // 一括編集の場合、既にどこかの工程に担当者が割り当て済みなら、新たに追加された工程にも同じ担当者を自動で割り当てて「一部の工程だけ未割当」になるのを防ぐ
+                      if (draft.workMode === "solo") {
+                        const soloEditorId = EDIT_ROLE_FIELDS.map(f => draft[f.key]).find(Boolean) || "";
+                        if (soloEditorId) next.forEach(k => { patch[k] = soloEditorId; });
+                      }
+                      set(patch);
+                    }}
                     disabled={!canEdit}
                   />
                   すべて選択
@@ -1816,7 +1825,14 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                         checked={checked}
                         onChange={() => {
                           const cur = draft.requiredRoles || [];
-                          set({ requiredRoles: checked ? cur.filter(k => k !== f.key) : [...cur, f.key] });
+                          const next = checked ? cur.filter(k => k !== f.key) : [...cur, f.key];
+                          const patch = { requiredRoles: next };
+                          // 一括編集の場合、既にどこかの工程に担当者が割り当て済みなら、新たに追加された工程にも同じ担当者を自動で割り当てて「一部の工程だけ未割当」になるのを防ぐ
+                          if (!checked && draft.workMode === "solo") {
+                            const soloEditorId = EDIT_ROLE_FIELDS.map(x => draft[x.key]).find(Boolean) || "";
+                            if (soloEditorId) patch[f.key] = soloEditorId;
+                          }
+                          set(patch);
                         }}
                         disabled={!canEdit}
                       />
