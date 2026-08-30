@@ -335,7 +335,7 @@ const emptyReel = (clientId, ym) => ({
   cutWorkload: "", telopWorkload: "", animationWorkload: "", sfxWorkload: "", checkWorkload: "",
   cutComment: "", telopComment: "", animationComment: "", sfxComment: "", checkComment: "",
   checklist: emptyChecklist(), checkSubmitted: false, checkSubmittedAt: null,
-  theme: "", script: "", editInstructions: "", driveUrl: "",
+  theme: "", script: "", editInstructions: "", driveUrl: "", referenceVideoUrl: "",
   transcript: "", memo: "", caption: "", captionDone: false, captionInstruction: "",
   captionAssigneeId: "", postAssigneeId: "",
   captionHistory: [], trendSearches: [],
@@ -1848,9 +1848,16 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
               )}
             </button>
             {reel.completedStages >= 2 && !showShootDetail && (
-              <p className="text-xs mb-1" style={{ color: "#8B897F" }}>
-                担当撮影者：{shooters.find(u => u.id === reel.assignedStaffId)?.name || "未割当"} ／ 編集指示：{(reel.editInstructions || "").length > 50 ? reel.editInstructions.slice(0, 50) + "…" : (reel.editInstructions || "未入力")}
-              </p>
+              <div className="text-xs mb-1" style={{ color: "#8B897F" }}>
+                <p>担当撮影者：{shooters.find(u => u.id === reel.assignedStaffId)?.name || "未割当"}</p>
+                <p className="mt-0.5 font-semibold" style={{ color: "#5F5E5A" }}>編集指示：</p>
+                <p className="whitespace-pre-wrap line-clamp-3" style={{ color: "#16171B", lineHeight: 1.6 }}>{reel.editInstructions || "未入力"}</p>
+                {reel.referenceVideoUrl && (
+                  <a href={reel.referenceVideoUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="inline-flex items-center gap-1 mt-1 text-[11px] font-semibold px-2 py-1 rounded-lg" style={{ background: "#F1E9FB", color: "#6B3FA0" }}>
+                    <Link2 size={11} /> 参考動画を見る
+                  </a>
+                )}
+              </div>
             )}
             {(showShootDetail || reel.completedStages < 2) && (
             <>
@@ -1874,9 +1881,14 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
               )}
             </Field>
             <Field label="編集指示">
-              <div className="flex items-start gap-1">
-                <TextArea rows={2} value={draft.editInstructions} onChange={e => set({ editInstructions: e.target.value })} disabled={!canEdit || reel.completedStages >= 2} />
-                {reel.completedStages < 2 && (
+              {reel.completedStages >= 2 ? (
+                // 編集指示が確定した後は、編集する人が読みやすいように、折り返しを保ったまま整形して表示する
+                <div className="text-sm whitespace-pre-wrap rounded-lg p-2.5" style={{ background: "#FAF8F3", color: "#16171B", lineHeight: 1.7, border: "1px solid #EFEDE4" }}>
+                  {reel.editInstructions || "未入力"}
+                </div>
+              ) : (
+                <div className="flex items-start gap-1">
+                  <TextArea rows={2} value={draft.editInstructions} onChange={e => set({ editInstructions: e.target.value })} disabled={!canEdit} />
                   <VoiceInputButton
                     disabled={!canEdit}
                     onResult={(text) => {
@@ -1884,8 +1896,8 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                       set({ editInstructions: cur ? `${cur} ${text}` : text });
                     }}
                   />
-                )}
-              </div>
+                </div>
+              )}
               {canEdit && reel.completedStages < 2 && pastInstructions && pastInstructions.length > 0 && (
                 <select
                   value=""
@@ -1922,6 +1934,14 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                     <Badge tone="teal">編集指示完了</Badge>
                   )}
                 </div>
+              )}
+            </Field>
+            <Field label="参考動画URL（任意・参考になるショート動画があれば）">
+              <TextInput value={draft.referenceVideoUrl || ""} onChange={e => set({ referenceVideoUrl: e.target.value })} placeholder="https://www.tiktok.com/... など" disabled={!canEdit} />
+              {draft.referenceVideoUrl && (
+                <a href={draft.referenceVideoUrl} target="_blank" rel="noreferrer" className="mt-1.5 flex items-center justify-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border" style={{ borderColor: "#DEDACD", color: "#5F5E5A" }}>
+                  <Link2 size={13} /> 参考動画を開く
+                </a>
               )}
             </Field>
             <Field label="台本（任意）"><TextArea rows={2} value={draft.script} onChange={e => set({ script: e.target.value })} disabled={!canEdit} /></Field>
@@ -2693,7 +2713,7 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
   const editors = users.filter(u => (u.roles || []).includes("editor"));
   const shooters = users.filter(u => (u.roles || []).includes("shooter"));
   const [form, setForm] = useState({
-    theme: "", editInstructions: "", script: "", driveUrl: "", assignedStaffId: "", deadline: "", postPlanDate: "", requiredRoles: ["cutEditorId", "telopEditorId", "animationEditorId", "sfxEditorId"], rush: false,
+    theme: "", editInstructions: "", script: "", driveUrl: "", referenceVideoUrl: "", assignedStaffId: "", deadline: "", postPlanDate: "", requiredRoles: ["cutEditorId", "telopEditorId", "animationEditorId", "sfxEditorId"], rush: false,
     workMode: "solo",
     cutEditorId: "", telopEditorId: "", animationEditorId: "", sfxEditorId: "", cutDone: false, telopDone: false, animationDone: false, sfxDone: false,
     editorSecondaryId: "", captionAssigneeId: "", postAssigneeId: "",
@@ -2954,6 +2974,7 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
             </Field>
             <Field label="台本（任意）"><TextArea rows={2} value={form.script} onChange={e => setForm(f => ({ ...f, script: e.target.value }))} /></Field>
             <Field label="保存先URL（任意）"><TextInput value={form.driveUrl} onChange={e => setForm(f => ({ ...f, driveUrl: e.target.value }))} placeholder="https://drive.google.com/..." /></Field>
+            <Field label="参考動画URL（任意・参考になるショート動画があれば）"><TextInput value={form.referenceVideoUrl} onChange={e => setForm(f => ({ ...f, referenceVideoUrl: e.target.value }))} placeholder="https://www.tiktok.com/... など" /></Field>
             <Field label="担当撮影者（任意）">
               <select value={form.assignedStaffId} onChange={e => setForm(f => ({ ...f, assignedStaffId: e.target.value }))} className={inputCls} style={inputStyle}>
                 <option value="">未割り当て</option>
@@ -4324,7 +4345,12 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
                       <button onClick={() => onGoReelDetail(r.clientId, r.id)} className="font-semibold text-xs hover:underline text-left">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "（テーマ未設定）"}</button>
                       <DeadlineBadges reel={r} />
                     </div>
-                    <p className="text-[11px] mt-0.5 truncate" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>
+                    <p className="text-[11px] mt-0.5 whitespace-pre-wrap line-clamp-3" style={{ color: "#5F5E5A" }}>{r.editInstructions || "編集指示未入力"}</p>
+                    {r.referenceVideoUrl && (
+                      <a href={r.referenceVideoUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="inline-flex items-center gap-1 mt-1 text-[11px] font-semibold px-2 py-1 rounded-lg" style={{ background: "#F1E9FB", color: "#6B3FA0" }}>
+                        <Link2 size={11} /> 参考動画を見る
+                      </a>
+                    )}
                     <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                       <select value={choice.editorId} onChange={e => setSoloPickup(r.id, { editorId: e.target.value })} className={inputCls} style={{ ...inputStyle, width: 140, fontSize: 11, padding: "5px 8px" }}>
                         <option value="">動画編集者を選択</option>
@@ -4370,7 +4396,12 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
                         })()}
                         <DeadlineBadges reel={r} />
                       </div>
-                      <p className="text-[11px] mt-0.5 truncate" style={{ color: "#5F5E5A" }}>{r.editInstructions}</p>
+                      <p className="text-[11px] mt-0.5 whitespace-pre-wrap line-clamp-3" style={{ color: "#5F5E5A" }}>{r.editInstructions || "編集指示未入力"}</p>
+                    {r.referenceVideoUrl && (
+                      <a href={r.referenceVideoUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="inline-flex items-center gap-1 mt-1 text-[11px] font-semibold px-2 py-1 rounded-lg" style={{ background: "#F1E9FB", color: "#6B3FA0" }}>
+                        <Link2 size={11} /> 参考動画を見る
+                      </a>
+                    )}
                       <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                         <select value={choice.editorId} onChange={e => setRolePickup(section.roleKey, r.id, { editorId: e.target.value })} className={inputCls} style={{ ...inputStyle, width: 140, fontSize: 11, padding: "5px 8px" }}>
                           <option value="">動画編集者を選択</option>
