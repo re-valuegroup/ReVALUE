@@ -6010,7 +6010,7 @@ function AppInner() {
         </aside>
 
         <main className="flex-1 min-w-0">
-          <div className="md:hidden flex items-center justify-between p-4 border-b" style={{ borderColor: "#DEDACD", background: "#fff" }}>
+          <div className="md:hidden sticky top-0 z-30 flex items-center justify-between p-4 border-b" style={{ borderColor: "#DEDACD", background: "#fff" }}>
             <button onClick={() => setNavOpen(true)}><Menu size={20} /></button>
             <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700 }}>ReVALUE Studio</p>
             <div style={{ width: 20 }} />
