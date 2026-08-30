@@ -335,7 +335,7 @@ const emptyReel = (clientId, ym) => ({
   cutWorkload: "", telopWorkload: "", animationWorkload: "", sfxWorkload: "", checkWorkload: "",
   cutComment: "", telopComment: "", animationComment: "", sfxComment: "", checkComment: "",
   checklist: emptyChecklist(), checkSubmitted: false, checkSubmittedAt: null,
-  theme: "", script: "", editInstructions: "", driveUrl: "", referenceVideoUrl: "",
+  theme: "", script: "", editInstructions: "", driveUrl: "", referenceVideoUrl: "", finalVideoUrl: "",
   transcript: "", memo: "", caption: "", captionDone: false, captionInstruction: "",
   captionAssigneeId: "", postAssigneeId: "",
   captionHistory: [], trendSearches: [],
@@ -2513,7 +2513,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
 
               <div className="rounded-lg p-2" style={{ background: "#fff", border: reel.captionDone ? "1px solid #0E90B8" : "1px solid #EFEDE4" }}>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>⑥キャプション作成担当</span>
+                  <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>⑥完成動画・キャプション作成担当</span>
                   <select value={reel.captionAssigneeId || ""} onChange={e => update({ captionAssigneeId: e.target.value })} disabled={!canEdit} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
                     <option value="">未割り当て</option>
                     {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
@@ -2530,6 +2530,16 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   >
                     {reel.captionDone ? <CircleCheck size={14} /> : <Circle size={14} />} {reel.captionDone ? "完了" : "未完了（クリックで完了）"}
                   </button>
+                </div>
+                <div className="mt-2 pt-2" style={{ borderTop: "1px dashed #EFEDE4" }}>
+                  <Field label="完成動画保存先URL（任意）">
+                    <TextInput value={draft.finalVideoUrl || ""} onChange={e => set({ finalVideoUrl: e.target.value })} placeholder="https://drive.google.com/... など" disabled={!canEdit} />
+                    {draft.finalVideoUrl && (
+                      <a href={draft.finalVideoUrl} target="_blank" rel="noreferrer" className="mt-1.5 flex items-center justify-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border" style={{ borderColor: "#DEDACD", color: "#5F5E5A" }}>
+                        <Link2 size={13} /> 完成動画を見る
+                      </a>
+                    )}
+                  </Field>
                 </div>
                 <div className="mt-2 pt-2" style={{ borderTop: "1px dashed #EFEDE4" }}>
                   <button onClick={() => setShowCaptionDetail(s => !s)} className="w-full flex items-center justify-between">
@@ -3063,7 +3073,7 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
                 </select>
               </div>
               <div className="rounded-lg p-2 mb-1.5 flex items-center gap-2 flex-wrap" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
-                <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>⑥キャプション作成担当</span>
+                <span className="text-xs font-semibold shrink-0" style={{ width: 96, color: "#5F5E5A" }}>⑥完成動画・キャプション作成担当</span>
                 <select value={form.captionAssigneeId} onChange={e => setF({ captionAssigneeId: e.target.value })} className={inputCls} style={{ ...inputStyle, flex: 1, minWidth: 120 }}>
                   <option value="">未割り当て</option>
                   {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
@@ -4250,13 +4260,18 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
                 const requestedByUser = users.find(u => u.id === revisionRequesterId(r, rv));
                 const assignedNames = (rv.assignedEditorIds || []).map(id => users.find(u => u.id === id)?.name).filter(Boolean);
                 return (
-                  <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="text-left text-xs p-2.5 rounded-xl hover:bg-black/5" style={{ background: "#FCEBEB" }}>
+                  <div key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="cursor-pointer text-left text-xs p-2.5 rounded-xl hover:bg-black/5" style={{ background: "#FCEBEB" }}>
                     <p className="font-semibold break-words mb-1">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"} <Badge tone={r.workMode === "solo" ? "gray" : "purple"}>{r.workMode === "solo" ? "一括編集" : "分業"}</Badge></p>
                     <div className="flex items-center gap-1.5 mb-1 flex-wrap"><DeadlineBadges reel={r} /></div>
                     <p style={{ color: "#A32D2D" }}>第{rv.revisionNumber}回修正 ・ 依頼者：{requestedByUser?.name || "不明"}</p>
                     <p style={{ color: "#8B897F" }}>依頼先：{assignedNames.length > 0 ? assignedNames.join("・") : "未割当"}</p>
                     <p className="mt-1 line-clamp-2" style={{ color: "#5F5E5A" }}>{rv.memo}</p>
-                  </button>
+                    {rv.videoUrl && (
+                      <a href={rv.videoUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="inline-flex items-center gap-1 mt-1 text-[11px] font-semibold px-2 py-1 rounded-lg" style={{ background: "#fff", color: "#A32D2D" }}>
+                        <Link2 size={11} /> 修正説明動画を見る
+                      </a>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -4278,12 +4293,17 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
                 // 依頼者は、その修正が①②③④の工程別のものなら該当工程のチェック担当、⑤最終チェックのものなら⑤最終チェック担当の名前を表示する
                 const checker = users.find(u => u.id === revisionRequesterId(r, rv));
                 return (
-                  <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="text-left text-xs p-2.5 rounded-xl hover:bg-black/5" style={{ background: "#D6F0EA" }}>
+                  <div key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="cursor-pointer text-left text-xs p-2.5 rounded-xl hover:bg-black/5" style={{ background: "#D6F0EA" }}>
                     <p className="font-semibold break-words mb-1">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"} <Badge tone={r.workMode === "solo" ? "gray" : "purple"}>{r.workMode === "solo" ? "一括編集" : "分業"}</Badge></p>
                     <div className="flex items-center gap-1.5 mb-1 flex-wrap"><DeadlineBadges reel={r} /></div>
                     <p style={{ color: "#0E6B57" }}>第{rv.revisionNumber}回修正 ・ 再提出済み</p>
                     <p style={{ color: "#8B897F" }}>依頼者（チェック担当）：{checker?.name || "未割当"}</p>
-                  </button>
+                    {rv.videoUrl && (
+                      <a href={rv.videoUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="inline-flex items-center gap-1 mt-1 text-[11px] font-semibold px-2 py-1 rounded-lg" style={{ background: "#fff", color: "#0E6B57" }}>
+                        <Link2 size={11} /> 修正説明動画を見る
+                      </a>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -5038,18 +5058,25 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoReelDetail,
                     {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                   </select>
                 </div>
-                <button onClick={() => copyCaption(r)} className="text-xs font-semibold px-2.5 py-1 rounded-lg text-white flex items-center gap-1 mt-1.5" style={{ background: copiedId === r.id ? "#0E90B8" : "#16171B" }}>
-                  {copiedId === r.id ? <CircleCheck size={12} /> : <Copy size={12} />} {copiedId === r.id ? "コピーしました" : "キャプションをコピー"}
-                </button>
-                <button
-                  onClick={() => updateReelField({ postedDate: r.postedDate || new Date().toISOString().slice(0, 10), completedStages: 5 })}
-                  disabled={!r.checkSubmitted || !r.postAssigneeId}
-                  title={!r.checkSubmitted ? "⑤最終チェックが完了してから投稿完了にできます" : !r.postAssigneeId ? "⑦投稿担当を選択してから投稿完了にできます" : ""}
-                  className="text-xs font-semibold px-2.5 py-1 rounded-lg text-white flex items-center gap-1 mt-1.5 ml-1.5 disabled:opacity-40"
-                  style={{ background: "#0E90B8" }}
-                >
-                  <CircleCheck size={12} /> 投稿完了
-                </button>
+                <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                  {r.finalVideoUrl && (
+                    <a href={r.finalVideoUrl} target="_blank" rel="noreferrer" className="text-xs font-semibold px-2.5 py-1 rounded-lg flex items-center gap-1" style={{ background: "#F1E9FB", color: "#6B3FA0" }}>
+                      <Link2 size={12} /> 完成動画を見る
+                    </a>
+                  )}
+                  <button onClick={() => copyCaption(r)} className="text-xs font-semibold px-2.5 py-1 rounded-lg text-white flex items-center gap-1" style={{ background: copiedId === r.id ? "#0E90B8" : "#16171B" }}>
+                    {copiedId === r.id ? <CircleCheck size={12} /> : <Copy size={12} />} {copiedId === r.id ? "コピーしました" : "キャプションをコピー"}
+                  </button>
+                  <button
+                    onClick={() => updateReelField({ postedDate: r.postedDate || new Date().toISOString().slice(0, 10), completedStages: 5 })}
+                    disabled={!r.checkSubmitted || !r.postAssigneeId}
+                    title={!r.checkSubmitted ? "⑤最終チェックが完了してから投稿完了にできます" : !r.postAssigneeId ? "⑦投稿担当を選択してから投稿完了にできます" : ""}
+                    className="text-xs font-semibold px-2.5 py-1 rounded-lg text-white flex items-center gap-1 disabled:opacity-40"
+                    style={{ background: "#0E90B8" }}
+                  >
+                    <CircleCheck size={12} /> 投稿完了
+                  </button>
+                </div>
                 <div className="mt-2 pt-2" style={{ borderTop: "1px dashed #DEDACD" }}>
                   <button type="button" onClick={() => togglePostUrlExpanded(r.id)} className="w-full flex items-center justify-between">
                     <span className="text-[11px] font-semibold flex items-center gap-1.5" style={{ color: "#5F5E5A" }}><Link2 size={12} /> 投稿日・各SNS投稿URL</span>
