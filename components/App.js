@@ -3841,8 +3841,10 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
   const sfxPickupList = rolePickupList("sfxEditorId");
 
   // 一括編集①②③④：一括編集（旧：1人完結）が選択され、まだ担当者が決まっていない動画
+  // 一括編集は1人がすべての必要工程を担当する方式のため、いずれかの工程に既に担当者が割り当て済みの動画は「募集中」に出さない
+  // （一部の工程だけ未割当の状態でも、既に別の担当者が編集を進めている可能性があるため、二重に担当者がついてしまうのを防ぐ）
   const soloPickupList = reels.filter(r => r.completedStages >= 2 && r.completedStages < 5 && r.editInstructions && r.workMode === "solo"
-    && editRolesForReel(r).some(f => !r[f.key]))
+    && editRolesForReel(r).every(f => !r[f.key]))
     .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
   const [soloPickupChoice, setSoloPickupChoice] = useState({});
   const getSoloPickup = (reelId) => soloPickupChoice[reelId] || { editorId: "", startDate: "", endDate: "", startTime: "", endTime: "" };
