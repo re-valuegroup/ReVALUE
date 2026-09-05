@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   LayoutDashboard, Users, Video, CheckSquare, BarChart3, Wallet, UserCog,
   Plus, X, Pencil, Trash2, Instagram, ExternalLink, Sparkles, ChevronRight,
@@ -590,6 +591,15 @@ function Field({ label, children }) {
       {children}
     </label>
   );
+}
+
+// A4 PDF出力用のコンテンツをdocument.body直下に描画する（アプリ本体のDOMツリーの外に出すことで、
+// 印刷時に「アプリ本体を非表示」「この中身だけ表示」を単純なCSSで安全に切り替えられるようにする。
+// こうしないと、印刷対象以外の要素をvisibility:hiddenで隠しても元のレイアウトの高さ分だけ余分な
+// 白紙ページが出力されてしまうことがある）
+function PrintPortal({ children }) {
+  if (typeof document === "undefined") return null;
+  return createPortal(children, document.body);
 }
 
 const inputCls = "w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 transition";
@@ -5294,10 +5304,12 @@ function PrintableReport() {
   const title = el?.dataset?.title || "";
   const body = el?.dataset?.body || "";
   return (
-    <div id="printable-report" data-title={title} data-body={body} className="printable-report-content">
-      <h1>{title}</h1>
-      <pre>{body}</pre>
-    </div>
+    <PrintPortal>
+      <div id="printable-report" data-title={title} data-body={body} className="printable-report-content">
+        <h1>{title}</h1>
+        <pre>{body}</pre>
+      </div>
+    </PrintPortal>
   );
 }
 
@@ -5480,49 +5492,51 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
         </div>
       </div>
 
-      {/* PDF出力用の非表示コンテナ（印刷時のみA4サイズで表示） */}
-      <div id="printable-staff-report" className="printable-staff-report-content">
-        <h1>{monthLabel(effectiveMonth)} スタッフ実績・支払い明細</h1>
-        <p className="staff-report-meta">編集単価：¥{(parseFloat(rate.editRate) || 0).toLocaleString()}／工数　チェック単価：¥{(parseFloat(rate.checkRate) || 0).toLocaleString()}／工数</p>
-        {staffRows.map(s => {
-          const items = Object.values(s.byStage).flatMap(x => x.items);
-          const totalAmount = s.editAmount + s.checkAmount;
-          return (
-            <div key={s.user.id} style={{ marginBottom: 14 }}>
-              <h2>{s.user.name}　支払い見込み ¥{Math.round(totalAmount).toLocaleString()}</h2>
+      {/* PDF出力用の非表示コンテナ（印刷時のみA4サイズで表示。アプリ本体のDOMツリー外（document.body直下）に描画される） */}
+      <PrintPortal>
+        <div id="printable-staff-report" className="printable-staff-report-content">
+          <h1>{monthLabel(effectiveMonth)} スタッフ実績・支払い明細</h1>
+          <p className="staff-report-meta">編集単価：¥{(parseFloat(rate.editRate) || 0).toLocaleString()}／工数　チェック単価：¥{(parseFloat(rate.checkRate) || 0).toLocaleString()}／工数</p>
+          {staffRows.map(s => {
+            const items = Object.values(s.byStage).flatMap(x => x.items);
+            const totalAmount = s.editAmount + s.checkAmount;
+            return (
+              <div key={s.user.id} style={{ marginBottom: 14 }}>
+                <h2>{s.user.name}　支払い見込み ¥{Math.round(totalAmount).toLocaleString()}</h2>
+                <table>
+                  <thead>
+                    <tr><th>クライアント</th><th>案件</th><th>工程</th><th>工数</th><th>金額</th></tr>
+                  </thead>
+                  <tbody>
+                    {items.map((it, i) => (
+                      <tr key={i}>
+                        <td>{it.client}</td>
+                        <td>{it.theme}</td>
+                        <td>{it.stageLabel}</td>
+                        <td>{it.workload || "-"}</td>
+                        <td>{it.amount ? `¥${Math.round(it.amount).toLocaleString()}` : "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })}
+          {shootSummaries.length > 0 && (
+            <div style={{ marginTop: 14 }}>
+              <h2>撮影担当実績</h2>
               <table>
-                <thead>
-                  <tr><th>クライアント</th><th>案件</th><th>工程</th><th>工数</th><th>金額</th></tr>
-                </thead>
+                <thead><tr><th>撮影担当</th><th>撮影完了本数</th></tr></thead>
                 <tbody>
-                  {items.map((it, i) => (
-                    <tr key={i}>
-                      <td>{it.client}</td>
-                      <td>{it.theme}</td>
-                      <td>{it.stageLabel}</td>
-                      <td>{it.workload || "-"}</td>
-                      <td>{it.amount ? `¥${Math.round(it.amount).toLocaleString()}` : "-"}</td>
-                    </tr>
+                  {shootSummaries.map(s => (
+                    <tr key={s.user.id}><td>{s.user.name}</td><td>{s.items.length}本</td></tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          );
-        })}
-        {shootSummaries.length > 0 && (
-          <div style={{ marginTop: 14 }}>
-            <h2>撮影担当実績</h2>
-            <table>
-              <thead><tr><th>撮影担当</th><th>撮影完了本数</th></tr></thead>
-              <tbody>
-                {shootSummaries.map(s => (
-                  <tr key={s.user.id}><td>{s.user.name}</td><td>{s.items.length}本</td></tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      </PrintPortal>
 
       <div className="rounded-2xl p-5 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
         <div className="flex items-center justify-between mb-3">
