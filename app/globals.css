@@ -13,18 +13,21 @@ html, body {
 input:disabled, textarea:disabled, select:disabled { opacity: .6; }
 ::selection { background: #FF5A36; color: #fff; }
 
-/* A4 PDFレポート出力用（分析資料ページ） */
+/* A4 PDFレポート出力（分析資料ページ／経理管理ページ共通）
+   #printable-report・#printable-staff-report は、React側でdocument.body直下にポータル描画されている
+   （アプリ本体のDOMツリーの外）。そのため、印刷時はアプリ本体（body直下のそれ以外の要素）を
+   display:noneで完全に取り除くだけでよく、印刷対象の高さがそのままページ数に反映されるので、
+   内容が1枚に収まる場合はちょうど1枚、複数枚になる場合も余分な白紙ページが入らない。 */
 .printable-report-content { display: none; }
+.printable-staff-report-content { display: none; }
 @media print {
-  body * { visibility: hidden; }
-  #printable-report, #printable-report * { visibility: visible; }
+  body > *:not(#printable-report):not(#printable-staff-report) {
+    display: none !important;
+  }
+
   #printable-report {
     display: block !important;
-    position: absolute;
-    top: 0;
-    left: 0;
     width: 210mm;
-    min-height: 297mm;
     padding: 20mm;
     box-sizing: border-box;
     font-family: 'Inter', sans-serif;
@@ -40,20 +43,10 @@ input:disabled, textarea:disabled, select:disabled { opacity: .6; }
     font-size: 12px;
     line-height: 1.8;
   }
-  @page { size: A4; margin: 0; }
-}
 
-/* A4 PDFレポート出力用（経理管理・スタッフ実績集計ページ） */
-.printable-staff-report-content { display: none; }
-@media print {
-  #printable-staff-report, #printable-staff-report * { visibility: visible; }
   #printable-staff-report {
     display: block !important;
-    position: absolute;
-    top: 0;
-    left: 0;
     width: 210mm;
-    min-height: 297mm;
     padding: 15mm;
     box-sizing: border-box;
     font-family: 'Inter', sans-serif;
@@ -84,4 +77,6 @@ input:disabled, textarea:disabled, select:disabled { opacity: .6; }
     padding: 3px 6px;
     text-align: left;
   }
+
+  @page { size: A4; margin: 0; }
 }
