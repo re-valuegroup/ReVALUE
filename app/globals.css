@@ -61,6 +61,15 @@ input:disabled, textarea:disabled, select:disabled { opacity: .6; }
     font-weight: 700;
     margin: 10px 0 4px;
   }
+  #printable-staff-report .staff-report-total {
+    margin-bottom: 8px;
+  }
+  #printable-staff-report .staff-report-total th, #printable-staff-report .staff-report-total td {
+    font-size: 13px;
+    font-weight: 700;
+    text-align: center;
+    background: #F4F2EA;
+  }
   #printable-staff-report .staff-report-meta {
     font-size: 11px;
     color: #333;
