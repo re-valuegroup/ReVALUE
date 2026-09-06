@@ -5718,6 +5718,16 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
       <PrintPortal>
         <div id="printable-staff-report" className="printable-staff-report-content">
           <h1>{monthLabel(effectiveMonth)} スタッフ実績・支払い明細</h1>
+          <table className="staff-report-total">
+            <thead><tr><th>合計</th><th>編集経費</th><th>撮影経費</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>¥{Math.round(grandExpenseTotal).toLocaleString()}</td>
+                <td>¥{Math.round(editExpenseTotal).toLocaleString()}</td>
+                <td>¥{Math.round(shootExpenseTotal).toLocaleString()}</td>
+              </tr>
+            </tbody>
+          </table>
           <p className="staff-report-meta">
             一括編集：¥{(parseFloat(rate.soloRate) || 0).toLocaleString()}／件　①カット：¥{(parseFloat(rate.cutRate) || 0).toLocaleString()}／件　②テロップ：¥{(parseFloat(rate.telopRate) || 0).toLocaleString()}／件　③アニメーション：¥{(parseFloat(rate.animationRate) || 0).toLocaleString()}／件　④効果音：¥{(parseFloat(rate.sfxRate) || 0).toLocaleString()}／件　⑤チェック：¥{(parseFloat(rate.checkRate) || 0).toLocaleString()}／件　撮影：¥{(parseFloat(rate.shootRate) || 0).toLocaleString()}／時間
           </p>
