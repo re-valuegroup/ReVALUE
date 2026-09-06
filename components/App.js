@@ -5578,6 +5578,13 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
   const shooterUsers = users.filter(u => (u.roles || []).includes("shooter"));
   const shootSummaries = computeShootSummaries(monthReels, clients, shooterUsers, rate, shootStaffFilter);
 
+  // 該当月の支払い見込み合計（編集経費・撮影経費）は、上の絞り込み（編集者・撮影・工程）に関わらず、月全体の金額を表示する
+  const allStaffRowsForTotal = computeStaffSummaries(monthReels, clients, users, rate, STAFF_TASK_STAGES, "");
+  const editExpenseTotal = allStaffRowsForTotal.reduce((sum, s) => sum + s.totalAmount, 0);
+  const allShootSummariesForTotal = computeShootSummaries(monthReels, clients, shooterUsers, rate, "");
+  const shootExpenseTotal = allShootSummariesForTotal.reduce((sum, s) => sum + s.amount, 0);
+  const grandExpenseTotal = editExpenseTotal + shootExpenseTotal;
+
   const printStaffReport = () => window.print();
 
   return (
@@ -5587,6 +5594,24 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
         <h2 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700 }}>経理管理（統括管理者専用）</h2>
       </div>
       <p className="text-xs mb-4" style={{ color: "#8B897F" }}>契約・請求・入金状況を管理します。この情報は統括管理者のみが閲覧できます。</p>
+
+      <div className="rounded-2xl p-5 mb-4" style={{ background: "#16171B" }}>
+        <p className="text-xs font-semibold mb-2" style={{ color: "#C7C4B6" }}>{monthLabel(effectiveMonth)}の支払い見込み合計（編集経費＋撮影経費・絞り込みに関わらず月全体の金額）</p>
+        <div className="grid sm:grid-cols-3 gap-3">
+          <div>
+            <p className="text-[11px]" style={{ color: "#8B897F" }}>合計</p>
+            <p className="text-2xl font-bold" style={{ color: "#fff", fontFamily: "'Space Grotesk', sans-serif" }}>¥{Math.round(grandExpenseTotal).toLocaleString()}</p>
+          </div>
+          <div>
+            <p className="text-[11px]" style={{ color: "#8B897F" }}>編集経費（①〜⑤）</p>
+            <p className="text-lg font-bold" style={{ color: "#5BC0D8" }}>¥{Math.round(editExpenseTotal).toLocaleString()}</p>
+          </div>
+          <div>
+            <p className="text-[11px]" style={{ color: "#8B897F" }}>撮影経費</p>
+            <p className="text-lg font-bold" style={{ color: "#E8B34F" }}>¥{Math.round(shootExpenseTotal).toLocaleString()}</p>
+          </div>
+        </div>
+      </div>
 
       <div className="rounded-2xl p-5 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
         <p className="font-bold mb-1 flex items-center gap-1.5"><Scissors size={16} color="#0E90B8" /> スタッフ実績集計・報酬計算</p>
