@@ -262,19 +262,25 @@ create policy "pay_rates_admin_update" on pay_rates for update
 create policy "pay_rates_admin_delete" on pay_rates for delete
   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
 
--- shoot_logs も同様に、閲覧（select）は全ログインユーザーに許可し（「自分の実績」ページで自分の分を見られるように）、
--- 登録・変更・削除（insert/update/delete）は統括管理者のみに限定する（経理管理でのみ手動編集する）
+-- shoot_logs も同様に、閲覧（select）は全ログインユーザーに許可する（「自分の実績」ページで自分の分を見られるように）。
+-- 登録・変更・削除（insert/update/delete）は、統括管理者、または本人（staff_id が自分のプロフィールと一致する場合）に許可する
+-- （経理管理では全撮影担当を、自分の実績ページでは本人が自分の分だけを、手動編集できるようにするため）
 drop policy if exists "shoot_logs_select_all" on shoot_logs;
 drop policy if exists "shoot_logs_admin_write" on shoot_logs;
+drop policy if exists "shoot_logs_admin_update" on shoot_logs;
+drop policy if exists "shoot_logs_admin_delete" on shoot_logs;
+drop policy if exists "shoot_logs_write" on shoot_logs;
+drop policy if exists "shoot_logs_update" on shoot_logs;
+drop policy if exists "shoot_logs_delete" on shoot_logs;
 create policy "shoot_logs_select_all" on shoot_logs for select
   using (auth.role() = 'authenticated');
-create policy "shoot_logs_admin_write" on shoot_logs for insert
-  with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
-create policy "shoot_logs_admin_update" on shoot_logs for update
-  using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)))
-  with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
-create policy "shoot_logs_admin_delete" on shoot_logs for delete
-  using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
+create policy "shoot_logs_write" on shoot_logs for insert
+  with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+create policy "shoot_logs_update" on shoot_logs for update
+  using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))))
+  with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+create policy "shoot_logs_delete" on shoot_logs for delete
+  using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
 
 -- ============ 移行用ALTER文（すでに旧バージョンのテーブルがある場合のみ、個別に実行してください） ============
 -- alter table reels add column if not exists resubmit_comment text;
@@ -387,7 +393,9 @@ create policy "shoot_logs_admin_delete" on shoot_logs for delete
 -- alter table pay_rates enable row level security;
 
 -- alter table reels add column if not exists shoot_unit_pay numeric;
--- 以下は新規テーブル（shoot_logs：撮影日別の時給×稼働時間。経理管理で撮影担当者のみ手動編集する）です。SQL Editorで実行してください。
+-- 以下は新規テーブル（shoot_logs：撮影日別の時給×稼働時間）です。まだ作成していない場合は、SQL Editorで実行してください。
+-- 登録・変更・削除は、統括管理者、または本人（staff_idが自分のプロフィールと一致する場合）に許可しています
+-- （経理管理では全撮影担当を、自分の実績ページでは本人が自分の分だけを、手動編集できるようにするため）。
 -- create table if not exists shoot_logs (
 --   id uuid primary key default gen_random_uuid(),
 --   staff_id uuid references profiles(id) on delete cascade,
@@ -401,12 +409,19 @@ create policy "shoot_logs_admin_delete" on shoot_logs for delete
 -- alter table shoot_logs enable row level security;
 -- drop policy if exists "shoot_logs_select_all" on shoot_logs;
 -- drop policy if exists "shoot_logs_admin_write" on shoot_logs;
+-- drop policy if exists "shoot_logs_admin_update" on shoot_logs;
+-- drop policy if exists "shoot_logs_admin_delete" on shoot_logs;
+-- drop policy if exists "shoot_logs_write" on shoot_logs;
+-- drop policy if exists "shoot_logs_update" on shoot_logs;
+-- drop policy if exists "shoot_logs_delete" on shoot_logs;
 -- create policy "shoot_logs_select_all" on shoot_logs for select
 --   using (auth.role() = 'authenticated');
--- create policy "shoot_logs_admin_write" on shoot_logs for insert
---   with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
--- create policy "shoot_logs_admin_update" on shoot_logs for update
---   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)))
---   with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
--- create policy "shoot_logs_admin_delete" on shoot_logs for delete
---   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
+-- create policy "shoot_logs_write" on shoot_logs for insert
+--   with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+-- create policy "shoot_logs_update" on shoot_logs for update
+--   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))))
+--   with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+-- create policy "shoot_logs_delete" on shoot_logs for delete
+--   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+-- もしすでにshoot_logsテーブルを作成済み（前バージョンの管理者限定RLS）の場合は、上記のdrop policy〜create policyの部分だけを再実行すれば、
+-- 本人も自分のログを編集できるように更新されます（create table文は「すでに存在すれば何もしない」ため再実行しても問題ありません）。
