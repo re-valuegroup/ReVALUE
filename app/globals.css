@@ -13,15 +13,19 @@ html, body {
 input:disabled, textarea:disabled, select:disabled { opacity: .6; }
 ::selection { background: #FF5A36; color: #fff; }
 
-/* A4 PDFレポート出力（分析資料ページ／経理管理ページ共通）
-   #printable-report・#printable-staff-report は、React側でdocument.body直下にポータル描画されている
+/* A4 PDFレポート出力（分析資料ページ／経理管理ページ／自分の実績ページ共通）
+   #printable-report・.printable-staff-page は、React側でdocument.body直下にポータル描画されている
    （アプリ本体のDOMツリーの外）。そのため、印刷時はアプリ本体（body直下のそれ以外の要素）を
    display:noneで完全に取り除くだけでよく、印刷対象の高さがそのままページ数に反映されるので、
-   内容が1枚に収まる場合はちょうど1枚、複数枚になる場合も余分な白紙ページが入らない。 */
+   内容が1枚に収まる場合はちょうど1枚、複数枚になる場合も余分な白紙ページが入らない。
+   経理管理ページは「ディレクター／動画編集者／撮影担当／SNS運用担当／全体まとめ」の5つの印刷用コンテナを
+   同時にDOM上へ持つため、印刷ボタンを押した時点でJS側がbodyのdata-print-section属性に区分名をセットし、
+   CSS側はその区分に一致する .printable-staff-page[data-section="..."] だけを表示する。
+   自分の実績ページは常に data-section="mine" の1つだけを表示する。 */
 .printable-report-content { display: none; }
-.printable-staff-report-content { display: none; }
+.printable-staff-page { display: none; }
 @media print {
-  body > *:not(#printable-report):not(#printable-staff-report) {
+  body > *:not(#printable-report):not(.printable-staff-page) {
     display: none !important;
   }
 
@@ -44,44 +48,50 @@ input:disabled, textarea:disabled, select:disabled { opacity: .6; }
     line-height: 1.8;
   }
 
-  #printable-staff-report {
+  .printable-staff-page { display: none; }
+  body[data-print-section="director"] .printable-staff-page[data-section="director"],
+  body[data-print-section="editor"] .printable-staff-page[data-section="editor"],
+  body[data-print-section="shoot"] .printable-staff-page[data-section="shoot"],
+  body[data-print-section="sns"] .printable-staff-page[data-section="sns"],
+  body[data-print-section="all"] .printable-staff-page[data-section="all"],
+  body[data-print-section="mine"] .printable-staff-page[data-section="mine"] {
     display: block !important;
     width: 210mm;
     padding: 15mm;
     box-sizing: border-box;
     font-family: 'Inter', sans-serif;
   }
-  #printable-staff-report h1 {
+  .printable-staff-page h1 {
     font-size: 16px;
     font-weight: 700;
     margin-bottom: 4px;
   }
-  #printable-staff-report h2 {
+  .printable-staff-page h2 {
     font-size: 12px;
     font-weight: 700;
     margin: 10px 0 4px;
   }
-  #printable-staff-report .staff-report-total {
+  .printable-staff-page .staff-report-total {
     margin-bottom: 8px;
   }
-  #printable-staff-report .staff-report-total th, #printable-staff-report .staff-report-total td {
+  .printable-staff-page .staff-report-total th, .printable-staff-page .staff-report-total td {
     font-size: 13px;
     font-weight: 700;
     text-align: center;
     background: #F4F2EA;
   }
-  #printable-staff-report .staff-report-meta {
+  .printable-staff-page .staff-report-meta {
     font-size: 11px;
     color: #333;
     margin-bottom: 8px;
   }
-  #printable-staff-report table {
+  .printable-staff-page table {
     width: 100%;
     border-collapse: collapse;
     font-size: 10px;
     margin-bottom: 6px;
   }
-  #printable-staff-report th, #printable-staff-report td {
+  .printable-staff-page th, .printable-staff-page td {
     border: 1px solid #999;
     padding: 3px 6px;
     text-align: left;
