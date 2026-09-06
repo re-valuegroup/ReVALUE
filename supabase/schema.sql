@@ -179,7 +179,11 @@ create table if not exists pay_rates (
   animation_rate numeric,
   sfx_rate numeric,
   check_rate numeric,
+  director_hourly_rate numeric,
   shoot_rate numeric,
+  shoot_project_rate numeric,
+  caption_rate numeric,
+  post_rate numeric,
   edit_rate numeric
 );
 
@@ -189,6 +193,18 @@ create table if not exists shoot_logs (
   staff_id uuid references profiles(id) on delete cascade,
   year_month text not null,
   shoot_date date,
+  hours numeric,
+  hourly_rate numeric,
+  note text,
+  created_at timestamptz default now()
+);
+
+-- ============ director_logs（ディレクターの手入力実績：日付・時給×稼働時間・内訳。経理管理でのみ手動編集する） ============
+create table if not exists director_logs (
+  id uuid primary key default gen_random_uuid(),
+  staff_id uuid references profiles(id) on delete cascade,
+  year_month text not null,
+  work_date date,
   hours numeric,
   hourly_rate numeric,
   note text,
@@ -228,6 +244,7 @@ alter table reels enable row level security;
 alter table finance enable row level security;
 alter table pay_rates enable row level security;
 alter table shoot_logs enable row level security;
+alter table director_logs enable row level security;
 alter table board_posts enable row level security;
 alter table calendar_events enable row level security;
 
@@ -281,6 +298,22 @@ create policy "shoot_logs_update" on shoot_logs for update
   with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
 create policy "shoot_logs_delete" on shoot_logs for delete
   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+
+-- director_logs：閲覧（select）は全ログインユーザーに許可し（「自分の実績」ページでディレクター本人が見られるように）、
+-- 登録・変更・削除（insert/update/delete）は統括管理者のみに限定する（経理管理でのみ手動編集する）
+drop policy if exists "director_logs_select_all" on director_logs;
+drop policy if exists "director_logs_admin_write" on director_logs;
+drop policy if exists "director_logs_admin_update" on director_logs;
+drop policy if exists "director_logs_admin_delete" on director_logs;
+create policy "director_logs_select_all" on director_logs for select
+  using (auth.role() = 'authenticated');
+create policy "director_logs_admin_write" on director_logs for insert
+  with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
+create policy "director_logs_admin_update" on director_logs for update
+  using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)))
+  with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
+create policy "director_logs_admin_delete" on director_logs for delete
+  using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
 
 -- ============ 移行用ALTER文（すでに旧バージョンのテーブルがある場合のみ、個別に実行してください） ============
 -- alter table reels add column if not exists resubmit_comment text;
@@ -425,3 +458,37 @@ create policy "shoot_logs_delete" on shoot_logs for delete
 --   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
 -- もしすでにshoot_logsテーブルを作成済み（前バージョンの管理者限定RLS）の場合は、上記のdrop policy〜create policyの部分だけを再実行すれば、
 -- 本人も自分のログを編集できるように更新されます（create table文は「すでに存在すれば何もしない」ため再実行しても問題ありません）。
+
+-- 経理管理を「ディレクター／動画編集者／撮影担当／SNS運用担当」の4区分に分けた機能で使う、pay_ratesの追加カラムです。
+-- （director_hourly_rate：ディレクターの手入力実績の既定時給／shoot_project_rate：撮影の1件あたり単価／caption_rate・post_rate：⑥⑦の単価）
+-- alter table pay_rates add column if not exists director_hourly_rate numeric;
+-- alter table pay_rates add column if not exists shoot_project_rate numeric;
+-- alter table pay_rates add column if not exists caption_rate numeric;
+-- alter table pay_rates add column if not exists post_rate numeric;
+
+-- 以下は新規テーブル（director_logs：ディレクターの手入力実績「日付・時給×稼働時間・内訳」）です。まだ作成していない場合は、SQL Editorで実行してください。
+-- 登録・変更・削除は統括管理者のみに許可しています（経理管理でのみ手動編集する）。
+-- create table if not exists director_logs (
+--   id uuid primary key default gen_random_uuid(),
+--   staff_id uuid references profiles(id) on delete cascade,
+--   year_month text not null,
+--   work_date date,
+--   hours numeric,
+--   hourly_rate numeric,
+--   note text,
+--   created_at timestamptz default now()
+-- );
+-- alter table director_logs enable row level security;
+-- drop policy if exists "director_logs_select_all" on director_logs;
+-- drop policy if exists "director_logs_admin_write" on director_logs;
+-- drop policy if exists "director_logs_admin_update" on director_logs;
+-- drop policy if exists "director_logs_admin_delete" on director_logs;
+-- create policy "director_logs_select_all" on director_logs for select
+--   using (auth.role() = 'authenticated');
+-- create policy "director_logs_admin_write" on director_logs for insert
+--   with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
+-- create policy "director_logs_admin_update" on director_logs for update
+--   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)))
+--   with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
+-- create policy "director_logs_admin_delete" on director_logs for delete
+--   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
