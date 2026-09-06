@@ -87,6 +87,7 @@ create table if not exists reels (
   year_month text not null,
   assigned_staff_id uuid references profiles(id) on delete set null,
   shoot_hours numeric,
+  shoot_unit_pay numeric,
   cut_editor_id uuid references profiles(id) on delete set null,
   telop_editor_id uuid references profiles(id) on delete set null,
   animation_editor_id uuid references profiles(id) on delete set null,
@@ -182,6 +183,18 @@ create table if not exists pay_rates (
   edit_rate numeric
 );
 
+-- ============ shoot_logs（撮影日別の時給×稼働時間。経理管理で撮影担当者のみ手動編集する） ============
+create table if not exists shoot_logs (
+  id uuid primary key default gen_random_uuid(),
+  staff_id uuid references profiles(id) on delete cascade,
+  year_month text not null,
+  shoot_date date,
+  hours numeric,
+  hourly_rate numeric,
+  note text,
+  created_at timestamptz default now()
+);
+
 -- ============ board_posts（掲示板） ============
 create table if not exists board_posts (
   id uuid primary key default gen_random_uuid(),
@@ -214,6 +227,7 @@ alter table clients enable row level security;
 alter table reels enable row level security;
 alter table finance enable row level security;
 alter table pay_rates enable row level security;
+alter table shoot_logs enable row level security;
 alter table board_posts enable row level security;
 alter table calendar_events enable row level security;
 
@@ -246,6 +260,20 @@ create policy "pay_rates_admin_update" on pay_rates for update
   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)))
   with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
 create policy "pay_rates_admin_delete" on pay_rates for delete
+  using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
+
+-- shoot_logs も同様に、閲覧（select）は全ログインユーザーに許可し（「自分の実績」ページで自分の分を見られるように）、
+-- 登録・変更・削除（insert/update/delete）は統括管理者のみに限定する（経理管理でのみ手動編集する）
+drop policy if exists "shoot_logs_select_all" on shoot_logs;
+drop policy if exists "shoot_logs_admin_write" on shoot_logs;
+create policy "shoot_logs_select_all" on shoot_logs for select
+  using (auth.role() = 'authenticated');
+create policy "shoot_logs_admin_write" on shoot_logs for insert
+  with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
+create policy "shoot_logs_admin_update" on shoot_logs for update
+  using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)))
+  with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
+create policy "shoot_logs_admin_delete" on shoot_logs for delete
   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
 
 -- ============ 移行用ALTER文（すでに旧バージョンのテーブルがある場合のみ、個別に実行してください） ============
@@ -357,3 +385,28 @@ create policy "pay_rates_admin_delete" on pay_rates for delete
 --   edit_rate numeric
 -- );
 -- alter table pay_rates enable row level security;
+
+-- alter table reels add column if not exists shoot_unit_pay numeric;
+-- 以下は新規テーブル（shoot_logs：撮影日別の時給×稼働時間。経理管理で撮影担当者のみ手動編集する）です。SQL Editorで実行してください。
+-- create table if not exists shoot_logs (
+--   id uuid primary key default gen_random_uuid(),
+--   staff_id uuid references profiles(id) on delete cascade,
+--   year_month text not null,
+--   shoot_date date,
+--   hours numeric,
+--   hourly_rate numeric,
+--   note text,
+--   created_at timestamptz default now()
+-- );
+-- alter table shoot_logs enable row level security;
+-- drop policy if exists "shoot_logs_select_all" on shoot_logs;
+-- drop policy if exists "shoot_logs_admin_write" on shoot_logs;
+-- create policy "shoot_logs_select_all" on shoot_logs for select
+--   using (auth.role() = 'authenticated');
+-- create policy "shoot_logs_admin_write" on shoot_logs for insert
+--   with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
+-- create policy "shoot_logs_admin_update" on shoot_logs for update
+--   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)))
+--   with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
+-- create policy "shoot_logs_admin_delete" on shoot_logs for delete
+--   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
