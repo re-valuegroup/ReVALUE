@@ -139,7 +139,7 @@ function computeShootSummaries(monthReels, clients, shooterUsers, rate, shootSta
     .filter(u => !shootStaffFilter || u.id === shootStaffFilter)
     .map(u => {
       const projectItems = monthReels
-        .filter(r => r.completedStages >= 1 && r.assignedStaffId === u.id && ((parseFloat(r.shootUnitPay) || 0) > 0 || (parseFloat(r.shootHours) || 0) > 0))
+        .filter(r => r.completedStages >= 1 && r.assignedStaffId === u.id)
         .map(r => {
           const hours = parseFloat(r.shootHours) || 0;
           const unitPay = parseFloat(r.shootUnitPay) || 0;
@@ -5386,7 +5386,7 @@ function PrintableReport() {
 
 // ログインしているスタッフ本人の実績・報酬見込みだけを表示するページ（経理管理のスタッフ実績集計と同じロジックを、自分のデータだけに絞って使う）
 // 単価は統括管理者が経理管理ページで設定したものをそのまま参照する（ここでは編集不可・閲覧のみ）
-function MyPerformancePage({ clients, payRates, reels, users, currentUser, shootLogs }) {
+function MyPerformancePage({ clients, payRates, reels, setReels, users, currentUser, shootLogs, setShootLogs }) {
   const monthOptions = [...new Set(reels.map(r => r.yearMonth).filter(Boolean))].sort().reverse();
   const [reportMonth, setReportMonth] = useState(monthOptions[0] || currentYearMonth());
   const effectiveMonth = reportMonth || monthOptions[0] || currentYearMonth();
@@ -5402,7 +5402,22 @@ function MyPerformancePage({ clients, payRates, reels, users, currentUser, shoot
 
   const isShooter = (currentUser.roles || []).includes("shooter");
   const myShootSummaries = isShooter ? computeShootSummaries(monthReels, clients, [currentUser], rate, "", shootLogs, effectiveMonth) : [];
-  const myShoot = myShootSummaries[0] || null;
+  const myShoot = myShootSummaries[0] || { projectItems: [], projectTotal: 0, logItems: [], logTotal: 0, amount: 0 };
+
+  // 撮影担当は、経理管理と同じ操作で自分自身の撮影報酬（①案件別報酬・②時給ログ）だけを手動編集できる
+  // （表示・編集の対象は常に currentUser 自身のデータのみに限定される）
+  const updateMyShootUnitPay = (reelId, value) => {
+    setReels(prev => prev.map(r => r.id === reelId ? { ...r, shootUnitPay: value } : r));
+  };
+  const addMyShootLog = () => {
+    setShootLogs(prev => [...prev, { ...emptyShootLog(currentUser.id, effectiveMonth), hourlyRate: rate.shootRate || "" }]);
+  };
+  const updateMyShootLog = (id, patch) => {
+    setShootLogs(prev => prev.map(l => l.id === id ? { ...l, ...patch } : l));
+  };
+  const deleteMyShootLog = (id) => {
+    setShootLogs(prev => prev.filter(l => l.id !== id));
+  };
 
   const printMyReport = () => window.print();
 
@@ -5473,7 +5488,7 @@ function MyPerformancePage({ clients, payRates, reels, users, currentUser, shoot
           </div>
         )}
 
-        {(myRow || myShoot) && (
+        {(myRow || (isShooter && (myShoot.projectItems.length > 0 || myShoot.logItems.length > 0))) && (
           <div className="flex justify-end mt-3">
             <button onClick={printMyReport} className="text-xs font-semibold px-3 py-1.5 rounded-lg border flex items-center gap-1.5" style={{ borderColor: "#DEDACD" }}>
               <FileText size={13} /> {monthLabel(effectiveMonth)}の実績をA4 PDFで出力
@@ -5484,41 +5499,50 @@ function MyPerformancePage({ clients, payRates, reels, users, currentUser, shoot
 
       {isShooter && (
         <div className="rounded-2xl p-5 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
-          <p className="font-bold mb-1 flex items-center gap-1.5"><Camera size={16} color="#854F0B" /> 撮影実績・報酬見込み</p>
-          <p className="text-[11px] mb-3" style={{ color: "#A9A79C" }}>①案件別の報酬（動画製作管理の撮影単価・撮影時間から算出）と、②撮影日別の時給×稼働時間（経理管理で登録）を合算して表示します。単価・登録内容は統括管理者が経理管理ページで設定します。</p>
-          {!myShoot && <p className="text-xs" style={{ color: "#8B897F" }}>{monthLabel(effectiveMonth)}の撮影実績はまだありません。</p>}
-          {myShoot && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between flex-wrap gap-2 rounded-lg p-2" style={{ background: "#FAF8F3", border: "1px solid #EFEDE4" }}>
-                <p className="text-xs font-semibold">{monthLabel(effectiveMonth)}の撮影報酬 合計</p>
-                {myShoot.amount > 0 && <Badge tone="teal">支払い見込み ¥{Math.round(myShoot.amount).toLocaleString()}</Badge>}
-              </div>
-              {myShoot.projectItems.length > 0 && (
-                <div>
-                  <p className="text-[11px] font-semibold mb-1" style={{ color: "#8B897F" }}>①案件別報酬（{myShoot.projectItems.length}本／小計 ¥{Math.round(myShoot.projectTotal).toLocaleString()}）</p>
-                  <div className="space-y-1">
-                    {myShoot.projectItems.map((it, i) => (
-                      <div key={i} className="flex items-center justify-between text-xs px-2 py-1.5 rounded-lg" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
-                        <span className="truncate">{it.client}／{it.theme}</span>
-                        <span className="shrink-0 font-semibold" style={{ color: "#8B897F" }}>¥{Math.round(it.amount).toLocaleString()}</span>
-                      </div>
-                    ))}
+          <p className="font-bold mb-1 flex items-center gap-1.5"><Camera size={16} color="#854F0B" /> 撮影実績・報酬見込み（手動編集可）</p>
+          <p className="text-[11px] mb-3" style={{ color: "#A9A79C" }}>①案件別の報酬と、②撮影日別の時給×稼働時間の2種類で、あなた自身の撮影報酬を経理管理と同じ操作で入力・編集できます（他のスタッフのデータは編集できません）。単価はここでは変更できません（統括管理者が経理管理ページで設定します）。</p>
+
+          <div className="flex items-center justify-between flex-wrap gap-2 rounded-lg p-2 mb-3" style={{ background: "#FAF8F3", border: "1px solid #EFEDE4" }}>
+            <p className="text-xs font-semibold">{monthLabel(effectiveMonth)}の撮影報酬 合計</p>
+            {myShoot.amount > 0 && <Badge tone="teal">支払い見込み ¥{Math.round(myShoot.amount).toLocaleString()}</Badge>}
+          </div>
+
+          <p className="text-[11px] font-semibold mb-1" style={{ color: "#8B897F" }}>①案件別報酬（小計 ¥{Math.round(myShoot.projectTotal).toLocaleString()}）</p>
+          {myShoot.projectItems.length === 0 && <p className="text-[11px] mb-2" style={{ color: "#A9A79C" }}>{monthLabel(effectiveMonth)}に撮影完了とした案件はありません。</p>}
+          {myShoot.projectItems.length > 0 && (
+            <div className="space-y-1 mb-3">
+              {myShoot.projectItems.map((it, i) => (
+                <div key={i} className="flex items-center justify-between gap-2 text-xs px-2 py-1.5 rounded-lg" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
+                  <span className="truncate">{it.client}／{it.theme}{it.hours ? `（${it.hours}時間）` : ""}</span>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span style={{ color: "#8B897F" }}>¥</span>
+                    <TextInput type="number" value={it.unitPayRaw} onChange={e => updateMyShootUnitPay(it.reelId, e.target.value)} placeholder={String(Math.round(it.amount))} style={{ width: 90 }} />
                   </div>
                 </div>
-              )}
-              {myShoot.logItems.length > 0 && (
-                <div>
-                  <p className="text-[11px] font-semibold mb-1" style={{ color: "#8B897F" }}>②撮影日別の時給稼働（小計 ¥{Math.round(myShoot.logTotal).toLocaleString()}）</p>
-                  <div className="space-y-1">
-                    {myShoot.logItems.map((l, i) => (
-                      <div key={i} className="flex items-center justify-between text-xs px-2 py-1.5 rounded-lg" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
-                        <span className="truncate">{l.shootDate || "日付未設定"}／{l.hours || 0}時間×¥{(parseFloat(l.hourlyRate) || 0).toLocaleString()}{l.note ? `（${l.note}）` : ""}</span>
-                        <span className="shrink-0 font-semibold" style={{ color: "#8B897F" }}>¥{Math.round(l.amount).toLocaleString()}</span>
-                      </div>
-                    ))}
-                  </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-[11px] font-semibold" style={{ color: "#8B897F" }}>②撮影日別の時給稼働（小計 ¥{Math.round(myShoot.logTotal).toLocaleString()}）</p>
+            <button type="button" onClick={addMyShootLog} className="text-[11px] font-semibold px-2 py-1 rounded-lg border flex items-center gap-1" style={{ borderColor: "#DEDACD" }}>
+              <Plus size={12} /> 追加
+            </button>
+          </div>
+          {myShoot.logItems.length === 0 && <p className="text-[11px]" style={{ color: "#A9A79C" }}>登録された時給ログはありません。</p>}
+          {myShoot.logItems.length > 0 && (
+            <div className="space-y-1">
+              {myShoot.logItems.map(l => (
+                <div key={l.id} className="flex items-center gap-1.5 text-xs px-2 py-1.5 rounded-lg flex-wrap" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
+                  <TextInput type="date" value={l.shootDate || ""} onChange={e => updateMyShootLog(l.id, { shootDate: e.target.value })} style={{ width: 130 }} />
+                  <TextInput type="number" step="0.1" value={l.hours || ""} onChange={e => updateMyShootLog(l.id, { hours: e.target.value })} placeholder="時間" style={{ width: 70 }} />
+                  <span style={{ color: "#8B897F" }}>時間 ×¥</span>
+                  <TextInput type="number" value={l.hourlyRate || ""} onChange={e => updateMyShootLog(l.id, { hourlyRate: e.target.value })} placeholder="時給" style={{ width: 80 }} />
+                  <TextInput value={l.note || ""} onChange={e => updateMyShootLog(l.id, { note: e.target.value })} placeholder="メモ（任意）" style={{ width: 110 }} />
+                  <span className="font-semibold shrink-0" style={{ color: "#8B897F" }}>¥{Math.round(l.amount).toLocaleString()}</span>
+                  <button type="button" onClick={() => deleteMyShootLog(l.id)} className="ml-auto shrink-0" style={{ color: "#D6248A" }}><Trash2 size={13} /></button>
                 </div>
-              )}
+              ))}
             </div>
           )}
         </div>
@@ -5551,7 +5575,7 @@ function MyPerformancePage({ clients, payRates, reels, users, currentUser, shoot
               </table>
             </div>
           )}
-          {myShoot && (
+          {isShooter && (myShoot.projectItems.length > 0 || myShoot.logItems.length > 0) && (
             <div style={{ marginTop: 14 }}>
               <h2>撮影実績　支払い見込み ¥{Math.round(myShoot.amount).toLocaleString()}</h2>
               {myShoot.projectItems.length > 0 && (
@@ -5770,7 +5794,7 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
 
       <div className="rounded-2xl p-5 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
         <p className="font-bold mb-1 flex items-center gap-1.5"><Camera size={16} color="#854F0B" /> 撮影担当実績集計（手動編集可）</p>
-        <p className="text-[11px] mb-3" style={{ color: "#A9A79C" }}>撮影担当の報酬は、①案件別の1件あたりの報酬と、②撮影日別の時給×稼働時間の2種類で管理します。①は動画製作管理で入力された撮影単価・撮影時間から自動算出されますが、ここで金額を直接上書きできます。②はここで手動で登録します（対象月・絞り込みは上のスタッフ実績集計と共通です）。</p>
+        <p className="text-[11px] mb-3" style={{ color: "#A9A79C" }}>撮影担当の報酬は、①案件別の1件あたりの報酬と、②撮影日別の時給×稼働時間の2種類で管理します。①は撮影完了とした案件が自動的に一覧表示され、動画製作管理で撮影単価・撮影時間が入力されていればその金額が初期値になりますが、金額はここで自由に直接入力・上書きできます。②はここで手動で登録します（対象月・絞り込みは上のスタッフ実績集計と共通です）。</p>
         <div className="grid sm:grid-cols-2 gap-3 mb-3">
           <Field label={`${monthLabel(effectiveMonth)}の撮影単価（時給・撮影単価未入力の案件や②に使う既定値）`}>
             <TextInput type="number" value={rate.shootRate} onChange={e => upsertRate({ shootRate: e.target.value })} placeholder="円／時間" />
@@ -5787,7 +5811,7 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
                 </div>
 
                 <p className="text-[11px] font-semibold mb-1" style={{ color: "#8B897F" }}>①案件別報酬（小計 ¥{Math.round(s.projectTotal).toLocaleString()}）</p>
-                {s.projectItems.length === 0 && <p className="text-[11px] mb-2" style={{ color: "#A9A79C" }}>{monthLabel(effectiveMonth)}に撮影時間・撮影単価が入力された案件はありません。</p>}
+                {s.projectItems.length === 0 && <p className="text-[11px] mb-2" style={{ color: "#A9A79C" }}>{monthLabel(effectiveMonth)}に撮影完了とした案件はありません。</p>}
                 {s.projectItems.length > 0 && (
                   <div className="space-y-1 mb-2">
                     {s.projectItems.map((it, i) => (
@@ -6501,7 +6525,7 @@ function AppInner() {
       case "postwait": return <TasksPage clients={clients} reels={reels} setReels={setReels} users={activeUsers} onGoReels={goReels} onGoReelDetail={goReelDetail} onGoClient={goClientDetail} section="post" />;
       case "research": return <ResearchPage clients={clients} reels={reels} setReels={setReels} />;
       case "tasks": return <TasksPage clients={clients} reels={reels} setReels={setReels} users={activeUsers} onGoReels={goReels} onGoReelDetail={goReelDetail} onGoClient={goClientDetail} section={taskSection} />;
-      case "myperformance": return <MyPerformancePage clients={clients} payRates={payRates} reels={reels} users={users} currentUser={currentUser} shootLogs={shootLogs} />;
+      case "myperformance": return <MyPerformancePage clients={clients} payRates={payRates} reels={reels} setReels={setReels} users={users} currentUser={currentUser} shootLogs={shootLogs} setShootLogs={setShootLogs} />;
       case "analytics": return <AnalyticsPage clients={clients} reels={reels} users={users} />;
       case "finance": return (currentUser.roles || []).includes("admin") ? <FinancePage clients={clients} finance={finance} setFinance={setFinance} payRates={payRates} setPayRates={setPayRates} reels={reels} setReels={setReels} users={users} shootLogs={shootLogs} setShootLogs={setShootLogs} /> : null;
       case "users": return (currentUser.roles || []).includes("admin") ? <UsersPage users={users} setUsers={setUsers} currentUser={currentUser} /> : null;
