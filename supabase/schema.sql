@@ -110,6 +110,7 @@ create table if not exists reels (
   memo text,
   caption text,
   caption_done boolean default false,
+  caption_done_at timestamptz,
   hashtag1 text,
   hashtag2 text,
   hashtag3 text,
@@ -492,3 +493,7 @@ create policy "director_logs_admin_delete" on director_logs for delete
 --   with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
 -- create policy "director_logs_admin_delete" on director_logs for delete
 --   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
+
+-- 実績の集計基準を「動画制作管理への登録月」から「スケジュールの着手・完了日（無ければ実際の完了日）」に変更した機能で使う追加カラムです。
+-- caption_done_at：⑥完成動画・キャプション作成を完了にした日時（この月を基準にSNS運用担当・ディレクターの実績を計上します）
+-- alter table reels add column if not exists caption_done_at timestamptz;
