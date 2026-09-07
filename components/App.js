@@ -9,7 +9,7 @@ import {
   Link2, Loader2, Camera, Scissors, MessageSquare, Send, Clock,
   CircleCheck, Circle, ArrowLeft, Building2, User, MapPin, Info, Copy,
   ClipboardList, MessageCircle, Megaphone, UserCheck, Image as ImageIcon,
-  DollarSign, LogOut, RefreshCw, Mic
+  DollarSign, LogOut, RefreshCw, Mic, Mail
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { fetchAll, upsertRow, deleteRow, bulkUpsert } from "@/lib/db";
@@ -129,6 +129,9 @@ const emptyPayRate = (ym) => ({
   shootRate: "", shootProjectRate: "",
   captionRate: "", postRate: "",
 });
+
+// 通知設定（現状は「⑤最終チェック待ちになった時の通知メール宛先」のみ）。id は固定で "default" の1行だけを使う
+const emptyNotificationSettings = () => ({ id: "default", checkNotifyEmails: [] });
 
 // 経理管理・自分の実績ページの「対象月」選択肢一覧。動画制作管理の登録月だけでなく、スケジュールの着手日・完了日や
 // 手入力ログの日付から実績が計上され得る月もすべて含める（登録した月と実際に作業した月がずれても対象月として選べるようにするため）
@@ -6121,7 +6124,7 @@ function MyPerformancePage({ clients, payRates, reels, setReels, users, currentU
   );
 }
 
-function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reels, setReels, users, shootLogs, setShootLogs, directorLogs, setDirectorLogs, editorLogs, setEditorLogs, snsLogs, setSnsLogs, manualProjectLogs, setManualProjectLogs, calendarEvents }) {
+function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reels, setReels, users, shootLogs, setShootLogs, directorLogs, setDirectorLogs, editorLogs, setEditorLogs, snsLogs, setSnsLogs, manualProjectLogs, setManualProjectLogs, notificationSettings, setNotificationSettings, calendarEvents }) {
   const upsert = (clientId, patch) => {
     setFinance(prev => {
       const exists = prev.some(f => f.clientId === clientId);
@@ -6171,6 +6174,22 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
       if (exists) return prev.map(p => p.yearMonth === effectiveMonth ? { ...p, ...patch } : p);
       return [...prev, { ...emptyPayRate(effectiveMonth), ...patch }];
     });
+  };
+
+  // ⑤最終チェック通知メールの宛先設定（id="default"の1行だけを使う）
+  const notifySettings = notificationSettings.find(n => n.id === "default") || emptyNotificationSettings();
+  const upsertNotifySettings = (patch) => {
+    setNotificationSettings(prev => {
+      const exists = prev.some(n => n.id === "default");
+      if (exists) return prev.map(n => n.id === "default" ? { ...n, ...patch } : n);
+      return [...prev, { ...emptyNotificationSettings(), ...patch }];
+    });
+  };
+  const [notifyEmailsDraft, setNotifyEmailsDraft] = useState((notifySettings.checkNotifyEmails || []).join(", "));
+  const commitNotifyEmails = () => {
+    const list = notifyEmailsDraft.split(/[,、\n]/).map(s => s.trim()).filter(Boolean);
+    upsertNotifySettings({ checkNotifyEmails: list });
+    setNotifyEmailsDraft(list.join(", "));
   };
 
   // 実績集計は月で絞り込まず全件のreelsを渡し、各集計関数の内部でスケジュールに基づく実績月の判定を行う
@@ -6349,6 +6368,24 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
         <h2 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700 }}>経理管理（統括管理者専用）</h2>
       </div>
       <p className="text-xs mb-4" style={{ color: "#8B897F" }}>契約・請求・入金状況を管理します。この情報は統括管理者のみが閲覧できます。</p>
+
+      <div className="rounded-2xl p-4 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
+        <p className="font-bold mb-1 flex items-center gap-1.5"><Mail size={16} color="#0E90B8" /> ⑤最終チェック通知メール</p>
+        <p className="text-[11px] mb-2" style={{ color: "#A9A79C" }}>案件が①〜④の工程をすべて完了し、⑤最終チェック待ちになったタイミングで、下に登録したメールアドレス宛に自動でお知らせメールを送信します。複数のアドレスに送りたい場合は、カンマ（,）区切りで入力してください。空欄のままにすると通知メールは送信されません。</p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <TextInput
+            value={notifyEmailsDraft}
+            onChange={e => setNotifyEmailsDraft(e.target.value)}
+            onBlur={commitNotifyEmails}
+            placeholder="例：admin@example.com, director@example.com"
+            style={{ flex: "1 1 320px", minWidth: 260 }}
+          />
+          <button type="button" onClick={commitNotifyEmails} className="text-xs font-semibold px-3 py-1.5 rounded-lg border" style={{ borderColor: "#DEDACD" }}>保存</button>
+        </div>
+        {(notifySettings.checkNotifyEmails || []).length > 0 && (
+          <p className="text-[11px] mt-2" style={{ color: "#8B897F" }}>現在の通知先：{(notifySettings.checkNotifyEmails || []).join("、")}</p>
+        )}
+      </div>
 
       <div className="rounded-2xl p-5 mb-4" style={{ background: "#16171B" }}>
         <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
@@ -7119,6 +7156,7 @@ function AppInner() {
   const [editorLogs, setEditorLogs] = useState([]);
   const [snsLogs, setSnsLogs] = useState([]);
   const [manualProjectLogs, setManualProjectLogs] = useState([]);
+  const [notificationSettings, setNotificationSettings] = useState([]);
   const [boardPosts, setBoardPosts] = useState([]);
   const [calendarEvents, setCalendarEvents] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
@@ -7173,7 +7211,7 @@ function AppInner() {
     });
   };
 
-  const prevIds = useRef({ clients: new Set(), reels: new Set(), users: new Set(), finance: new Set(), payRates: new Set(), shootLogs: new Set(), directorLogs: new Set(), editorLogs: new Set(), snsLogs: new Set(), manualProjectLogs: new Set(), boardPosts: new Set(), calendarEvents: new Set() });
+  const prevIds = useRef({ clients: new Set(), reels: new Set(), users: new Set(), finance: new Set(), payRates: new Set(), shootLogs: new Set(), directorLogs: new Set(), editorLogs: new Set(), snsLogs: new Set(), manualProjectLogs: new Set(), notificationSettings: new Set(), boardPosts: new Set(), calendarEvents: new Set() });
 
   // 認証セッションの監視
   useEffect(() => {
@@ -7190,8 +7228,8 @@ function AppInner() {
   // ログイン後：全データ読み込み＋自分のプロフィール特定
   const loadAllData = async () => {
     try {
-      const [u, c, r, f, pr, sl, dl, el, sn, mp, b, ev] = await Promise.all([
-        fetchAll("profiles"), fetchAll("clients"), fetchAll("reels"), fetchAll("finance", "client_id"), fetchAll("pay_rates", "year_month"), fetchAll("shoot_logs"), fetchAll("director_logs"), fetchAll("editor_logs"), fetchAll("sns_logs"), fetchAll("manual_project_logs"), fetchAll("board_posts"), fetchAll("calendar_events"),
+      const [u, c, r, f, pr, sl, dl, el, sn, mp, ns, b, ev] = await Promise.all([
+        fetchAll("profiles"), fetchAll("clients"), fetchAll("reels"), fetchAll("finance", "client_id"), fetchAll("pay_rates", "year_month"), fetchAll("shoot_logs"), fetchAll("director_logs"), fetchAll("editor_logs"), fetchAll("sns_logs"), fetchAll("manual_project_logs"), fetchAll("notification_settings"), fetchAll("board_posts"), fetchAll("calendar_events"),
       ]);
       const normalizedReels = r.map(normalizeReel);
       setUsers(u);
@@ -7204,6 +7242,7 @@ function AppInner() {
       setEditorLogs(el);
       setSnsLogs(sn);
       setManualProjectLogs(mp);
+      setNotificationSettings(ns);
       setBoardPosts(b);
       setCalendarEvents(ev);
       prevIds.current = {
@@ -7217,6 +7256,7 @@ function AppInner() {
         editorLogs: new Set(el.map(x => x.id)),
         snsLogs: new Set(sn.map(x => x.id)),
         manualProjectLogs: new Set(mp.map(x => x.id)),
+        notificationSettings: new Set(ns.map(x => x.id)),
         boardPosts: new Set(b.map(x => x.id)),
         calendarEvents: new Set(ev.map(x => x.id)),
       };
@@ -7271,6 +7311,7 @@ function AppInner() {
   const syncEditorLogs = useCallback(makeSync("editor_logs", "id", "id"), [dataLoaded]);
   const syncSnsLogs = useCallback(makeSync("sns_logs", "id", "id"), [dataLoaded]);
   const syncManualProjectLogs = useCallback(makeSync("manual_project_logs", "id", "id"), [dataLoaded]);
+  const syncNotificationSettings = useCallback(makeSync("notification_settings", "id", "id"), [dataLoaded]);
   const syncBoardPosts = useCallback(makeSync("board_posts", "id", "id"), [dataLoaded]);
   const syncCalendarEvents = useCallback(makeSync("calendar_events", "id", "id"), [dataLoaded]);
 
@@ -7284,8 +7325,42 @@ function AppInner() {
   useEffect(() => { syncEditorLogs(editorLogs); }, [editorLogs]);
   useEffect(() => { syncSnsLogs(snsLogs); }, [snsLogs]);
   useEffect(() => { syncManualProjectLogs(manualProjectLogs); }, [manualProjectLogs]);
+  useEffect(() => { syncNotificationSettings(notificationSettings); }, [notificationSettings]);
   useEffect(() => { syncBoardPosts(boardPosts); }, [boardPosts]);
   useEffect(() => { syncCalendarEvents(calendarEvents); }, [calendarEvents]);
+
+  // ⑤最終チェック通知メール：①〜④が必要な工程をすべて完了し、まだ⑤最終チェックが提出されていない状態に
+  // 新しくなった動画を検知して、通知設定に登録されたメール宛先へ送信する（担当者・依頼内容の変更ではなく、
+  // 「⑤待ちに入った」という状態の変化そのものをトリガーにするため、reels全体の変化を監視する）
+  const checkReadyIdsRef = useRef(new Set());
+  const checkNotifyInitRef = useRef(false);
+  useEffect(() => {
+    if (!dataLoaded) return;
+    const currentReady = new Set(
+      reels.filter(r => editRolesForReel(r).every(f => r[DONE_KEY_FOR_ROLE[f.key]]) && !r.checkSubmitted).map(r => r.id)
+    );
+    if (!checkNotifyInitRef.current) {
+      // 初回のデータ読み込み時点ですでに⑤待ちになっている動画は、通知の対象にしない（読み込むたびに送られてしまうのを防ぐため）
+      checkReadyIdsRef.current = currentReady;
+      checkNotifyInitRef.current = true;
+      return;
+    }
+    const newlyReady = [...currentReady].filter(id => !checkReadyIdsRef.current.has(id));
+    checkReadyIdsRef.current = currentReady;
+    if (newlyReady.length === 0) return;
+    const emails = (notificationSettings.find(n => n.id === "default")?.checkNotifyEmails) || [];
+    if (emails.length === 0) return;
+    newlyReady.forEach(id => {
+      const r = reels.find(x => x.id === id);
+      if (!r) return;
+      const client = clients.find(c => c.id === r.clientId);
+      fetch("/api/notify/check-ready", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to: emails, clientName: client?.name || "", theme: r.theme || "", deadline: r.deadline || "" }),
+      }).catch(e => console.error("⑤最終チェック通知メールの送信に失敗しました", e));
+    });
+  }, [reels, dataLoaded, notificationSettings, clients]);
 
   const goReels = (clientId) => { navigateTo("reels", { reelsFocusClient: clientId }); };
   const goReelDetail = (clientId, reelId) => { navigateTo("reels", { reelsFocusClient: clientId, reelsFocusReelId: reelId }); };
@@ -7375,7 +7450,7 @@ function AppInner() {
       case "tasks": return <TasksPage clients={clients} reels={reels} setReels={setReels} users={activeUsers} onGoReels={goReels} onGoReelDetail={goReelDetail} onGoClient={goClientDetail} section={taskSection} />;
       case "myperformance": return <MyPerformancePage clients={clients} payRates={payRates} reels={reels} setReels={setReels} users={users} currentUser={currentUser} shootLogs={shootLogs} setShootLogs={setShootLogs} directorLogs={directorLogs} setDirectorLogs={setDirectorLogs} editorLogs={editorLogs} setEditorLogs={setEditorLogs} snsLogs={snsLogs} setSnsLogs={setSnsLogs} manualProjectLogs={manualProjectLogs} setManualProjectLogs={setManualProjectLogs} calendarEvents={calendarEvents} />;
       case "analytics": return <AnalyticsPage clients={clients} reels={reels} users={users} />;
-      case "finance": return (currentUser.roles || []).includes("admin") ? <FinancePage clients={clients} finance={finance} setFinance={setFinance} payRates={payRates} setPayRates={setPayRates} reels={reels} setReels={setReels} users={users} shootLogs={shootLogs} setShootLogs={setShootLogs} directorLogs={directorLogs} setDirectorLogs={setDirectorLogs} editorLogs={editorLogs} setEditorLogs={setEditorLogs} snsLogs={snsLogs} setSnsLogs={setSnsLogs} manualProjectLogs={manualProjectLogs} setManualProjectLogs={setManualProjectLogs} calendarEvents={calendarEvents} /> : null;
+      case "finance": return (currentUser.roles || []).includes("admin") ? <FinancePage clients={clients} finance={finance} setFinance={setFinance} payRates={payRates} setPayRates={setPayRates} reels={reels} setReels={setReels} users={users} shootLogs={shootLogs} setShootLogs={setShootLogs} directorLogs={directorLogs} setDirectorLogs={setDirectorLogs} editorLogs={editorLogs} setEditorLogs={setEditorLogs} snsLogs={snsLogs} setSnsLogs={setSnsLogs} manualProjectLogs={manualProjectLogs} setManualProjectLogs={setManualProjectLogs} notificationSettings={notificationSettings} setNotificationSettings={setNotificationSettings} calendarEvents={calendarEvents} /> : null;
       case "users": return (currentUser.roles || []).includes("admin") ? <UsersPage users={users} setUsers={setUsers} currentUser={currentUser} /> : null;
       default: return null;
     }
