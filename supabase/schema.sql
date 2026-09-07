@@ -249,6 +249,13 @@ create table if not exists manual_project_logs (
   created_at timestamptz default now()
 );
 
+-- ============ notification_settings（通知メールの設定。現状は「⑤最終チェック待ちになった時の通知先」のみ。id="default"の1行だけを使う） ============
+create table if not exists notification_settings (
+  id text primary key default 'default',
+  check_notify_emails text[] default '{}',
+  created_at timestamptz default now()
+);
+
 -- ============ board_posts（掲示板） ============
 create table if not exists board_posts (
   id uuid primary key default gen_random_uuid(),
@@ -286,6 +293,7 @@ alter table director_logs enable row level security;
 alter table editor_logs enable row level security;
 alter table sns_logs enable row level security;
 alter table manual_project_logs enable row level security;
+alter table notification_settings enable row level security;
 alter table board_posts enable row level security;
 alter table calendar_events enable row level security;
 
@@ -404,6 +412,24 @@ create policy "manual_project_logs_update" on manual_project_logs for update
   with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
 create policy "manual_project_logs_delete" on manual_project_logs for delete
   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+
+-- notification_settings（⑤最終チェック通知メールの宛先設定）：
+-- 閲覧（select）は全ログインユーザーに許可する（実際に⑤待ちへの切り替えを行うのは動画編集者のブラウザのことが多く、
+-- そのブラウザが通知先を読めないと通知メールを送信できないため）。登録・変更・削除は統括管理者のみに限定する。
+drop policy if exists "notification_settings_admin_only" on notification_settings;
+drop policy if exists "notification_settings_select_all" on notification_settings;
+drop policy if exists "notification_settings_admin_write" on notification_settings;
+drop policy if exists "notification_settings_admin_update" on notification_settings;
+drop policy if exists "notification_settings_admin_delete" on notification_settings;
+create policy "notification_settings_select_all" on notification_settings for select
+  using (auth.role() = 'authenticated');
+create policy "notification_settings_admin_write" on notification_settings for insert
+  with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
+create policy "notification_settings_admin_update" on notification_settings for update
+  using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)))
+  with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
+create policy "notification_settings_admin_delete" on notification_settings for delete
+  using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
 
 -- ============ 移行用ALTER文（すでに旧バージョンのテーブルがある場合のみ、個別に実行してください） ============
 -- alter table reels add column if not exists resubmit_comment text;
@@ -675,3 +701,27 @@ create policy "manual_project_logs_delete" on manual_project_logs for delete
 --   with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
 -- create policy "manual_project_logs_delete" on manual_project_logs for delete
 --   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+
+-- ============ 以下は「⑤最終チェック通知メール」機能で使う新規テーブルです。まだ作成していない場合は、SQL Editorで実行してください。
+--   閲覧（select）は全ログインユーザーに許可し（実際に⑤待ちへ切り替えるブラウザが通知先を読める必要があるため）、
+--   登録・変更・削除（insert/update/delete）は統括管理者のみに限定します。 ============
+-- create table if not exists notification_settings (
+--   id text primary key default 'default',
+--   check_notify_emails text[] default '{}',
+--   created_at timestamptz default now()
+-- );
+-- alter table notification_settings enable row level security;
+-- drop policy if exists "notification_settings_admin_only" on notification_settings;
+-- drop policy if exists "notification_settings_select_all" on notification_settings;
+-- drop policy if exists "notification_settings_admin_write" on notification_settings;
+-- drop policy if exists "notification_settings_admin_update" on notification_settings;
+-- drop policy if exists "notification_settings_admin_delete" on notification_settings;
+-- create policy "notification_settings_select_all" on notification_settings for select
+--   using (auth.role() = 'authenticated');
+-- create policy "notification_settings_admin_write" on notification_settings for insert
+--   with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
+-- create policy "notification_settings_admin_update" on notification_settings for update
+--   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)))
+--   with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
+-- create policy "notification_settings_admin_delete" on notification_settings for delete
+--   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
