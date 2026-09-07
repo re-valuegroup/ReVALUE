@@ -200,7 +200,7 @@ create table if not exists shoot_logs (
   created_at timestamptz default now()
 );
 
--- ============ director_logs（ディレクターの手入力実績：日付・時給×稼働時間・内訳。経理管理でのみ手動編集する） ============
+-- ============ director_logs（ディレクターの手入力実績：日付・時給×稼働時間・内訳。経理管理・自分の実績の両方から本人が手動編集する） ============
 create table if not exists director_logs (
   id uuid primary key default gen_random_uuid(),
   staff_id uuid references profiles(id) on delete cascade,
@@ -208,6 +208,43 @@ create table if not exists director_logs (
   work_date date,
   hours numeric,
   hourly_rate numeric,
+  note text,
+  created_at timestamptz default now()
+);
+
+-- ============ editor_logs（動画編集者の手入力実績：日付・時給×稼働時間・内訳。経理管理・自分の実績の両方から本人が手動編集する） ============
+create table if not exists editor_logs (
+  id uuid primary key default gen_random_uuid(),
+  staff_id uuid references profiles(id) on delete cascade,
+  year_month text not null,
+  work_date date,
+  hours numeric,
+  hourly_rate numeric,
+  note text,
+  created_at timestamptz default now()
+);
+
+-- ============ sns_logs（SNS運用担当の手入力実績：日付・時給×稼働時間・内訳。経理管理・自分の実績の両方から本人が手動編集する） ============
+create table if not exists sns_logs (
+  id uuid primary key default gen_random_uuid(),
+  staff_id uuid references profiles(id) on delete cascade,
+  year_month text not null,
+  work_date date,
+  hours numeric,
+  hourly_rate numeric,
+  note text,
+  created_at timestamptz default now()
+);
+
+-- ============ manual_project_logs（動画制作管理に登録の無い「その他案件」の手入力：案件×単価。ディレクター／動画編集者／撮影担当／SNS運用担当のいずれの区分でも使う共通テーブルで、category列で区分する） ============
+create table if not exists manual_project_logs (
+  id uuid primary key default gen_random_uuid(),
+  staff_id uuid references profiles(id) on delete cascade,
+  category text not null check (category in ('director', 'editor', 'shooter', 'sns')),
+  year_month text not null,
+  work_date date,
+  client_name text,
+  unit_pay numeric,
   note text,
   created_at timestamptz default now()
 );
@@ -246,6 +283,9 @@ alter table finance enable row level security;
 alter table pay_rates enable row level security;
 alter table shoot_logs enable row level security;
 alter table director_logs enable row level security;
+alter table editor_logs enable row level security;
+alter table sns_logs enable row level security;
+alter table manual_project_logs enable row level security;
 alter table board_posts enable row level security;
 alter table calendar_events enable row level security;
 
@@ -301,20 +341,69 @@ create policy "shoot_logs_delete" on shoot_logs for delete
   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
 
 -- director_logs：閲覧（select）は全ログインユーザーに許可し（「自分の実績」ページでディレクター本人が見られるように）、
--- 登録・変更・削除（insert/update/delete）は統括管理者のみに限定する（経理管理でのみ手動編集する）
+-- 登録・変更・削除（insert/update/delete）は、統括管理者、または本人（staff_id が自分のプロフィールと一致する場合）に許可する
+-- （経理管理では全ディレクターを、自分の実績ページでは本人が自分の分だけを、手動編集できるようにするため）
 drop policy if exists "director_logs_select_all" on director_logs;
 drop policy if exists "director_logs_admin_write" on director_logs;
 drop policy if exists "director_logs_admin_update" on director_logs;
 drop policy if exists "director_logs_admin_delete" on director_logs;
+drop policy if exists "director_logs_write" on director_logs;
+drop policy if exists "director_logs_update" on director_logs;
+drop policy if exists "director_logs_delete" on director_logs;
 create policy "director_logs_select_all" on director_logs for select
   using (auth.role() = 'authenticated');
-create policy "director_logs_admin_write" on director_logs for insert
-  with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
-create policy "director_logs_admin_update" on director_logs for update
-  using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)))
-  with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
-create policy "director_logs_admin_delete" on director_logs for delete
-  using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
+create policy "director_logs_write" on director_logs for insert
+  with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+create policy "director_logs_update" on director_logs for update
+  using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))))
+  with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+create policy "director_logs_delete" on director_logs for delete
+  using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+
+-- editor_logs：director_logsと同じ考え方（閲覧は全員、登録・変更・削除は統括管理者または本人）
+drop policy if exists "editor_logs_select_all" on editor_logs;
+drop policy if exists "editor_logs_write" on editor_logs;
+drop policy if exists "editor_logs_update" on editor_logs;
+drop policy if exists "editor_logs_delete" on editor_logs;
+create policy "editor_logs_select_all" on editor_logs for select
+  using (auth.role() = 'authenticated');
+create policy "editor_logs_write" on editor_logs for insert
+  with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+create policy "editor_logs_update" on editor_logs for update
+  using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))))
+  with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+create policy "editor_logs_delete" on editor_logs for delete
+  using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+
+-- sns_logs：director_logsと同じ考え方（閲覧は全員、登録・変更・削除は統括管理者または本人）
+drop policy if exists "sns_logs_select_all" on sns_logs;
+drop policy if exists "sns_logs_write" on sns_logs;
+drop policy if exists "sns_logs_update" on sns_logs;
+drop policy if exists "sns_logs_delete" on sns_logs;
+create policy "sns_logs_select_all" on sns_logs for select
+  using (auth.role() = 'authenticated');
+create policy "sns_logs_write" on sns_logs for insert
+  with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+create policy "sns_logs_update" on sns_logs for update
+  using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))))
+  with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+create policy "sns_logs_delete" on sns_logs for delete
+  using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+
+-- manual_project_logs：director_logsと同じ考え方（閲覧は全員、登録・変更・削除は統括管理者または本人）。区分（category）はディレクター／動画編集者／撮影担当／SNS運用担当のいずれか
+drop policy if exists "manual_project_logs_select_all" on manual_project_logs;
+drop policy if exists "manual_project_logs_write" on manual_project_logs;
+drop policy if exists "manual_project_logs_update" on manual_project_logs;
+drop policy if exists "manual_project_logs_delete" on manual_project_logs;
+create policy "manual_project_logs_select_all" on manual_project_logs for select
+  using (auth.role() = 'authenticated');
+create policy "manual_project_logs_write" on manual_project_logs for insert
+  with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+create policy "manual_project_logs_update" on manual_project_logs for update
+  using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))))
+  with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+create policy "manual_project_logs_delete" on manual_project_logs for delete
+  using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
 
 -- ============ 移行用ALTER文（すでに旧バージョンのテーブルがある場合のみ、個別に実行してください） ============
 -- alter table reels add column if not exists resubmit_comment text;
@@ -468,7 +557,7 @@ create policy "director_logs_admin_delete" on director_logs for delete
 -- alter table pay_rates add column if not exists post_rate numeric;
 
 -- 以下は新規テーブル（director_logs：ディレクターの手入力実績「日付・時給×稼働時間・内訳」）です。まだ作成していない場合は、SQL Editorで実行してください。
--- 登録・変更・削除は統括管理者のみに許可しています（経理管理でのみ手動編集する）。
+-- 登録・変更・削除は、統括管理者、または本人（staff_idが自分のプロフィールと一致する場合）に許可しています（経理管理・自分の実績の両方から本人が手動編集できます）。
 -- create table if not exists director_logs (
 --   id uuid primary key default gen_random_uuid(),
 --   staff_id uuid references profiles(id) on delete cascade,
@@ -484,16 +573,105 @@ create policy "director_logs_admin_delete" on director_logs for delete
 -- drop policy if exists "director_logs_admin_write" on director_logs;
 -- drop policy if exists "director_logs_admin_update" on director_logs;
 -- drop policy if exists "director_logs_admin_delete" on director_logs;
+-- drop policy if exists "director_logs_write" on director_logs;
+-- drop policy if exists "director_logs_update" on director_logs;
+-- drop policy if exists "director_logs_delete" on director_logs;
 -- create policy "director_logs_select_all" on director_logs for select
 --   using (auth.role() = 'authenticated');
--- create policy "director_logs_admin_write" on director_logs for insert
---   with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
--- create policy "director_logs_admin_update" on director_logs for update
---   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)))
---   with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
--- create policy "director_logs_admin_delete" on director_logs for delete
---   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
+-- create policy "director_logs_write" on director_logs for insert
+--   with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+-- create policy "director_logs_update" on director_logs for update
+--   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))))
+--   with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+-- create policy "director_logs_delete" on director_logs for delete
+--   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+
+-- もしすでにdirector_logsテーブルを作成済み（前バージョンの管理者限定RLS）の場合は、上記のdrop policy〜create policyの部分だけを再実行すれば、
+-- 本人も自分の実績ページから編集できるように更新されます（テーブル自体は作り直す必要はありません）。
 
 -- 実績の集計基準を「動画制作管理への登録月」から「スケジュールの着手・完了日（無ければ実際の完了日）」に変更した機能で使う追加カラムです。
 -- caption_done_at：⑥完成動画・キャプション作成を完了にした日時（この月を基準にSNS運用担当・ディレクターの実績を計上します）
 -- alter table reels add column if not exists caption_done_at timestamptz;
+
+-- ============ 以下は「自分の実績」「経理管理」に、各区分（ディレクター／動画編集者／撮影担当／SNS運用担当）ごとの時給稼働と、
+--   案件×単価（動画制作管理に登録の無いその他案件の手入力）を追加した機能で使う新規テーブルです。まだ作成していない場合は、SQL Editorで実行してください。
+--   いずれも、閲覧（select）は全ログインユーザーに許可し、登録・変更・削除（insert/update/delete）は、統括管理者、または本人（staff_idが自分のプロフィールと一致する場合）に許可します。 ============
+
+-- 新規テーブル（editor_logs：動画編集者の手入力実績「日付・時給×稼働時間・内訳」）
+-- create table if not exists editor_logs (
+--   id uuid primary key default gen_random_uuid(),
+--   staff_id uuid references profiles(id) on delete cascade,
+--   year_month text not null,
+--   work_date date,
+--   hours numeric,
+--   hourly_rate numeric,
+--   note text,
+--   created_at timestamptz default now()
+-- );
+-- alter table editor_logs enable row level security;
+-- drop policy if exists "editor_logs_select_all" on editor_logs;
+-- drop policy if exists "editor_logs_write" on editor_logs;
+-- drop policy if exists "editor_logs_update" on editor_logs;
+-- drop policy if exists "editor_logs_delete" on editor_logs;
+-- create policy "editor_logs_select_all" on editor_logs for select
+--   using (auth.role() = 'authenticated');
+-- create policy "editor_logs_write" on editor_logs for insert
+--   with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+-- create policy "editor_logs_update" on editor_logs for update
+--   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))))
+--   with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+-- create policy "editor_logs_delete" on editor_logs for delete
+--   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+
+-- 新規テーブル（sns_logs：SNS運用担当の手入力実績「日付・時給×稼働時間・内訳」）
+-- create table if not exists sns_logs (
+--   id uuid primary key default gen_random_uuid(),
+--   staff_id uuid references profiles(id) on delete cascade,
+--   year_month text not null,
+--   work_date date,
+--   hours numeric,
+--   hourly_rate numeric,
+--   note text,
+--   created_at timestamptz default now()
+-- );
+-- alter table sns_logs enable row level security;
+-- drop policy if exists "sns_logs_select_all" on sns_logs;
+-- drop policy if exists "sns_logs_write" on sns_logs;
+-- drop policy if exists "sns_logs_update" on sns_logs;
+-- drop policy if exists "sns_logs_delete" on sns_logs;
+-- create policy "sns_logs_select_all" on sns_logs for select
+--   using (auth.role() = 'authenticated');
+-- create policy "sns_logs_write" on sns_logs for insert
+--   with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+-- create policy "sns_logs_update" on sns_logs for update
+--   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))))
+--   with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+-- create policy "sns_logs_delete" on sns_logs for delete
+--   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+
+-- 新規テーブル（manual_project_logs：動画制作管理に登録の無い「その他案件」の手入力「案件×単価」。ディレクター／動画編集者／撮影担当／SNS運用担当のいずれの区分でも使う共通テーブルで、category列で区分する）
+-- create table if not exists manual_project_logs (
+--   id uuid primary key default gen_random_uuid(),
+--   staff_id uuid references profiles(id) on delete cascade,
+--   category text not null check (category in ('director', 'editor', 'shooter', 'sns')),
+--   year_month text not null,
+--   work_date date,
+--   client_name text,
+--   unit_pay numeric,
+--   note text,
+--   created_at timestamptz default now()
+-- );
+-- alter table manual_project_logs enable row level security;
+-- drop policy if exists "manual_project_logs_select_all" on manual_project_logs;
+-- drop policy if exists "manual_project_logs_write" on manual_project_logs;
+-- drop policy if exists "manual_project_logs_update" on manual_project_logs;
+-- drop policy if exists "manual_project_logs_delete" on manual_project_logs;
+-- create policy "manual_project_logs_select_all" on manual_project_logs for select
+--   using (auth.role() = 'authenticated');
+-- create policy "manual_project_logs_write" on manual_project_logs for insert
+--   with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+-- create policy "manual_project_logs_update" on manual_project_logs for update
+--   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))))
+--   with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
+-- create policy "manual_project_logs_delete" on manual_project_logs for delete
+--   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and (p.id = staff_id or 'admin' = any(p.roles))));
