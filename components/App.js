@@ -82,22 +82,38 @@ const revisionRequesterId = (reel, rv) => {
   return reel?.editorSecondaryId || "";
 };
 
+// 実績の集計基準日：動画制作管理に「登録した年月」ではなく、スタッフが予定表（スケジュール）に登録した
+// 着手日・完了日（未入力なら開始日）を基準に、その工程がどの月の実績になるかを判定する。
+// スケジュールが登録されていない場合や、スケジュール機能のない工程（⑥⑦）は、実際の完了日→登録年月の順にフォールバックする。
+function stageMonthFromSchedule(reel, editTask, calendarEvents) {
+  const ev = (calendarEvents || []).find(e => e.type === "edit" && e.editTask === editTask && e.reelIds && e.reelIds.length === 1 && e.reelIds[0] === reel.id);
+  const d = ev && (ev.endDate || ev.startDate);
+  return (d ? d.slice(0, 7) : "") || reel.yearMonth || "";
+}
+function shootMonthFromSchedule(reel, staffId, calendarEvents) {
+  const ev = (calendarEvents || []).find(e => e.type === "shoot" && e.staffId === staffId && e.reelIds && e.reelIds.includes(reel.id));
+  const d = ev && (ev.endDate || ev.startDate);
+  return (d ? d.slice(0, 7) : "") || reel.yearMonth || "";
+}
+
 // 経理管理「スタッフ実績集計」で使う、①〜⑦それぞれの工程の定義（工数は使わず、完了1件ごとに定額の単価を適用する）
 // roleGetter(reel): その工程の担当者IDを返す関数 / test(reel): その工程が完了しているかどうか
+// monthOf(reel, calendarEvents): その工程の実績を計上する年月（スケジュールの着手・完了日が基準。無ければ実際の完了日→登録年月）
 // rateKey: payRatesの中の対応する単価項目（nullなら単価計算の対象外・件数のみ集計）
 const STAFF_TASK_STAGES = [
   {
     key: "solo", label: "一括編集①②③④", modeLabel: "一括編集", rateKey: "soloRate",
     roleGetter: r => EDIT_ROLE_FIELDS.map(f => r[f.key]).find(Boolean) || "",
     test: r => r.workMode === "solo" && editRolesForReel(r).length > 0 && editRolesForReel(r).every(f => r[DONE_KEY_FOR_ROLE[f.key]]),
+    monthOf: (r, calendarEvents) => stageMonthFromSchedule(r, "all", calendarEvents),
   },
-  { key: "cut", label: "①カット", modeLabel: "分業", rateKey: "cutRate", roleGetter: r => r.cutEditorId || "", test: r => r.workMode !== "solo" && !!r.cutDone },
-  { key: "telop", label: "②テロップ", modeLabel: "分業", rateKey: "telopRate", roleGetter: r => r.telopEditorId || "", test: r => r.workMode !== "solo" && !!r.telopDone },
-  { key: "animation", label: "③アニメーション・演出", modeLabel: "分業", rateKey: "animationRate", roleGetter: r => r.animationEditorId || "", test: r => r.workMode !== "solo" && !!r.animationDone },
-  { key: "sfx", label: "④効果音・BGM", modeLabel: "分業", rateKey: "sfxRate", roleGetter: r => r.sfxEditorId || "", test: r => r.workMode !== "solo" && !!r.sfxDone },
-  { key: "check", label: "⑤最終チェック", modeLabel: "", rateKey: "checkRate", roleGetter: r => r.editorSecondaryId || "", test: r => !!r.checkSubmitted },
-  { key: "caption", label: "⑥完成動画・キャプション作成", modeLabel: "", rateKey: "captionRate", roleGetter: r => r.captionAssigneeId || "", test: r => !!r.captionDone },
-  { key: "post", label: "⑦投稿", modeLabel: "", rateKey: "postRate", roleGetter: r => r.postAssigneeId || "", test: r => r.completedStages >= 5 },
+  { key: "cut", label: "①カット", modeLabel: "分業", rateKey: "cutRate", roleGetter: r => r.cutEditorId || "", test: r => r.workMode !== "solo" && !!r.cutDone, monthOf: (r, calendarEvents) => stageMonthFromSchedule(r, "cut", calendarEvents) },
+  { key: "telop", label: "②テロップ", modeLabel: "分業", rateKey: "telopRate", roleGetter: r => r.telopEditorId || "", test: r => r.workMode !== "solo" && !!r.telopDone, monthOf: (r, calendarEvents) => stageMonthFromSchedule(r, "telop", calendarEvents) },
+  { key: "animation", label: "③アニメーション・演出", modeLabel: "分業", rateKey: "animationRate", roleGetter: r => r.animationEditorId || "", test: r => r.workMode !== "solo" && !!r.animationDone, monthOf: (r, calendarEvents) => stageMonthFromSchedule(r, "animation", calendarEvents) },
+  { key: "sfx", label: "④効果音・BGM", modeLabel: "分業", rateKey: "sfxRate", roleGetter: r => r.sfxEditorId || "", test: r => r.workMode !== "solo" && !!r.sfxDone, monthOf: (r, calendarEvents) => stageMonthFromSchedule(r, "sfx", calendarEvents) },
+  { key: "check", label: "⑤最終チェック", modeLabel: "", rateKey: "checkRate", roleGetter: r => r.editorSecondaryId || "", test: r => !!r.checkSubmitted, monthOf: (r, calendarEvents) => stageMonthFromSchedule(r, "check", calendarEvents) },
+  { key: "caption", label: "⑥完成動画・キャプション作成", modeLabel: "", rateKey: "captionRate", roleGetter: r => r.captionAssigneeId || "", test: r => !!r.captionDone, monthOf: (r) => (r.captionDoneAt ? r.captionDoneAt.slice(0, 7) : (r.yearMonth || "")) },
+  { key: "post", label: "⑦投稿", modeLabel: "", rateKey: "postRate", roleGetter: r => r.postAssigneeId || "", test: r => r.completedStages >= 5, monthOf: (r) => (r.postedDate ? r.postedDate.slice(0, 7) : (r.yearMonth || "")) },
 ];
 // 経理管理を担当区分（ディレクター／動画編集者／撮影者／SNS運用担当）ごとのタブに分けるための、区分別の対象工程一覧
 // ・動画編集者：①〜④のみ（⑤最終チェックの実績は編集者の項目には計上しない）
@@ -114,18 +130,40 @@ const emptyPayRate = (ym) => ({
   captionRate: "", postRate: "",
 });
 
+// 経理管理・自分の実績ページの「対象月」選択肢一覧。動画制作管理の登録月だけでなく、スケジュールの着手日・完了日や
+// 手入力ログの日付から実績が計上され得る月もすべて含める（登録した月と実際に作業した月がずれても対象月として選べるようにするため）
+function collectPerformanceMonthOptions(reels, calendarEvents, shootLogs, directorLogs) {
+  const set = new Set();
+  (reels || []).forEach(r => {
+    if (r.yearMonth) set.add(r.yearMonth);
+    STAFF_TASK_STAGES.forEach(stage => {
+      const m = stage.monthOf(r, calendarEvents);
+      if (m) set.add(m);
+    });
+    if (r.assignedStaffId) {
+      const m = shootMonthFromSchedule(r, r.assignedStaffId, calendarEvents);
+      if (m) set.add(m);
+    }
+  });
+  (shootLogs || []).forEach(l => { const m = l.shootDate ? l.shootDate.slice(0, 7) : l.yearMonth; if (m) set.add(m); });
+  (directorLogs || []).forEach(l => { const m = l.workDate ? l.workDate.slice(0, 7) : l.yearMonth; if (m) set.add(m); });
+  return [...set].sort().reverse();
+}
+
 // スタッフ実績集計のロジック（経理管理ページ・自分の実績ページで共通利用する）
 // 工数は使わず、対象の工程を1件完了するごとに、その月に設定された単価をそのまま加算する
-function computeStaffSummaries(monthReels, clients, users, rate, stagesToShow, staffFilter) {
+// reels は月で絞り込まず全件渡し、各工程の実績月（monthOf）が対象月（effectiveMonth）と一致するものだけを集計する
+function computeStaffSummaries(reels, clients, users, rate, stagesToShow, staffFilter, calendarEvents, effectiveMonth) {
   const staffSummaries = {};
   const ensure = (u) => {
     if (!staffSummaries[u.id]) staffSummaries[u.id] = { user: u, byStage: {}, totalAmount: 0 };
     return staffSummaries[u.id];
   };
-  monthReels.forEach(r => {
+  reels.forEach(r => {
     const c = clients.find(x => x.id === r.clientId);
     stagesToShow.forEach(stage => {
       if (!stage.test(r)) return;
+      if (stage.monthOf(r, calendarEvents) !== effectiveMonth) return;
       const staffId = stage.roleGetter(r);
       if (!staffId || (staffFilter && staffId !== staffFilter)) return;
       const u = users.find(x => x.id === staffId);
@@ -146,13 +184,16 @@ function computeStaffSummaries(monthReels, clients, users, rate, stagesToShow, s
 // ②撮影日別の時給×稼働時間（経理管理で手動入力するログ）の2種類を合算して計算する
 const emptyShootLog = (staffId, ym) => ({ id: uid("shootlog"), staffId, yearMonth: ym, shootDate: "", hours: "", hourlyRate: "", note: "" });
 
-function computeShootSummaries(monthReels, clients, shooterUsers, rate, shootStaffFilter, shootLogs, effectiveMonth) {
+// reels は月で絞り込まず全件渡す。①案件別報酬は撮影のスケジュール（予定表）の着手日・完了日を基準に対象月を判定し、
+// ②手入力ログは登録された撮影日（未入力ならログ作成時の年月）を基準に対象月を判定する
+function computeShootSummaries(reels, clients, shooterUsers, rate, shootStaffFilter, shootLogs, effectiveMonth, calendarEvents) {
   const shootRateVal = parseFloat(rate.shootRate) || 0;
   return shooterUsers
     .filter(u => !shootStaffFilter || u.id === shootStaffFilter)
     .map(u => {
-      const projectItems = monthReels
+      const projectItems = reels
         .filter(r => r.completedStages >= 1 && r.assignedStaffId === u.id)
+        .filter(r => shootMonthFromSchedule(r, u.id, calendarEvents) === effectiveMonth)
         .map(r => {
           const hours = parseFloat(r.shootHours) || 0;
           const unitPay = parseFloat(r.shootUnitPay) || 0;
@@ -166,7 +207,7 @@ function computeShootSummaries(monthReels, clients, shooterUsers, rate, shootSta
           };
         });
       const projectTotal = projectItems.reduce((sum, it) => sum + it.amount, 0);
-      const logItems = (shootLogs || []).filter(l => l.staffId === u.id && l.yearMonth === effectiveMonth);
+      const logItems = (shootLogs || []).filter(l => l.staffId === u.id && (l.shootDate ? l.shootDate.slice(0, 7) : l.yearMonth) === effectiveMonth);
       const logItemsWithAmount = logItems.map(l => ({ ...l, amount: (parseFloat(l.hours) || 0) * (parseFloat(l.hourlyRate) || 0) }));
       const logTotal = logItemsWithAmount.reduce((sum, l) => sum + l.amount, 0);
       return { user: u, projectItems, projectTotal, logItems: logItemsWithAmount, logTotal, amount: projectTotal + logTotal };
@@ -177,13 +218,14 @@ function computeShootSummaries(monthReels, clients, shooterUsers, rate, shootSta
 // ディレクターの手入力実績（日付・時給×稼働時間・内訳）のロジック。⑤最終チェック等の自動集計とは別に、経理管理で手動登録する
 const emptyDirectorLog = (staffId, ym) => ({ id: uid("directorlog"), staffId, yearMonth: ym, workDate: "", hours: "", hourlyRate: "", note: "" });
 
-// staffId・yearMonthを持つ手入力ログ（撮影の時給ログ・ディレクターの時給ログ等）を、対象月・対象スタッフで集計する汎用ロジック
-function computeLogSummaries(targetUsers, logs, effectiveMonth, staffFilter) {
+// staffId・日付を持つ手入力ログ（撮影の時給ログ・ディレクターの時給ログ等）を、対象月・対象スタッフで集計する汎用ロジック
+// dateKey に日付項目名（shootDate・workDateなど）を渡すと、その日付を基準に対象月を判定する（未入力ならログ作成時のyearMonthにフォールバック）
+function computeLogSummaries(targetUsers, logs, effectiveMonth, staffFilter, dateKey) {
   return targetUsers
     .filter(u => !staffFilter || u.id === staffFilter)
     .map(u => {
       const items = (logs || [])
-        .filter(l => l.staffId === u.id && l.yearMonth === effectiveMonth)
+        .filter(l => l.staffId === u.id && ((dateKey && l[dateKey] ? l[dateKey].slice(0, 7) : l.yearMonth)) === effectiveMonth)
         .map(l => ({ ...l, amount: (parseFloat(l.hours) || 0) * (parseFloat(l.hourlyRate) || 0) }));
       const total = items.reduce((sum, l) => sum + l.amount, 0);
       return { user: u, items, total };
@@ -447,7 +489,7 @@ const emptyReel = (clientId, ym) => ({
   cutComment: "", telopComment: "", animationComment: "", sfxComment: "", checkComment: "",
   checklist: emptyChecklist(), checkSubmitted: false, checkSubmittedAt: null,
   theme: "", script: "", editInstructions: "", driveUrl: "", referenceVideoUrl: "", finalVideoUrl: "",
-  transcript: "", memo: "", caption: "", captionDone: false, captionInstruction: "",
+  transcript: "", memo: "", caption: "", captionDone: false, captionDoneAt: null, captionInstruction: "",
   captionAssigneeId: "", postAssigneeId: "",
   captionHistory: [], trendSearches: [],
   completedStages: 0, stageVersion: 2, postedDate: "",
@@ -2670,7 +2712,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                     type="button"
                     disabled={!canEdit || (!reel.captionDone && (!reel.checkSubmitted || !draft.caption?.trim()))}
                     title={!reel.checkSubmitted ? "⑤最終チェックが完了してから完了にできます" : !reel.captionDone && !draft.caption?.trim() ? "キャプションを入力すると完了にできます" : "クリックで完了・未完了を切り替え"}
-                    onClick={() => update({ captionDone: !reel.captionDone })}
+                    onClick={() => update({ captionDone: !reel.captionDone, captionDoneAt: !reel.captionDone ? new Date().toISOString() : null })}
                     className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 shrink-0 disabled:opacity-40"
                     style={{ background: reel.captionDone ? "#0E90B8" : "#D6248A" }}
                   >
@@ -5416,28 +5458,36 @@ function PrintableReport() {
 
 // ログインしているスタッフ本人の実績・報酬見込みだけを表示するページ（経理管理のスタッフ実績集計と同じロジックを、自分のデータだけに絞って使う）
 // 単価は統括管理者が経理管理ページで設定したものをそのまま参照する（ここでは編集不可・閲覧のみ）
-function MyPerformancePage({ clients, payRates, reels, setReels, users, currentUser, shootLogs, setShootLogs }) {
-  const monthOptions = [...new Set(reels.map(r => r.yearMonth).filter(Boolean))].sort().reverse();
+function MyPerformancePage({ clients, payRates, reels, setReels, users, currentUser, shootLogs, setShootLogs, directorLogs, calendarEvents }) {
+  // 対象月の選択肢には、動画制作管理の登録月だけでなく、スケジュールの着手・完了日や手入力ログの日付に基づく月も含める
+  const monthOptions = collectPerformanceMonthOptions(reels, calendarEvents, shootLogs, directorLogs);
   const [reportMonth, setReportMonth] = useState(monthOptions[0] || currentYearMonth());
   const effectiveMonth = reportMonth || monthOptions[0] || currentYearMonth();
-  const [stageFilter, setStageFilter] = useState("");
 
   const rate = payRates.find(p => p.yearMonth === effectiveMonth) || emptyPayRate(effectiveMonth);
-  const monthReels = reels.filter(r => r.yearMonth === effectiveMonth);
-  const stagesToShow = stageFilter ? STAFF_TASK_STAGES.filter(s => s.key === stageFilter) : STAFF_TASK_STAGES;
 
-  // 自分のIDだけに絞って集計する（他のスタッフの実績は一切計算・表示しない）
-  const myStaffRows = computeStaffSummaries(monthReels, clients, users, rate, stagesToShow, currentUser.id);
-  const myRow = myStaffRows.find(s => s.user.id === currentUser.id) || null;
-
-  const isShooter = (currentUser.roles || []).includes("shooter");
   const isDirector = (currentUser.roles || []).includes("director");
+  const isEditorRole = (currentUser.roles || []).includes("editor");
+  const isShooter = (currentUser.roles || []).includes("shooter");
   const isSns = (currentUser.roles || []).includes("sns");
-  const myShootSummaries = isShooter ? computeShootSummaries(monthReels, clients, [currentUser], rate, "", shootLogs, effectiveMonth) : [];
+  const hasAnyCategory = isDirector || isEditorRole || isShooter || isSns;
+
+  // 自分のIDだけに絞って、経理管理と同じ担当区分（ディレクター／動画編集者／撮影担当／SNS運用担当）ごとに集計する
+  const myDirectorRow = computeStaffSummaries(reels, clients, users, rate, DIRECTOR_STAGES, currentUser.id, calendarEvents, effectiveMonth).find(s => s.user.id === currentUser.id) || null;
+  const myDirectorLog = computeLogSummaries([currentUser], directorLogs, effectiveMonth, currentUser.id, "workDate")[0] || { items: [], total: 0 };
+  const myEditorRow = computeStaffSummaries(reels, clients, users, rate, EDITOR_STAGES, currentUser.id, calendarEvents, effectiveMonth).find(s => s.user.id === currentUser.id) || null;
+  const mySnsRow = computeStaffSummaries(reels, clients, users, rate, SNS_STAGES, currentUser.id, calendarEvents, effectiveMonth).find(s => s.user.id === currentUser.id) || null;
+  const myShootSummaries = isShooter ? computeShootSummaries(reels, clients, [currentUser], rate, "", shootLogs, effectiveMonth, calendarEvents) : [];
   const myShoot = myShootSummaries[0] || { projectItems: [], projectTotal: 0, logItems: [], logTotal: 0, amount: 0 };
 
+  const directorTotal = (myDirectorRow?.totalAmount || 0) + (myDirectorLog.total || 0);
+  const editorTotal = myEditorRow?.totalAmount || 0;
+  const snsTotal = mySnsRow?.totalAmount || 0;
+  const shootTotal = myShoot.amount || 0;
+  const grandTotal = (isDirector ? directorTotal : 0) + (isEditorRole ? editorTotal : 0) + (isShooter ? shootTotal : 0) + (isSns ? snsTotal : 0);
+
   // 撮影担当は、経理管理と同じ操作で自分自身の撮影報酬（①案件別報酬・②時給ログ）だけを手動編集できる
-  // （表示・編集の対象は常に currentUser 自身のデータのみに限定される）
+  // （表示・編集の対象は常に currentUser 自身のデータのみに限定される。ディレクターの手入力実績は統括管理者のみが編集できるため、ここでは閲覧のみ）
   const updateMyShootUnitPay = (reelId, value) => {
     setReels(prev => prev.map(r => r.id === reelId ? { ...r, shootUnitPay: value } : r));
   };
@@ -5451,9 +5501,54 @@ function MyPerformancePage({ clients, payRates, reels, setReels, users, currentU
     setShootLogs(prev => prev.filter(l => l.id !== id));
   };
 
-  const printMyReport = () => {
-    if (typeof document !== "undefined") document.body.dataset.printSection = "mine";
+  // PDF出力：どの区分を印刷するかを body の data 属性に記録してから印刷する（複数の印刷用コンテナのうち対象のものだけを表示するため）
+  const printSection = (section) => {
+    if (typeof document !== "undefined") document.body.dataset.printSection = section;
     window.print();
+  };
+
+  // 工程の内訳（グリッド＋明細一覧）の共通表示。経理管理の各区分カードと同じ見た目にする
+  const renderStageGrid = (stagesArr, row) => (
+    <>
+      <div className="grid sm:grid-cols-4 gap-1.5 mt-2">
+        {stagesArr.map(stage => {
+          const d = row?.byStage?.[stage.key];
+          if (!d) return null;
+          return (
+            <div key={stage.key} className="rounded-lg p-2 text-center" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
+              <p className="text-[10px]" style={{ color: "#8B897F" }}>{stage.label}</p>
+              <p className="text-sm font-bold">{d.count}本</p>
+              {d.hasRate && <p className="text-[10px]" style={{ color: "#8B897F" }}>¥{Math.round(d.amount).toLocaleString()}</p>}
+            </div>
+          );
+        })}
+      </div>
+      {row && (
+        <div className="mt-3 space-y-1">
+          {Object.values(row.byStage).flatMap(x => x.items).map((it, i) => (
+            <div key={i} className="flex items-center justify-between text-xs px-2 py-1.5 rounded-lg" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
+              <span className="truncate">{it.client}／{it.theme}（{it.stageLabel}）</span>
+              <span className="shrink-0 font-semibold" style={{ color: "#8B897F" }}>{it.amount ? `¥${Math.round(it.amount).toLocaleString()}` : "-"}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+  // PDF出力用の明細テーブル（工程の自動集計）
+  const renderStageTableForPdf = (row) => {
+    const items = row ? Object.values(row.byStage).flatMap(x => x.items) : [];
+    if (items.length === 0) return null;
+    return (
+      <table>
+        <thead><tr><th>クライアント</th><th>案件</th><th>工程</th><th>金額</th></tr></thead>
+        <tbody>
+          {items.map((it, i) => (
+            <tr key={i}><td>{it.client}</td><td>{it.theme}</td><td>{it.stageLabel}</td><td>{it.amount ? `¥${Math.round(it.amount).toLocaleString()}` : "-"}</td></tr>
+          ))}
+        </tbody>
+      </table>
+    );
   };
 
   return (
@@ -5462,83 +5557,134 @@ function MyPerformancePage({ clients, payRates, reels, setReels, users, currentU
         <Wallet size={20} />
         <h2 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700 }}>自分の実績</h2>
       </div>
-      <p className="text-xs mb-4" style={{ color: "#8B897F" }}>あなた（{currentUser.name}さん）が選択した月に担当した工程の実績と、支払い見込み金額を確認できます。他のスタッフの実績はここには表示されません。単価は統括管理者が設定します。</p>
+      <p className="text-xs mb-4" style={{ color: "#8B897F" }}>あなた（{currentUser.name}さん）が選択した月に担当した工程の実績と、支払い見込み金額を、経理管理と同じ区分（ディレクター／動画編集者／撮影担当／SNS運用担当）ごとに確認できます。他のスタッフの実績はここには表示されません。単価は統括管理者が設定します。</p>
 
-      <div className="rounded-2xl p-5 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
-        <p className="font-bold mb-1 flex items-center gap-1.5"><Scissors size={16} color="#0E90B8" /> 実績集計・報酬見込み</p>
-        <p className="text-[11px] mb-3" style={{ color: "#A9A79C" }}>工数ではなく、各工程を1件完了するごとに、その月に設定された単価がそのまま加算されます（⑥⑦は件数のみの集計です）。</p>
-
-        <div className="flex items-center gap-2 flex-wrap mb-3">
-          <select value={effectiveMonth} onChange={e => setReportMonth(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 140 }}>
-            {monthOptions.length === 0 && <option value={effectiveMonth}>{monthLabel(effectiveMonth)}</option>}
-            {monthOptions.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
-          </select>
-          <select value={stageFilter} onChange={e => setStageFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 210 }}>
-            <option value="">工程（①〜⑦ すべて）</option>
-            {STAFF_TASK_STAGES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-          </select>
-        </div>
-
-        <div className="rounded-xl p-3 mb-3" style={{ background: "#FAF8F3" }}>
-          <p className="text-[11px] font-semibold mb-1.5" style={{ color: "#8B897F" }}>{monthLabel(effectiveMonth)}の単価（統括管理者が設定）</p>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]" style={{ color: "#59564B" }}>
-            <span>一括編集：¥{(parseFloat(rate.soloRate) || 0).toLocaleString()}／件</span>
-            <span>①カット：¥{(parseFloat(rate.cutRate) || 0).toLocaleString()}／件</span>
-            <span>②テロップ：¥{(parseFloat(rate.telopRate) || 0).toLocaleString()}／件</span>
-            <span>③アニメーション：¥{(parseFloat(rate.animationRate) || 0).toLocaleString()}／件</span>
-            <span>④効果音：¥{(parseFloat(rate.sfxRate) || 0).toLocaleString()}／件</span>
-            <span>⑤チェック：¥{(parseFloat(rate.checkRate) || 0).toLocaleString()}／件</span>
-            {isDirector && <span>ディレクター手入力時給：¥{(parseFloat(rate.directorHourlyRate) || 0).toLocaleString()}／時間</span>}
-            {isShooter && <span>撮影（時給）：¥{(parseFloat(rate.shootRate) || 0).toLocaleString()}／時間</span>}
-            {isShooter && <span>撮影（1件あたり）：¥{(parseFloat(rate.shootProjectRate) || 0).toLocaleString()}／件</span>}
-            {isSns && <span>⑥キャプション作成：¥{(parseFloat(rate.captionRate) || 0).toLocaleString()}／件</span>}
-            {isSns && <span>⑦投稿：¥{(parseFloat(rate.postRate) || 0).toLocaleString()}／件</span>}
+      <div className="rounded-2xl p-5 mb-4" style={{ background: "#16171B" }}>
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+          <p className="text-xs font-semibold" style={{ color: "#C7C4B6" }}>{monthLabel(effectiveMonth)}の支払い見込み合計</p>
+          <div className="flex items-center gap-2">
+            <select value={effectiveMonth} onChange={e => setReportMonth(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 140 }}>
+              {monthOptions.length === 0 && <option value={effectiveMonth}>{monthLabel(effectiveMonth)}</option>}
+              {monthOptions.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
+            </select>
+            {hasAnyCategory && (
+              <button onClick={() => printSection("mine-all")} className="text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5" style={{ background: "#fff", color: "#16171B" }}>
+                <FileText size={13} /> 全体まとめをPDFで出力
+              </button>
+            )}
           </div>
         </div>
+        <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-3">
+          <div>
+            <p className="text-[11px]" style={{ color: "#8B897F" }}>合計</p>
+            <p className="text-2xl font-bold" style={{ color: "#fff", fontFamily: "'Space Grotesk', sans-serif" }}>¥{Math.round(grandTotal).toLocaleString()}</p>
+          </div>
+          {isDirector && (
+            <div>
+              <p className="text-[11px]" style={{ color: "#8B897F" }}>ディレクター</p>
+              <p className="text-lg font-bold" style={{ color: "#9C8CF0" }}>¥{Math.round(directorTotal).toLocaleString()}</p>
+            </div>
+          )}
+          {isEditorRole && (
+            <div>
+              <p className="text-[11px]" style={{ color: "#8B897F" }}>動画編集者</p>
+              <p className="text-lg font-bold" style={{ color: "#5BC0D8" }}>¥{Math.round(editorTotal).toLocaleString()}</p>
+            </div>
+          )}
+          {isShooter && (
+            <div>
+              <p className="text-[11px]" style={{ color: "#8B897F" }}>撮影担当</p>
+              <p className="text-lg font-bold" style={{ color: "#E8B34F" }}>¥{Math.round(shootTotal).toLocaleString()}</p>
+            </div>
+          )}
+          {isSns && (
+            <div>
+              <p className="text-[11px]" style={{ color: "#8B897F" }}>SNS運用担当</p>
+              <p className="text-lg font-bold" style={{ color: "#F080B0" }}>¥{Math.round(snsTotal).toLocaleString()}</p>
+            </div>
+          )}
+        </div>
+        {!hasAnyCategory && <p className="text-xs mt-2" style={{ color: "#C7C4B6" }}>実績が計上される役割（ディレクター・動画編集者・撮影担当・SNS運用担当）が設定されていません。</p>}
+      </div>
 
-        {!myRow && <p className="text-xs" style={{ color: "#8B897F" }}>{monthLabel(effectiveMonth)}のあなたの実績はまだありません。</p>}
-        {myRow && (
-          <div className="rounded-xl p-3" style={{ background: "#FAF8F3" }}>
+      <div className="rounded-2xl p-3 mb-4" style={{ background: "#FAF8F3", border: "1px solid #EFEDE4" }}>
+        <p className="text-[11px] font-semibold mb-1.5" style={{ color: "#8B897F" }}>{monthLabel(effectiveMonth)}の単価（統括管理者が設定）</p>
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]" style={{ color: "#59564B" }}>
+          {isEditorRole && <span>一括編集：¥{(parseFloat(rate.soloRate) || 0).toLocaleString()}／件</span>}
+          {isEditorRole && <span>①カット：¥{(parseFloat(rate.cutRate) || 0).toLocaleString()}／件</span>}
+          {isEditorRole && <span>②テロップ：¥{(parseFloat(rate.telopRate) || 0).toLocaleString()}／件</span>}
+          {isEditorRole && <span>③アニメーション：¥{(parseFloat(rate.animationRate) || 0).toLocaleString()}／件</span>}
+          {isEditorRole && <span>④効果音：¥{(parseFloat(rate.sfxRate) || 0).toLocaleString()}／件</span>}
+          {isDirector && <span>⑤チェック：¥{(parseFloat(rate.checkRate) || 0).toLocaleString()}／件</span>}
+          {isDirector && <span>ディレクター手入力時給：¥{(parseFloat(rate.directorHourlyRate) || 0).toLocaleString()}／時間</span>}
+          {isShooter && <span>撮影（時給）：¥{(parseFloat(rate.shootRate) || 0).toLocaleString()}／時間</span>}
+          {isShooter && <span>撮影（1件あたり）：¥{(parseFloat(rate.shootProjectRate) || 0).toLocaleString()}／件</span>}
+          {isSns && <span>⑥キャプション作成：¥{(parseFloat(rate.captionRate) || 0).toLocaleString()}／件</span>}
+          {isSns && <span>⑦投稿：¥{(parseFloat(rate.postRate) || 0).toLocaleString()}／件</span>}
+        </div>
+      </div>
+
+      {isDirector && (
+        <div className="rounded-2xl p-5 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
+          <p className="font-bold mb-1 flex items-center gap-1.5"><UserCog size={16} color="#5B5FC7" /> ディレクター実績</p>
+          <p className="text-[11px] mb-3" style={{ color: "#A9A79C" }}>⑤最終チェック（＋⑥完成動画・キャプション作成をあなたが担当した分）と、統括管理者が経理管理で登録した手入力実績（日付・時給×稼働時間・内訳）を確認できます（ここでは編集できません）。</p>
+          <div className="rounded-xl p-3 mb-2" style={{ background: "#FAF8F3" }}>
             <div className="flex items-center justify-between flex-wrap gap-2">
               <p className="text-sm font-semibold">{monthLabel(effectiveMonth)}の実績</p>
-              {myRow.totalAmount > 0 && <Badge tone="teal">支払い見込み ¥{Math.round(myRow.totalAmount).toLocaleString()}</Badge>}
+              {directorTotal > 0 && <Badge tone="teal">支払い見込み ¥{Math.round(directorTotal).toLocaleString()}</Badge>}
             </div>
-            <div className="grid sm:grid-cols-4 md:grid-cols-7 gap-1.5 mt-2">
-              {STAFF_TASK_STAGES.map(stage => {
-                const d = myRow.byStage[stage.key];
-                if (!d) return null;
-                return (
-                  <div key={stage.key} className="rounded-lg p-2 text-center" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
-                    <p className="text-[10px]" style={{ color: "#8B897F" }}>{stage.label}</p>
-                    <p className="text-sm font-bold">{d.count}本</p>
-                    {d.hasRate && <p className="text-[10px]" style={{ color: "#8B897F" }}>¥{Math.round(d.amount).toLocaleString()}</p>}
-                  </div>
-                );
-              })}
-            </div>
-            <div className="mt-3 space-y-1">
-              {Object.values(myRow.byStage).flatMap(x => x.items).map((it, i) => (
-                <div key={i} className="flex items-center justify-between text-xs px-2 py-1.5 rounded-lg" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
-                  <span className="truncate">{it.client}／{it.theme}（{it.stageLabel}）</span>
-                  <span className="shrink-0 font-semibold" style={{ color: "#8B897F" }}>{it.amount ? `¥${Math.round(it.amount).toLocaleString()}` : "-"}</span>
+            {!myDirectorRow && myDirectorLog.items.length === 0 && <p className="text-xs mt-1" style={{ color: "#8B897F" }}>{monthLabel(effectiveMonth)}の実績はまだありません。</p>}
+            {renderStageGrid(DIRECTOR_STAGES, myDirectorRow)}
+          </div>
+          <p className="text-[11px] font-semibold mb-1" style={{ color: "#8B897F" }}>手入力実績（小計 ¥{Math.round(myDirectorLog.total).toLocaleString()}）</p>
+          {myDirectorLog.items.length === 0 && <p className="text-[11px] mb-2" style={{ color: "#A9A79C" }}>登録された手入力実績はありません。</p>}
+          {myDirectorLog.items.length > 0 && (
+            <div className="space-y-1 mb-2">
+              {myDirectorLog.items.map(l => (
+                <div key={l.id} className="flex items-center justify-between gap-2 text-xs px-2 py-1.5 rounded-lg flex-wrap" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
+                  <span>{l.workDate || "-"}　{l.hours || 0}時間×¥{(parseFloat(l.hourlyRate) || 0).toLocaleString()}{l.note ? `　${l.note}` : ""}</span>
+                  <span className="font-semibold shrink-0" style={{ color: "#8B897F" }}>¥{Math.round(l.amount).toLocaleString()}</span>
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          )}
+          {(myDirectorRow || myDirectorLog.items.length > 0) && (
+            <div className="flex justify-end mt-2">
+              <button onClick={() => printSection("mine-director")} className="text-xs font-semibold px-3 py-1.5 rounded-lg border flex items-center gap-1.5" style={{ borderColor: "#DEDACD" }}>
+                <FileText size={13} /> ディレクター実績をA4 PDFで出力
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
-        {(myRow || (isShooter && (myShoot.projectItems.length > 0 || myShoot.logItems.length > 0))) && (
-          <div className="flex justify-end mt-3">
-            <button onClick={printMyReport} className="text-xs font-semibold px-3 py-1.5 rounded-lg border flex items-center gap-1.5" style={{ borderColor: "#DEDACD" }}>
-              <FileText size={13} /> {monthLabel(effectiveMonth)}の実績をA4 PDFで出力
-            </button>
-          </div>
-        )}
-      </div>
+      {isEditorRole && (
+        <div className="rounded-2xl p-5 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
+          <p className="font-bold mb-1 flex items-center gap-1.5"><Scissors size={16} color="#0E90B8" /> 動画編集者実績</p>
+          <p className="text-[11px] mb-3" style={{ color: "#A9A79C" }}>①〜④の各工程を1件完了するごとに、単価がそのまま加算されます（⑤最終チェックの実績はディレクターの項目に計上されます）。</p>
+          {!myEditorRow && <p className="text-xs" style={{ color: "#8B897F" }}>{monthLabel(effectiveMonth)}の実績はまだありません。</p>}
+          {myEditorRow && (
+            <div className="rounded-xl p-3" style={{ background: "#FAF8F3" }}>
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <p className="text-sm font-semibold">{monthLabel(effectiveMonth)}の実績</p>
+                <Badge tone="teal">支払い見込み ¥{Math.round(myEditorRow.totalAmount).toLocaleString()}</Badge>
+              </div>
+              {renderStageGrid(EDITOR_STAGES, myEditorRow)}
+            </div>
+          )}
+          {myEditorRow && (
+            <div className="flex justify-end mt-3">
+              <button onClick={() => printSection("mine-editor")} className="text-xs font-semibold px-3 py-1.5 rounded-lg border flex items-center gap-1.5" style={{ borderColor: "#DEDACD" }}>
+                <FileText size={13} /> 動画編集者実績をA4 PDFで出力
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {isShooter && (
         <div className="rounded-2xl p-5 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
-          <p className="font-bold mb-1 flex items-center gap-1.5"><Camera size={16} color="#854F0B" /> 撮影実績・報酬見込み（手動編集可）</p>
+          <p className="font-bold mb-1 flex items-center gap-1.5"><Camera size={16} color="#854F0B" /> 撮影実績（手動編集可）</p>
           <p className="text-[11px] mb-3" style={{ color: "#A9A79C" }}>①案件別の報酬と、②撮影日別の時給×稼働時間の2種類で、あなた自身の撮影報酬を経理管理と同じ操作で入力・編集できます（他のスタッフのデータは編集できません）。単価はここでは変更できません（統括管理者が経理管理ページで設定します）。</p>
 
           <div className="flex items-center justify-between flex-wrap gap-2 rounded-lg p-2 mb-3" style={{ background: "#FAF8F3", border: "1px solid #EFEDE4" }}>
@@ -5577,46 +5723,180 @@ function MyPerformancePage({ clients, payRates, reels, setReels, users, currentU
                   <TextInput type="number" step="0.1" value={l.hours || ""} onChange={e => updateMyShootLog(l.id, { hours: e.target.value })} placeholder="時間" style={{ width: 70 }} />
                   <span style={{ color: "#8B897F" }}>時間 ×¥</span>
                   <TextInput type="number" value={l.hourlyRate || ""} onChange={e => updateMyShootLog(l.id, { hourlyRate: e.target.value })} placeholder="時給" style={{ width: 80 }} />
-                  <TextInput value={l.note || ""} onChange={e => updateMyShootLog(l.id, { note: e.target.value })} placeholder="メモ（任意）" style={{ width: 110 }} />
+                  <TextInput value={l.note || ""} onChange={e => updateMyShootLog(l.id, { note: e.target.value })} placeholder="メモ（任意）" style={{ flex: "1 1 220px", minWidth: 220 }} />
                   <span className="font-semibold shrink-0" style={{ color: "#8B897F" }}>¥{Math.round(l.amount).toLocaleString()}</span>
                   <button type="button" onClick={() => deleteMyShootLog(l.id)} className="ml-auto shrink-0" style={{ color: "#D6248A" }}><Trash2 size={13} /></button>
                 </div>
               ))}
             </div>
           )}
+          {(myShoot.projectItems.length > 0 || myShoot.logItems.length > 0) && (
+            <div className="flex justify-end mt-3">
+              <button onClick={() => printSection("mine-shoot")} className="text-xs font-semibold px-3 py-1.5 rounded-lg border flex items-center gap-1.5" style={{ borderColor: "#DEDACD" }}>
+                <FileText size={13} /> 撮影実績をA4 PDFで出力
+              </button>
+            </div>
+          )}
         </div>
       )}
 
-      {/* PDF出力用の非表示コンテナ（印刷時のみA4サイズで表示。アプリ本体のDOMツリー外（document.body直下）に描画される） */}
-      <PrintPortal>
-        <div className="printable-staff-page" data-section="mine">
-          <h1>{monthLabel(effectiveMonth)} {currentUser.name} 実績・支払い明細</h1>
-          <p className="staff-report-meta">
-            一括編集：¥{(parseFloat(rate.soloRate) || 0).toLocaleString()}／件　①カット：¥{(parseFloat(rate.cutRate) || 0).toLocaleString()}／件　②テロップ：¥{(parseFloat(rate.telopRate) || 0).toLocaleString()}／件　③アニメーション：¥{(parseFloat(rate.animationRate) || 0).toLocaleString()}／件　④効果音：¥{(parseFloat(rate.sfxRate) || 0).toLocaleString()}／件　⑤チェック：¥{(parseFloat(rate.checkRate) || 0).toLocaleString()}／件　撮影：¥{(parseFloat(rate.shootRate) || 0).toLocaleString()}／時間
-          </p>
-          {myRow && (
-            <div style={{ marginBottom: 14 }}>
-              <h2>{currentUser.name}　支払い見込み ¥{Math.round(myRow.totalAmount).toLocaleString()}</h2>
+      {isSns && (
+        <div className="rounded-2xl p-5 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
+          <p className="font-bold mb-1 flex items-center gap-1.5"><Send size={16} color="#D6248A" /> SNS運用担当実績</p>
+          <p className="text-[11px] mb-3" style={{ color: "#A9A79C" }}>⑥完成動画・キャプション作成（あなたが担当した分）、⑦投稿を1件完了するごとに、単価がそのまま加算されます。</p>
+          {!mySnsRow && <p className="text-xs" style={{ color: "#8B897F" }}>{monthLabel(effectiveMonth)}の実績はまだありません。</p>}
+          {mySnsRow && (
+            <div className="rounded-xl p-3" style={{ background: "#FAF8F3" }}>
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <p className="text-sm font-semibold">{monthLabel(effectiveMonth)}の実績</p>
+                <Badge tone="teal">支払い見込み ¥{Math.round(mySnsRow.totalAmount).toLocaleString()}</Badge>
+              </div>
+              {renderStageGrid(SNS_STAGES, mySnsRow)}
+            </div>
+          )}
+          {mySnsRow && (
+            <div className="flex justify-end mt-3">
+              <button onClick={() => printSection("mine-sns")} className="text-xs font-semibold px-3 py-1.5 rounded-lg border flex items-center gap-1.5" style={{ borderColor: "#DEDACD" }}>
+                <FileText size={13} /> SNS運用担当実績をA4 PDFで出力
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* PDF出力用の非表示コンテナ（印刷時のみA4サイズで表示。アプリ本体のDOMツリー外（document.body直下）に描画される）
+          区分ごとに別々のコンテナを同時にDOM上へ持つため、印刷直前にbodyへ設定したdata-print-section属性でCSS側が対象を1つだけ表示する */}
+      {isDirector && (
+        <PrintPortal>
+          <div className="printable-staff-page" data-section="mine-director">
+            <h1>{monthLabel(effectiveMonth)} {currentUser.name}　ディレクター実績・支払い明細</h1>
+            <table className="staff-report-total">
+              <thead><tr><th>合計</th></tr></thead>
+              <tbody><tr><td>¥{Math.round(directorTotal).toLocaleString()}</td></tr></tbody>
+            </table>
+            <p className="staff-report-meta">⑤最終チェック単価：¥{(parseFloat(rate.checkRate) || 0).toLocaleString()}／件　手入力時給（既定）：¥{(parseFloat(rate.directorHourlyRate) || 0).toLocaleString()}／時間</p>
+            {renderStageTableForPdf(myDirectorRow)}
+            {myDirectorLog.items.length > 0 && (
               <table>
-                <thead>
-                  <tr><th>クライアント</th><th>案件</th><th>工程</th><th>金額</th></tr>
-                </thead>
+                <thead><tr><th>日付</th><th>時間</th><th>時給</th><th>内訳</th><th>金額</th></tr></thead>
                 <tbody>
-                  {Object.values(myRow.byStage).flatMap(x => x.items).map((it, i) => (
-                    <tr key={i}>
-                      <td>{it.client}</td>
-                      <td>{it.theme}</td>
-                      <td>{it.stageLabel}</td>
-                      <td>{it.amount ? `¥${Math.round(it.amount).toLocaleString()}` : "-"}</td>
-                    </tr>
+                  {myDirectorLog.items.map((l, i) => (
+                    <tr key={i}><td>{l.workDate || "-"}</td><td>{l.hours || 0}時間</td><td>¥{(parseFloat(l.hourlyRate) || 0).toLocaleString()}</td><td>{l.note || "-"}</td><td>¥{Math.round(l.amount).toLocaleString()}</td></tr>
                   ))}
                 </tbody>
               </table>
-            </div>
+            )}
+          </div>
+        </PrintPortal>
+      )}
+      {isEditorRole && (
+        <PrintPortal>
+          <div className="printable-staff-page" data-section="mine-editor">
+            <h1>{monthLabel(effectiveMonth)} {currentUser.name}　動画編集者実績・支払い明細</h1>
+            <table className="staff-report-total">
+              <thead><tr><th>合計</th></tr></thead>
+              <tbody><tr><td>¥{Math.round(editorTotal).toLocaleString()}</td></tr></tbody>
+            </table>
+            <p className="staff-report-meta">
+              一括編集：¥{(parseFloat(rate.soloRate) || 0).toLocaleString()}／件　①カット：¥{(parseFloat(rate.cutRate) || 0).toLocaleString()}／件　②テロップ：¥{(parseFloat(rate.telopRate) || 0).toLocaleString()}／件　③アニメーション：¥{(parseFloat(rate.animationRate) || 0).toLocaleString()}／件　④効果音：¥{(parseFloat(rate.sfxRate) || 0).toLocaleString()}／件
+            </p>
+            {renderStageTableForPdf(myEditorRow)}
+          </div>
+        </PrintPortal>
+      )}
+      {isShooter && (
+        <PrintPortal>
+          <div className="printable-staff-page" data-section="mine-shoot">
+            <h1>{monthLabel(effectiveMonth)} {currentUser.name}　撮影実績・支払い明細</h1>
+            <table className="staff-report-total">
+              <thead><tr><th>合計</th></tr></thead>
+              <tbody><tr><td>¥{Math.round(shootTotal).toLocaleString()}</td></tr></tbody>
+            </table>
+            <p className="staff-report-meta">撮影単価（時給）：¥{(parseFloat(rate.shootRate) || 0).toLocaleString()}／時間　撮影単価（1件あたり・既定）：¥{(parseFloat(rate.shootProjectRate) || 0).toLocaleString()}／件</p>
+            {myShoot.projectItems.length > 0 && (
+              <table>
+                <thead><tr><th>クライアント</th><th>案件</th><th>金額</th></tr></thead>
+                <tbody>
+                  {myShoot.projectItems.map((it, i) => (
+                    <tr key={i}><td>{it.client}</td><td>{it.theme}</td><td>¥{Math.round(it.amount).toLocaleString()}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {myShoot.logItems.length > 0 && (
+              <table>
+                <thead><tr><th>撮影日</th><th>時間</th><th>時給</th><th>金額</th></tr></thead>
+                <tbody>
+                  {myShoot.logItems.map((l, i) => (
+                    <tr key={i}><td>{l.shootDate || "-"}</td><td>{l.hours || 0}時間</td><td>¥{(parseFloat(l.hourlyRate) || 0).toLocaleString()}</td><td>¥{Math.round(l.amount).toLocaleString()}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </PrintPortal>
+      )}
+      {isSns && (
+        <PrintPortal>
+          <div className="printable-staff-page" data-section="mine-sns">
+            <h1>{monthLabel(effectiveMonth)} {currentUser.name}　SNS運用担当実績・支払い明細</h1>
+            <table className="staff-report-total">
+              <thead><tr><th>合計</th></tr></thead>
+              <tbody><tr><td>¥{Math.round(snsTotal).toLocaleString()}</td></tr></tbody>
+            </table>
+            <p className="staff-report-meta">⑥キャプション作成単価：¥{(parseFloat(rate.captionRate) || 0).toLocaleString()}／件　⑦投稿単価：¥{(parseFloat(rate.postRate) || 0).toLocaleString()}／件</p>
+            {renderStageTableForPdf(mySnsRow)}
+          </div>
+        </PrintPortal>
+      )}
+      <PrintPortal>
+        <div className="printable-staff-page" data-section="mine-all">
+          <h1>{monthLabel(effectiveMonth)} {currentUser.name}　実績・支払い明細（全体まとめ）</h1>
+          <table className="staff-report-total">
+            <thead>
+              <tr>
+                <th>合計</th>
+                {isDirector && <th>ディレクター</th>}
+                {isEditorRole && <th>動画編集者</th>}
+                {isShooter && <th>撮影担当</th>}
+                {isSns && <th>SNS運用担当</th>}
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>¥{Math.round(grandTotal).toLocaleString()}</td>
+                {isDirector && <td>¥{Math.round(directorTotal).toLocaleString()}</td>}
+                {isEditorRole && <td>¥{Math.round(editorTotal).toLocaleString()}</td>}
+                {isShooter && <td>¥{Math.round(shootTotal).toLocaleString()}</td>}
+                {isSns && <td>¥{Math.round(snsTotal).toLocaleString()}</td>}
+              </tr>
+            </tbody>
+          </table>
+          {isDirector && (
+            <>
+              <h2 style={{ marginTop: 10 }}>ディレクター</h2>
+              {renderStageTableForPdf(myDirectorRow)}
+              {myDirectorLog.items.length > 0 && (
+                <table>
+                  <thead><tr><th>日付</th><th>時間</th><th>時給</th><th>内訳</th><th>金額</th></tr></thead>
+                  <tbody>
+                    {myDirectorLog.items.map((l, i) => (
+                      <tr key={i}><td>{l.workDate || "-"}</td><td>{l.hours || 0}時間</td><td>¥{(parseFloat(l.hourlyRate) || 0).toLocaleString()}</td><td>{l.note || "-"}</td><td>¥{Math.round(l.amount).toLocaleString()}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </>
           )}
-          {isShooter && (myShoot.projectItems.length > 0 || myShoot.logItems.length > 0) && (
-            <div style={{ marginTop: 14 }}>
-              <h2>撮影実績　支払い見込み ¥{Math.round(myShoot.amount).toLocaleString()}</h2>
+          {isEditorRole && (
+            <>
+              <h2 style={{ marginTop: 10 }}>動画編集者</h2>
+              {renderStageTableForPdf(myEditorRow)}
+            </>
+          )}
+          {isShooter && (
+            <>
+              <h2 style={{ marginTop: 10 }}>撮影担当</h2>
               {myShoot.projectItems.length > 0 && (
                 <table>
                   <thead><tr><th>クライアント</th><th>案件</th><th>金額</th></tr></thead>
@@ -5637,7 +5917,13 @@ function MyPerformancePage({ clients, payRates, reels, setReels, users, currentU
                   </tbody>
                 </table>
               )}
-            </div>
+            </>
+          )}
+          {isSns && (
+            <>
+              <h2 style={{ marginTop: 10 }}>SNS運用担当</h2>
+              {renderStageTableForPdf(mySnsRow)}
+            </>
           )}
         </div>
       </PrintPortal>
@@ -5645,7 +5931,7 @@ function MyPerformancePage({ clients, payRates, reels, setReels, users, currentU
   );
 }
 
-function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reels, setReels, users, shootLogs, setShootLogs, directorLogs, setDirectorLogs }) {
+function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reels, setReels, users, shootLogs, setShootLogs, directorLogs, setDirectorLogs, calendarEvents }) {
   const upsert = (clientId, patch) => {
     setFinance(prev => {
       const exists = prev.some(f => f.clientId === clientId);
@@ -5673,7 +5959,8 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
   };
 
   // ============ スタッフ実績集計・報酬計算（ディレクター／動画編集者／撮影担当／SNS運用担当の4区分に分けて管理する） ============
-  const monthOptions = [...new Set(reels.map(r => r.yearMonth).filter(Boolean))].sort().reverse();
+  // 対象月の選択肢には、動画制作管理の登録月だけでなく、スケジュールの着手・完了日や手入力ログの日付に基づく月も含める
+  const monthOptions = collectPerformanceMonthOptions(reels, calendarEvents, shootLogs, directorLogs);
   const [reportMonth, setReportMonth] = useState(monthOptions[0] || currentYearMonth());
   const effectiveMonth = reportMonth || monthOptions[0] || currentYearMonth();
   const [directorFilter, setDirectorFilter] = useState("");
@@ -5690,23 +5977,22 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
     });
   };
 
-  const monthReels = reels.filter(r => r.yearMonth === effectiveMonth);
-
+  // 実績集計は月で絞り込まず全件のreelsを渡し、各集計関数の内部でスケジュールに基づく実績月の判定を行う
   const directorUsers = users.filter(u => (u.roles || []).includes("director"));
   const editorUsers = users.filter(u => (u.roles || []).includes("editor"));
   const shooterUsers = users.filter(u => (u.roles || []).includes("shooter"));
   const snsUsers = users.filter(u => (u.roles || []).includes("sns"));
 
   // ============ 動画編集者実績（①〜④のみ。⑤最終チェックはディレクターの項目に計上するためここには含めない） ============
-  const editorRows = computeStaffSummaries(monthReels, clients, editorUsers, rate, EDITOR_STAGES, editorFilter);
-  const allEditorRows = computeStaffSummaries(monthReels, clients, editorUsers, rate, EDITOR_STAGES, "");
+  const editorRows = computeStaffSummaries(reels, clients, editorUsers, rate, EDITOR_STAGES, editorFilter, calendarEvents, effectiveMonth);
+  const allEditorRows = computeStaffSummaries(reels, clients, editorUsers, rate, EDITOR_STAGES, "", calendarEvents, effectiveMonth);
   const editorExpenseTotal = allEditorRows.reduce((sum, s) => sum + s.totalAmount, 0);
 
   // ============ ディレクター実績（⑤最終チェック＋⑥をディレクターが担当した分の自動集計、＋手入力の時給×稼働時間） ============
-  const directorStaffRows = computeStaffSummaries(monthReels, clients, directorUsers, rate, DIRECTOR_STAGES, directorFilter);
-  const allDirectorStaffRows = computeStaffSummaries(monthReels, clients, directorUsers, rate, DIRECTOR_STAGES, "");
-  const directorLogSummaries = computeLogSummaries(directorUsers, directorLogs, effectiveMonth, directorFilter);
-  const allDirectorLogSummaries = computeLogSummaries(directorUsers, directorLogs, effectiveMonth, "");
+  const directorStaffRows = computeStaffSummaries(reels, clients, directorUsers, rate, DIRECTOR_STAGES, directorFilter, calendarEvents, effectiveMonth);
+  const allDirectorStaffRows = computeStaffSummaries(reels, clients, directorUsers, rate, DIRECTOR_STAGES, "", calendarEvents, effectiveMonth);
+  const directorLogSummaries = computeLogSummaries(directorUsers, directorLogs, effectiveMonth, directorFilter, "workDate");
+  const allDirectorLogSummaries = computeLogSummaries(directorUsers, directorLogs, effectiveMonth, "", "workDate");
   const directorExpenseTotal = allDirectorStaffRows.reduce((sum, s) => sum + s.totalAmount, 0) + allDirectorLogSummaries.reduce((sum, s) => sum + s.total, 0);
 
   const addDirectorLog = (staffId) => {
@@ -5720,8 +6006,8 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
   };
 
   // ============ 撮影担当実績集計（①案件別報酬＋②撮影日別の時給×稼働時間。撮影担当のみ経理管理で手動編集可） ============
-  const shootSummaries = computeShootSummaries(monthReels, clients, shooterUsers, rate, shootStaffFilter, shootLogs, effectiveMonth);
-  const allShootSummaries = computeShootSummaries(monthReels, clients, shooterUsers, rate, "", shootLogs, effectiveMonth);
+  const shootSummaries = computeShootSummaries(reels, clients, shooterUsers, rate, shootStaffFilter, shootLogs, effectiveMonth, calendarEvents);
+  const allShootSummaries = computeShootSummaries(reels, clients, shooterUsers, rate, "", shootLogs, effectiveMonth, calendarEvents);
   const shootExpenseTotal = allShootSummaries.reduce((sum, s) => sum + s.amount, 0);
 
   // ①案件別報酬：動画製作管理の「撮影単価」を直接上書き編集する（未入力の案件は撮影時間×撮影単価（時給）、それも未入力なら月の撮影単価（1件あたり）で自動算出した金額を表示）
@@ -5741,8 +6027,8 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
   };
 
   // ============ SNS運用担当実績（⑥をSNS運用担当が担当した分＋⑦投稿） ============
-  const snsRows = computeStaffSummaries(monthReels, clients, snsUsers, rate, SNS_STAGES, snsFilter);
-  const allSnsRows = computeStaffSummaries(monthReels, clients, snsUsers, rate, SNS_STAGES, "");
+  const snsRows = computeStaffSummaries(reels, clients, snsUsers, rate, SNS_STAGES, snsFilter, calendarEvents, effectiveMonth);
+  const allSnsRows = computeStaffSummaries(reels, clients, snsUsers, rate, SNS_STAGES, "", calendarEvents, effectiveMonth);
   const snsExpenseTotal = allSnsRows.reduce((sum, s) => sum + s.totalAmount, 0);
 
   // 該当月の支払い見込み合計は、各区分の絞り込みに関わらず、月全体の金額を表示する
@@ -6831,9 +7117,9 @@ function AppInner() {
       case "postwait": return <TasksPage clients={clients} reels={reels} setReels={setReels} users={activeUsers} onGoReels={goReels} onGoReelDetail={goReelDetail} onGoClient={goClientDetail} section="post" />;
       case "research": return <ResearchPage clients={clients} reels={reels} setReels={setReels} />;
       case "tasks": return <TasksPage clients={clients} reels={reels} setReels={setReels} users={activeUsers} onGoReels={goReels} onGoReelDetail={goReelDetail} onGoClient={goClientDetail} section={taskSection} />;
-      case "myperformance": return <MyPerformancePage clients={clients} payRates={payRates} reels={reels} setReels={setReels} users={users} currentUser={currentUser} shootLogs={shootLogs} setShootLogs={setShootLogs} />;
+      case "myperformance": return <MyPerformancePage clients={clients} payRates={payRates} reels={reels} setReels={setReels} users={users} currentUser={currentUser} shootLogs={shootLogs} setShootLogs={setShootLogs} directorLogs={directorLogs} calendarEvents={calendarEvents} />;
       case "analytics": return <AnalyticsPage clients={clients} reels={reels} users={users} />;
-      case "finance": return (currentUser.roles || []).includes("admin") ? <FinancePage clients={clients} finance={finance} setFinance={setFinance} payRates={payRates} setPayRates={setPayRates} reels={reels} setReels={setReels} users={users} shootLogs={shootLogs} setShootLogs={setShootLogs} directorLogs={directorLogs} setDirectorLogs={setDirectorLogs} /> : null;
+      case "finance": return (currentUser.roles || []).includes("admin") ? <FinancePage clients={clients} finance={finance} setFinance={setFinance} payRates={payRates} setPayRates={setPayRates} reels={reels} setReels={setReels} users={users} shootLogs={shootLogs} setShootLogs={setShootLogs} directorLogs={directorLogs} setDirectorLogs={setDirectorLogs} calendarEvents={calendarEvents} /> : null;
       case "users": return (currentUser.roles || []).includes("admin") ? <UsersPage users={users} setUsers={setUsers} currentUser={currentUser} /> : null;
       default: return null;
     }
