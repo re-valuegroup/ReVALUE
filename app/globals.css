@@ -18,10 +18,10 @@ input:disabled, textarea:disabled, select:disabled { opacity: .6; }
    （アプリ本体のDOMツリーの外）。そのため、印刷時はアプリ本体（body直下のそれ以外の要素）を
    display:noneで完全に取り除くだけでよく、印刷対象の高さがそのままページ数に反映されるので、
    内容が1枚に収まる場合はちょうど1枚、複数枚になる場合も余分な白紙ページが入らない。
-   経理管理ページは「ディレクター／動画編集者／撮影担当／SNS運用担当／全体まとめ」の5つの印刷用コンテナを
-   同時にDOM上へ持つため、印刷ボタンを押した時点でJS側がbodyのdata-print-section属性に区分名をセットし、
-   CSS側はその区分に一致する .printable-staff-page[data-section="..."] だけを表示する。
-   自分の実績ページは常に data-section="mine" の1つだけを表示する。 */
+   経理管理ページは「ディレクター／動画編集者／撮影担当／SNS運用担当／全体まとめ」の5つの印刷用コンテナを、
+   自分の実績ページも同様に「ディレクター／動画編集者／撮影担当／SNS運用担当／全体まとめ（自分の分のみ）」の
+   印刷用コンテナを同時にDOM上へ持つため、印刷ボタンを押した時点でJS側がbodyのdata-print-section属性に
+   区分名をセットし、CSS側はその区分に一致する .printable-staff-page[data-section="..."] だけを表示する。 */
 .printable-report-content { display: none; }
 .printable-staff-page { display: none; }
 @media print {
@@ -54,7 +54,11 @@ input:disabled, textarea:disabled, select:disabled { opacity: .6; }
   body[data-print-section="shoot"] .printable-staff-page[data-section="shoot"],
   body[data-print-section="sns"] .printable-staff-page[data-section="sns"],
   body[data-print-section="all"] .printable-staff-page[data-section="all"],
-  body[data-print-section="mine"] .printable-staff-page[data-section="mine"] {
+  body[data-print-section="mine-director"] .printable-staff-page[data-section="mine-director"],
+  body[data-print-section="mine-editor"] .printable-staff-page[data-section="mine-editor"],
+  body[data-print-section="mine-shoot"] .printable-staff-page[data-section="mine-shoot"],
+  body[data-print-section="mine-sns"] .printable-staff-page[data-section="mine-sns"],
+  body[data-print-section="mine-all"] .printable-staff-page[data-section="mine-all"] {
     display: block !important;
     width: 210mm;
     padding: 15mm;
