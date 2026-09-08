@@ -81,6 +81,10 @@ const revisionRequesterId = (reel, rv) => {
   if (rv?.stage && ROLE_KEY_FOR_STAGE[rv.stage]) return reel[CHECKER_KEY_FOR_ROLE[ROLE_KEY_FOR_STAGE[rv.stage]]] || "";
   return reel?.editorSecondaryId || "";
 };
+// 修正履歴1件（rv）の rv.stage を、クライアント管理の「編集フィードバック」欄などで表示する日本語ラベルに変換する
+// rv.stage が無い場合（⑤最終チェックの修正）は「⑤最終チェック」を返す
+const REVISION_STAGE_LABEL = { cut: "①カット", telop: "②テロップ", animation: "③アニメーション・演出", sfx: "④効果音・BGM" };
+const revisionStageLabel = (rv) => REVISION_STAGE_LABEL[rv?.stage] || "⑤最終チェック";
 
 // 実績の集計基準日：動画制作管理に「登録した年月」ではなく、スタッフが予定表（スケジュール）に登録した
 // 着手日・完了日（未入力なら開始日）を基準に、その工程がどの月の実績になるかを判定する。
@@ -1319,7 +1323,7 @@ function ClientsPage({ clients, setClients, finance, setFinance, currentUser, on
   );
 }
 
-function ClientDetail({ client, clients, setClients, finance, setFinance, reels, currentUser, onBack, onGoReels, onDirtyChange }) {
+function ClientDetail({ client, clients, setClients, finance, setFinance, reels, users, currentUser, onBack, onGoReels, onGoReelDetail, onDirtyChange }) {
   const [editing, setEditing] = useState(false);
   // クライアント情報の編集は、統括管理者・動画撮影者・画像作成者のみ
   const canEdit = ["admin", "shooter", "designer"].some(r => (currentUser.roles || []).includes(r));
@@ -1327,6 +1331,19 @@ function ClientDetail({ client, clients, setClients, finance, setFinance, reels,
 
   const clientReels = reels.filter(r => r.clientId === client.id);
   const postedCount = clientReels.filter(r => r.completedStages >= 5).length;
+
+  // 編集フィードバック：このクライアントの全動画から、チェック担当者が出した修正依頼（①②③④の工程別＋⑤最終チェック）を
+  // 横断的に集計する。担当した編集者だけでなく、すべての編集者がクライアント別の編集スタイル・注意点を予習・復習できるようにするための一覧
+  const personName = (id) => (users || []).find(u => u.id === id)?.name || "";
+  const namesOf = (ids) => [...new Set((ids || []).map(personName).filter(Boolean))].join("・");
+  const clientFeedback = clientReels
+    .flatMap(r => (r.revisionHistory || []).map(rv => ({
+      ...rv,
+      reelId: r.id,
+      reelTheme: r.theme || "（テーマ未設定）",
+      requesterId: revisionRequesterId(r, rv),
+    })))
+    .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 
   if (editing) {
     return <ClientForm client={client} finance={finance.find(x => x.clientId === client.id)} isAdmin={isAdmin} onCancel={() => setEditing(false)} onDirtyChange={onDirtyChange} onSave={(c, f) => {
@@ -1431,6 +1448,42 @@ function ClientDetail({ client, clients, setClients, finance, setFinance, reels,
               {sns.hasPassword && <p className="text-xs" style={{ color: "#5F5E5A" }}>PW: {sns.data.password ? "••••••••" : "―"}</p>}
             </div>
           ))}
+        </div>
+
+        <div className="mt-4 pt-4 border-t" style={{ borderColor: "#EFEDE4" }}>
+          <p className="text-xs font-semibold mb-2 flex items-center gap-1" style={{ color: "#8B897F" }}><ClipboardList size={12} /> 編集フィードバック（{clientFeedback.length}件）</p>
+          <p className="text-[11px] mb-2" style={{ color: "#A9A79C" }}>チェック担当者がこのクライアントの動画に出した修正依頼を、動画ごと・担当者ごとに関わらずすべて時系列で表示します。このクライアントを担当する前の予習や、過去の指摘の復習にご活用ください。</p>
+          {clientFeedback.length === 0 ? (
+            <p className="text-xs" style={{ color: "#A9A79C" }}>まだ修正依頼の履歴はありません。</p>
+          ) : (
+            <div className="space-y-1.5 pr-1" style={{ maxHeight: 360, overflowY: "auto" }}>
+              {clientFeedback.map(rv => (
+                <div key={rv.id} className="rounded-lg p-2" style={{ background: "#FCEBEB" }}>
+                  <div className="flex items-center justify-between flex-wrap gap-1">
+                    <button
+                      onClick={() => onGoReelDetail && onGoReelDetail(client.id, rv.reelId)}
+                      className="text-xs font-semibold text-left underline decoration-dotted"
+                      style={{ color: "#A32D2D" }}
+                      disabled={!onGoReelDetail}
+                    >
+                      {rv.reelTheme}　{revisionStageLabel(rv)}・第{rv.revisionNumber}回修正
+                    </button>
+                    <Badge tone={rv.status === "resubmitted" ? "teal" : "red"}>{rv.status === "resubmitted" ? "再提出済み" : "対応待ち"}</Badge>
+                  </div>
+                  <p className="text-xs mt-1 whitespace-pre-wrap" style={{ color: "#5F5E5A" }}>{rv.memo}</p>
+                  {rv.videoUrl && <a href={rv.videoUrl} target="_blank" rel="noreferrer" className="text-xs underline" style={{ color: "#0E90B8" }}>修正説明動画を見る</a>}
+                  <p className="text-[10px] mt-1" style={{ color: "#8B897F" }}>依頼者：{personName(rv.requesterId) || "不明"} ・ 依頼先：{namesOf(rv.assignedEditorIds) || "未設定"}</p>
+                  {rv.resubmitComment && (
+                    <div className="mt-1.5 pt-1.5" style={{ borderTop: "1px dashed #F0C0C0" }}>
+                      <p className="text-[10px] font-semibold" style={{ color: "#0E6B57" }}>担当者からのコメント</p>
+                      <p className="text-xs whitespace-pre-wrap" style={{ color: "#5F5E5A" }}>{rv.resubmitComment}</p>
+                    </div>
+                  )}
+                  <p className="text-[10px] mt-1" style={{ color: "#8B897F" }}>依頼日時：{timeAgo(rv.createdAt)}{rv.resubmittedAt ? ` ・ 再提出：${timeAgo(rv.resubmittedAt)}` : ""}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="mt-4 pt-4 border-t" style={{ borderColor: "#EFEDE4" }}>
@@ -7439,7 +7492,7 @@ function AppInner() {
 
   const renderPage = () => {
     if (page === "clients" && openClient) {
-      return <ClientDetail client={openClient} clients={clients} setClients={setClients} finance={finance} setFinance={setFinance} reels={reels} currentUser={currentUser} onBack={() => { if (confirmLeaveIfDirty()) setOpenClientId(null); }} onGoReels={goReels} onDirtyChange={registerDirtyReel} />;
+      return <ClientDetail client={openClient} clients={clients} setClients={setClients} finance={finance} setFinance={setFinance} reels={reels} users={users} currentUser={currentUser} onBack={() => { if (confirmLeaveIfDirty()) setOpenClientId(null); }} onGoReels={goReels} onGoReelDetail={goReelDetail} onDirtyChange={registerDirtyReel} />;
     }
     switch (page) {
       case "dashboard": return <DashboardPage clients={clients} reels={reels} setReels={setReels} users={activeUsers} currentUser={currentUser} finance={finance} boardPosts={boardPosts} setBoardPosts={setBoardPosts} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} onGoReels={goReels} onGoReelDetail={goReelDetail} onGoTaskSection={goTaskSection} />;
