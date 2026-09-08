@@ -1211,8 +1211,13 @@ function ClientForm({ client, finance, isAdmin, onSave, onCancel, onDirtyChange 
   );
 }
 
-function ClientsPage({ clients, setClients, finance, setFinance, currentUser, onOpenClient, onDirtyChange }) {
+function ClientsPage({ clients, setClients, finance, setFinance, reels, users, currentUser, onOpenClient, onDirtyChange }) {
   const [editing, setEditing] = useState(null);
+  // クライアントごとの編集フィードバック（修正依頼履歴）を一覧カードでもコンパクトに確認できるように、あらかじめ集計しておく
+  const feedbackByClient = (clientId) => (reels || [])
+    .filter(r => r.clientId === clientId)
+    .flatMap(r => (r.revisionHistory || []).map(rv => ({ ...rv, requesterId: revisionRequesterId(r, rv) })))
+    .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [statusFilter, setStatusFilter] = useState("");
   // クライアント情報の編集は、統括管理者・動画撮影者・画像作成者のみ
@@ -1263,7 +1268,10 @@ function ClientsPage({ clients, setClients, finance, setFinance, currentUser, on
         </div>
       )}
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
-        {filteredClients.map(c => (
+        {filteredClients.map(c => {
+          const feedback = feedbackByClient(c.id);
+          const pendingFeedbackCount = feedback.filter(rv => rv.status !== "resubmitted").length;
+          return (
           <div key={c.id} className="rounded-2xl p-4 border cursor-pointer hover:shadow-sm transition" style={{ borderColor: "#DEDACD", background: "#fff" }} onClick={() => onOpenClient(c.id)}>
             <div className="flex items-start justify-between">
               <div>
@@ -1316,8 +1324,26 @@ function ClientsPage({ clients, setClients, finance, setFinance, currentUser, on
                 )}
               </div>
             )}
+            {feedback.length > 0 && (
+              <div className="mt-2 pt-2" style={{ borderTop: "1px dashed #EFEDE4" }}>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-[10px] font-semibold flex items-center gap-1" style={{ color: "#A32D2D" }}><ClipboardList size={10} /> 編集フィードバック {feedback.length}件</p>
+                  {pendingFeedbackCount > 0 && <Badge tone="red">対応待ち {pendingFeedbackCount}</Badge>}
+                </div>
+                <div className="space-y-1 pr-1" style={{ maxHeight: 84, overflowY: "auto" }}>
+                  {feedback.map(rv => (
+                    <div key={rv.id} className="rounded-md px-1.5 py-1 flex items-center gap-1" style={{ background: "#FCEBEB" }}>
+                      <span className="shrink-0 w-1.5 h-1.5 rounded-full" style={{ background: rv.status === "resubmitted" ? "#0E90B8" : "#A32D2D" }} />
+                      <span className="text-[10px] font-semibold shrink-0" style={{ color: "#A32D2D" }}>{revisionStageLabel(rv)}</span>
+                      <span className="text-[10px] truncate" style={{ color: "#5F5E5A" }}>{rv.memo}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -7496,7 +7522,7 @@ function AppInner() {
     }
     switch (page) {
       case "dashboard": return <DashboardPage clients={clients} reels={reels} setReels={setReels} users={activeUsers} currentUser={currentUser} finance={finance} boardPosts={boardPosts} setBoardPosts={setBoardPosts} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} onGoReels={goReels} onGoReelDetail={goReelDetail} onGoTaskSection={goTaskSection} />;
-      case "clients": return <ClientsPage clients={clients} setClients={setClients} finance={finance} setFinance={setFinance} currentUser={currentUser} onOpenClient={setOpenClientId} onDirtyChange={registerDirtyReel} />;
+      case "clients": return <ClientsPage clients={clients} setClients={setClients} finance={finance} setFinance={setFinance} reels={reels} users={users} currentUser={currentUser} onOpenClient={setOpenClientId} onDirtyChange={registerDirtyReel} />;
       case "reels": return <ReelsPage clients={clients} reels={reels} setReels={setReels} users={activeUsers} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} currentUser={currentUser} focusClientId={reelsFocusClient} focusReelId={reelsFocusReelId} onDirtyChange={registerDirtyReel} />;
       case "postwait": return <TasksPage clients={clients} reels={reels} setReels={setReels} users={activeUsers} onGoReels={goReels} onGoReelDetail={goReelDetail} onGoClient={goClientDetail} section="post" />;
       case "research": return <ResearchPage clients={clients} reels={reels} setReels={setReels} />;
