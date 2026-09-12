@@ -34,6 +34,7 @@ const TASK_SUBSECTIONS = [
   { key: "editors", label: "各編集者のタスク" },
   { key: "setup", label: "初期設定未完了一覧" },
   { key: "shoot", label: "撮影待ち" },
+  { key: "edit_instructions", label: "編集指示待ち" },
   { key: "cut", label: "①カット待ち" },
   { key: "telop", label: "②テロップ待ち" },
   { key: "animation", label: "③アニメーション・演出待ち" },
@@ -4577,8 +4578,9 @@ function DashboardPage({ clients: allClients, reels: allReels, setReels, users, 
                 const person = users.find(u => u.id === editorId);
                 const allDone = editRolesForReel(r).every(f => r[DONE_KEY_FOR_ROLE[f.key]]);
                 const pending = (r.revisionHistory || []).length > 0 && r.revisionHistory[r.revisionHistory.length - 1].status === "requested";
-                const statusLabel = pending ? "修正依頼中" : allDone ? "チェック中" : "初稿制作中";
-                const statusTone = pending ? { background: "#FCEBEB", color: "#A32D2D" } : allDone ? { background: "#F1E9FB", color: "#6B3FA0" } : { background: "#F0EEE7", color: "#8B897F" };
+                // ⑤最終チェック担当（editorSecondaryId）が指定されていない間は「チェック中」ではなく「チェック担当者募集中」と表示する
+                const statusLabel = pending ? "修正依頼中" : allDone && r.editorSecondaryId ? "チェック中" : allDone ? "チェック担当者募集中" : "初稿制作中";
+                const statusTone = pending ? { background: "#FCEBEB", color: "#A32D2D" } : allDone && r.editorSecondaryId ? { background: "#F1E9FB", color: "#6B3FA0" } : allDone ? { background: "#FCEEDB", color: "#854F0B" } : { background: "#F0EEE7", color: "#8B897F" };
                 return (
                   <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="text-left rounded-lg p-2 hover:opacity-90" style={{ background: "#EDEBE4" }}>
                     <p className="font-semibold text-xs break-words">{r.rush && "🔥 "}{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
@@ -5168,6 +5170,10 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoReelDetail,
   const shootItems = reels.filter(r => r.completedStages === 0)
     .sort((a, b) => a.yearMonth.localeCompare(b.yearMonth));
 
+  // 編集指示待ち：撮影は完了したが、編集指示（クライアントからの動画依頼内容）がまだ入力されていない動画
+  const editInstructionsWaitList = reels.filter(r => r.completedStages === 1 && reelMatchesTaskFilter(r))
+    .sort((a, b) => (a.deadline || "9999-99-99").localeCompare(b.deadline || "9999-99-99"));
+
   // 初期設定タスク（インスタプロフィール・ハイライト・公式LINE・LP）が未完了のクライアント
   const setupClients = clients.map(c => {
     const tasks = getSetupTasks(c);
@@ -5416,6 +5422,22 @@ function TasksPage({ clients, reels, setReels, users, onGoReels, onGoReelDetail,
       </div>
 
       <div className={showAll ? "grid md:grid-cols-2 xl:grid-cols-4 gap-3" : ""}>
+        {(showAll || section === "edit_instructions") && (
+        <TaskCard title="編集指示待ち" icon={MessageSquare} tone="#854F0B" count={editInstructionsWaitList.length}>
+          {editInstructionsWaitList.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>編集指示待ちの動画はありません。</p>}
+          {editInstructionsWaitList.map(r => {
+            const c = clients.find(x => x.id === r.clientId);
+            return (
+              <button key={r.id} onClick={() => onGoReelDetail(r.clientId, r.id)} className="w-full text-left text-xs p-2.5 rounded-lg hover:bg-black/5" style={{ background: "#FAF8F3" }}>
+                <p className="font-semibold">{c?.companyName} ・ {r.theme || "テーマ未設定"}</p>
+                <div className="flex items-center gap-1.5 my-0.5 flex-wrap"><DeadlineBadges reel={r} /></div>
+                <p style={{ color: "#8B897F" }}>撮影は完了・編集指示の入力待ちです</p>
+              </button>
+            );
+          })}
+        </TaskCard>
+        )}
+
         {(showAll || section === "cut") && (
         <TaskCard title="①カット待ち" icon={Scissors} tone="#0E90B8" count={cutWaitList.length}>
           {simpleList(cutWaitList, r => `担当：${users.find(u => u.id === r.cutEditorId)?.name || "未割当"}`)}
