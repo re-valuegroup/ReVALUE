@@ -188,7 +188,7 @@ function computeStaffSummaries(reels, clients, users, rate, stagesToShow, staffF
       summary.byStage[stage.key].count += 1;
       summary.byStage[stage.key].amount += amount;
       summary.byStage[stage.key].items.push({
-        reelId: r.id, projectRateKey: stage.projectRateKey || null,
+        reelId: r.id, projectRateKey: stage.projectRateKey || null, clientId: r.clientId || "",
         client: c?.companyName || "（クライアント不明）", theme: r.theme || "テーマ未設定", stageLabel: stage.label,
         amount, unitPayRaw: hasProjectOverride ? String(projectRaw) : "", hasOverride: hasProjectOverride,
       });
@@ -6318,7 +6318,17 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
   const allEditorProjectSummaries = computeManualProjectSummaries(editorUsers, manualProjectLogs, "editor", effectiveMonth, "");
   const editorExpenseTotal = allEditorRows.reduce((sum, s) => sum + s.totalAmount, 0) + allEditorLogSummaries.reduce((sum, s) => sum + s.total, 0) + allEditorProjectSummaries.reduce((sum, s) => sum + s.total, 0);
   // 案件別単価設定：スタッフごとの一覧とは別に、対象月の編集案件をまとめて選択できる一覧（担当編集者に関わらず全件をここに集約する）
-  const allEditItems = allEditorRows.flatMap(row => EDITOR_STAGES.flatMap(stage => (row.byStage[stage.key]?.items || []).map(it => ({ ...it, userName: row.user.name }))));
+  const allEditItems = allEditorRows.flatMap(row => EDITOR_STAGES.flatMap(stage => (row.byStage[stage.key]?.items || []).map(it => ({ ...it, userId: row.user.id, userName: row.user.name }))));
+  // この一覧専用の絞り込み（クライアント・スタッフ）。未選択なら全件表示する
+  const [editItemClientFilter, setEditItemClientFilter] = useState("");
+  const [editItemStaffFilter, setEditItemStaffFilter] = useState("");
+  const filteredEditItems = allEditItems.filter(it =>
+    (!editItemClientFilter || it.clientId === editItemClientFilter) &&
+    (!editItemStaffFilter || it.userId === editItemStaffFilter)
+  );
+  const editItemClientOptions = [...new Map(allEditItems.map(it => [it.clientId, it.client])).entries()]
+    .filter(([id]) => id)
+    .sort((a, b) => (a[1] || "").localeCompare(b[1] || "", "ja"));
 
   const addEditorLog = (staffId) => {
     setEditorLogs(prev => [...prev, emptyEditorLog(staffId, effectiveMonth)]);
@@ -6672,10 +6682,22 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
         </div>
 
         <div className="mb-4">
-          <p className="text-[11px] font-semibold mb-1" style={{ color: "#8B897F" }}>登録済みの案件から選択（担当者を問わず{monthLabel(effectiveMonth)}の対象案件をまとめて表示・{allEditItems.length}件）</p>
+          <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
+            <p className="text-[11px] font-semibold" style={{ color: "#8B897F" }}>登録済みの案件から選択（{monthLabel(effectiveMonth)}の対象案件をまとめて表示・{filteredEditItems.length}件）</p>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <select value={editItemClientFilter} onChange={e => setEditItemClientFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 150 }}>
+                <option value="">クライアント（全て）</option>
+                {editItemClientOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+              </select>
+              <select value={editItemStaffFilter} onChange={e => setEditItemStaffFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 140 }}>
+                <option value="">スタッフ（全て）</option>
+                {editorUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>
+          </div>
           <div className="rounded-xl p-2 space-y-1" style={{ background: "#FAF8F3", border: "1px solid #EFEDE4", maxHeight: 220, overflowY: "auto" }}>
-            {allEditItems.length === 0 && <p className="text-[11px] px-1 py-2" style={{ color: "#A9A79C" }}>{monthLabel(effectiveMonth)}に対象となる編集案件はありません。</p>}
-            {allEditItems.map((it, i) => {
+            {filteredEditItems.length === 0 && <p className="text-[11px] px-1 py-2" style={{ color: "#A9A79C" }}>条件に一致する編集案件はありません。</p>}
+            {filteredEditItems.map((it, i) => {
               const itemKey = `${it.reelId}:${it.projectRateKey}`;
               return (
                 <div key={itemKey + "_all_" + i} className="flex items-center gap-2 text-xs px-2 py-1.5 rounded-lg" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
