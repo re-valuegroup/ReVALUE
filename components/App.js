@@ -5833,6 +5833,12 @@ function MyPerformancePage({ clients, payRates, reels, setReels, users, currentU
   const updateMyShootUnitPay = (reelId, value) => {
     setReels(prev => prev.map(r => r.id === reelId ? { ...r, shootUnitPay: value } : r));
   };
+  // 動画編集者（①〜④・一括編集）は、この案件専用の単価（経理管理・動画制作管理と同じ項目）を自分の実績ページからも編集できる
+  // （⑤最終チェック・⑥キャプション作成・⑦投稿には案件別単価の項目が無いため、こちらは引き続き表示のみ）
+  const updateMyEditUnitPay = (reelId, projectRateKey, value) => {
+    if (!projectRateKey) return;
+    setReels(prev => prev.map(r => r.id === reelId ? { ...r, [projectRateKey]: value } : r));
+  };
   const addMyShootLog = () => {
     setShootLogs(prev => [...prev, { ...emptyShootLog(currentUser.id, effectiveMonth), hourlyRate: rate.shootRate || "" }]);
   };
@@ -5886,9 +5892,16 @@ function MyPerformancePage({ clients, payRates, reels, setReels, users, currentU
       {row && (
         <div className="mt-3 space-y-1">
           {Object.values(row.byStage).flatMap(x => x.items).map((it, i) => (
-            <div key={i} className="flex items-center justify-between text-xs px-2 py-1.5 rounded-lg" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
+            <div key={i} className="flex items-center justify-between gap-2 text-xs px-2 py-1.5 rounded-lg" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
               <span className="truncate">{it.client}／{it.theme}（{it.stageLabel}）</span>
-              <span className="shrink-0 font-semibold" style={{ color: "#8B897F" }}>{it.amount ? `¥${Math.round(it.amount).toLocaleString()}` : "-"}</span>
+              {it.projectRateKey ? (
+                <div className="flex items-center gap-1 shrink-0">
+                  <span style={{ color: "#8B897F" }}>¥</span>
+                  <TextInput type="number" value={it.unitPayRaw} onChange={e => updateMyEditUnitPay(it.reelId, it.projectRateKey, e.target.value)} placeholder={String(Math.round(it.amount))} style={{ width: 90 }} />
+                </div>
+              ) : (
+                <span className="shrink-0 font-semibold" style={{ color: "#8B897F" }}>{it.amount ? `¥${Math.round(it.amount).toLocaleString()}` : "-"}</span>
+              )}
             </div>
           ))}
         </div>
@@ -6021,7 +6034,7 @@ function MyPerformancePage({ clients, payRates, reels, setReels, users, currentU
       {isEditorRole && (
         <div className="rounded-2xl p-5 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
           <p className="font-bold mb-1 flex items-center gap-1.5"><Scissors size={16} color="#0E90B8" /> 動画編集者実績</p>
-          <p className="text-[11px] mb-3" style={{ color: "#A9A79C" }}>①〜④の各工程を1件完了するごとに、単価がそのまま加算されます（⑤最終チェックの実績はディレクターの項目に計上されます）。加えて、動画制作管理に登録の無いその他案件（案件×単価）と、日付・時給×稼働時間・内訳の手入力実績を、あなた自身で登録・編集できます。</p>
+          <p className="text-[11px] mb-3" style={{ color: "#A9A79C" }}>①〜④の各工程を1件完了するごとに、単価がそのまま加算されます（⑤最終チェックの実績はディレクターの項目に計上されます）。下の一覧に表示される金額は、この案件専用の単価としてあなた自身で直接編集できます（経理管理・動画制作管理にも反映されます。未入力の場合は統括管理者が設定した月の単価が適用されます）。加えて、動画制作管理に登録の無いその他案件（案件×単価）と、日付・時給×稼働時間・内訳の手入力実績を、あなた自身で登録・編集できます。</p>
           {!myEditorRow && myEditorLog.items.length === 0 && myEditorProject.items.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>{monthLabel(effectiveMonth)}の実績はまだありません。</p>}
           <div className="rounded-xl p-3 mb-2" style={{ background: "#FAF8F3" }}>
             <div className="flex items-center justify-between flex-wrap gap-2">
