@@ -198,6 +198,45 @@ function computeStaffSummaries(reels, clients, users, rate, stagesToShow, staffF
   return Object.values(staffSummaries).sort((a, b) => (a.user.name || "").localeCompare(b.user.name || "", "ja"));
 }
 
+// 経理管理「動画編集者実績集計」の「登録済みの案件から選択」欄で使う一覧。
+// computeStaffSummariesとは違い、①〜④・一括編集の各工程が完了しているかどうかに関わらず、
+// その月に動画制作管理へ登録された（year_monthが一致する）案件をすべて対象に含める
+// （編集がまだ終わっていない案件にも、登録された時点で単価を設定できるようにするため）。
+function buildEditPriceItems(reels, clients, users, rate, effectiveMonth) {
+  const items = [];
+  (reels || []).filter(r => (r.yearMonth || "") === effectiveMonth).forEach(r => {
+    const c = clients.find(x => x.id === r.clientId);
+    EDITOR_STAGES.forEach(stage => {
+      let applicable = false;
+      let staffId = "";
+      let done = false;
+      if (stage.key === "solo") {
+        applicable = (r.workMode || "team") === "solo";
+        staffId = EDIT_ROLE_FIELDS.map(f => r[f.key]).find(Boolean) || "";
+        done = editRolesForReel(r).length > 0 && editRolesForReel(r).every(f => r[DONE_KEY_FOR_ROLE[f.key]]);
+      } else {
+        const roleFieldKey = ROLE_KEY_FOR_STAGE[stage.key];
+        applicable = (r.workMode || "team") !== "solo" && editRolesForReel(r).some(f => f.key === roleFieldKey);
+        staffId = r[roleFieldKey] || "";
+        done = !!r[DONE_KEY_FOR_ROLE[roleFieldKey]];
+      }
+      if (!applicable) return;
+      const u = users.find(x => x.id === staffId);
+      const raw = r[stage.projectRateKey];
+      const hasOverride = raw !== undefined && raw !== null && String(raw).trim() !== "";
+      items.push({
+        reelId: r.id, projectRateKey: stage.projectRateKey, clientId: r.clientId || "",
+        client: c?.companyName || "（クライアント不明）", theme: r.theme || "テーマ未設定", stageLabel: stage.label,
+        userId: staffId, userName: u ? u.name : "未アサイン",
+        unitPayRaw: hasOverride ? String(raw) : "",
+        amount: hasOverride ? (parseFloat(raw) || 0) : (parseFloat(rate[stage.rateKey]) || 0),
+        done,
+      });
+    });
+  });
+  return items;
+}
+
 // 撮影担当への報酬は、①案件別の1件あたりの報酬（動画製作管理の「撮影単価」、または未入力なら「撮影時間×撮影単価（時給）」で自動算出）と、
 // ②撮影日別の時給×稼働時間（経理管理で手動入力するログ）の2種類を合算して計算する
 const emptyShootLog = (staffId, ym) => ({ id: uid("shootlog"), staffId, yearMonth: ym, shootDate: "", hours: "", hourlyRate: "", note: "" });
@@ -2230,6 +2269,25 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                 })}
               </div>
             </Field>
+            <Field label="編集単価（任意・この案件専用の報酬を直接指定する場合に入力）">
+              {(draft.workMode || "team") === "solo" ? (
+                <TextInput type="number" value={draft.soloUnitPay || ""} onChange={e => set({ soloUnitPay: e.target.value })} disabled={!canEdit} placeholder="例：8000（円）" />
+              ) : (
+                <div className="grid sm:grid-cols-2 gap-2">
+                  {editRolesForReel(draft).map(f => {
+                    const stage = EDITOR_STAGES.find(s => s.key === STAGE_KEY_FOR_ROLE[f.key]);
+                    if (!stage) return null;
+                    return (
+                      <div key={f.key}>
+                        <p className="text-[10px] mb-0.5" style={{ color: "#8B897F" }}>{stage.label}</p>
+                        <TextInput type="number" value={draft[stage.projectRateKey] || ""} onChange={e => set({ [stage.projectRateKey]: e.target.value })} disabled={!canEdit} placeholder="円" />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <p className="text-[10px] mt-1" style={{ color: "#A9A79C" }}>未入力の場合は、経理管理ページの「動画編集者実績集計」で設定した単価がそのまま適用されます（経理管理ページでも、この案件専用の単価を後から設定・変更できます）。</p>
+            </Field>
             <Field label="保存先URL">
               <TextInput value={draft.driveUrl} onChange={e => set({ driveUrl: e.target.value })} placeholder="https://drive.google.com/..." disabled={!canEdit} />
               {draft.driveUrl && (
@@ -3368,6 +3426,25 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
                   );
                 })}
               </div>
+            </Field>
+            <Field label="編集単価（任意・この案件専用の報酬を直接指定する場合に入力）">
+              {(form.workMode || "team") === "solo" ? (
+                <TextInput type="number" value={form.soloUnitPay || ""} onChange={e => setForm(f => ({ ...f, soloUnitPay: e.target.value }))} placeholder="例：8000（円）" />
+              ) : (
+                <div className="grid sm:grid-cols-2 gap-2">
+                  {editRolesForReel(form).map(f2 => {
+                    const stage = EDITOR_STAGES.find(s => s.key === STAGE_KEY_FOR_ROLE[f2.key]);
+                    if (!stage) return null;
+                    return (
+                      <div key={f2.key}>
+                        <p className="text-[10px] mb-0.5" style={{ color: "#8B897F" }}>{stage.label}</p>
+                        <TextInput type="number" value={form[stage.projectRateKey] || ""} onChange={e => setForm(f => ({ ...f, [stage.projectRateKey]: e.target.value }))} placeholder="円" />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <p className="text-[10px] mt-1" style={{ color: "#A9A79C" }}>未入力の場合は、経理管理ページの「動画編集者実績集計」で設定した単価がそのまま適用されます（経理管理ページでも、この案件専用の単価を後から設定・変更できます）。</p>
             </Field>
             <Field label="編集指示">
               <TextArea rows={3} value={form.editInstructions} onChange={e => setForm(f => ({ ...f, editInstructions: e.target.value }))} placeholder="テロップの雰囲気、使う素材、尺の目安など" disabled={instructionsSubmitted} />
@@ -6318,7 +6395,8 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
   const allEditorProjectSummaries = computeManualProjectSummaries(editorUsers, manualProjectLogs, "editor", effectiveMonth, "");
   const editorExpenseTotal = allEditorRows.reduce((sum, s) => sum + s.totalAmount, 0) + allEditorLogSummaries.reduce((sum, s) => sum + s.total, 0) + allEditorProjectSummaries.reduce((sum, s) => sum + s.total, 0);
   // 案件別単価設定：スタッフごとの一覧とは別に、対象月の編集案件をまとめて選択できる一覧（担当編集者に関わらず全件をここに集約する）
-  const allEditItems = allEditorRows.flatMap(row => EDITOR_STAGES.flatMap(stage => (row.byStage[stage.key]?.items || []).map(it => ({ ...it, userId: row.user.id, userName: row.user.name }))));
+  // 編集が完了しているかどうかに関わらず、その月に登録された案件をすべて対象にする（スタッフごとの一覧＝上のeditorRows等とは別の集計）
+  const allEditItems = buildEditPriceItems(reels, clients, users, rate, effectiveMonth);
   // この一覧専用の絞り込み（クライアント・スタッフ）。未選択なら全件表示する
   const [editItemClientFilter, setEditItemClientFilter] = useState("");
   const [editItemStaffFilter, setEditItemStaffFilter] = useState("");
@@ -6683,7 +6761,7 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
 
         <div className="mb-4">
           <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
-            <p className="text-[11px] font-semibold" style={{ color: "#8B897F" }}>登録済みの案件から選択（{monthLabel(effectiveMonth)}の対象案件をまとめて表示・{filteredEditItems.length}件）</p>
+            <p className="text-[11px] font-semibold" style={{ color: "#8B897F" }}>登録済みの案件から選択（{monthLabel(effectiveMonth)}に登録された案件を、編集完了前後を問わずまとめて表示・{filteredEditItems.length}件）</p>
             <div className="flex items-center gap-1.5 flex-wrap">
               <select value={editItemClientFilter} onChange={e => setEditItemClientFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 150 }}>
                 <option value="">クライアント（全て）</option>
@@ -6702,6 +6780,7 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
               return (
                 <div key={itemKey + "_all_" + i} className="flex items-center gap-2 text-xs px-2 py-1.5 rounded-lg" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
                   <input type="checkbox" checked={selectedEditItems.has(itemKey)} onChange={() => toggleEditItem(itemKey)} />
+                  <span className="shrink-0 px-1.5 py-0.5 rounded" style={{ background: it.done ? "#E3F3EE" : "#F0EEE7", color: it.done ? "#0E8F6F" : "#8B897F", fontSize: 10 }}>{it.done ? "完了" : "未完了"}</span>
                   <span className="shrink-0 px-1.5 py-0.5 rounded" style={{ background: "#F0EEE7", color: "#8B897F", fontSize: 10 }}>{it.userName}</span>
                   <span className="truncate flex-1">{it.client}／{it.theme}（{it.stageLabel}）</span>
                   <span style={{ color: "#8B897F" }}>¥</span>
