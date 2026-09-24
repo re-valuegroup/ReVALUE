@@ -107,15 +107,15 @@ function shootMonthFromSchedule(reel, staffId, calendarEvents) {
 // rateKey: payRatesの中の対応する単価項目（nullなら単価計算の対象外・件数のみ集計）
 const STAFF_TASK_STAGES = [
   {
-    key: "solo", label: "一括編集①②③④", modeLabel: "一括編集", rateKey: "soloRate",
+    key: "solo", label: "一括編集①②③④", modeLabel: "一括編集", rateKey: "soloRate", projectRateKey: "soloUnitPay",
     roleGetter: r => EDIT_ROLE_FIELDS.map(f => r[f.key]).find(Boolean) || "",
     test: r => r.workMode === "solo" && editRolesForReel(r).length > 0 && editRolesForReel(r).every(f => r[DONE_KEY_FOR_ROLE[f.key]]),
     monthOf: (r, calendarEvents) => stageMonthFromSchedule(r, "all", calendarEvents),
   },
-  { key: "cut", label: "①カット", modeLabel: "分業", rateKey: "cutRate", roleGetter: r => r.cutEditorId || "", test: r => r.workMode !== "solo" && !!r.cutDone, monthOf: (r, calendarEvents) => stageMonthFromSchedule(r, "cut", calendarEvents) },
-  { key: "telop", label: "②テロップ", modeLabel: "分業", rateKey: "telopRate", roleGetter: r => r.telopEditorId || "", test: r => r.workMode !== "solo" && !!r.telopDone, monthOf: (r, calendarEvents) => stageMonthFromSchedule(r, "telop", calendarEvents) },
-  { key: "animation", label: "③アニメーション・演出", modeLabel: "分業", rateKey: "animationRate", roleGetter: r => r.animationEditorId || "", test: r => r.workMode !== "solo" && !!r.animationDone, monthOf: (r, calendarEvents) => stageMonthFromSchedule(r, "animation", calendarEvents) },
-  { key: "sfx", label: "④効果音・BGM", modeLabel: "分業", rateKey: "sfxRate", roleGetter: r => r.sfxEditorId || "", test: r => r.workMode !== "solo" && !!r.sfxDone, monthOf: (r, calendarEvents) => stageMonthFromSchedule(r, "sfx", calendarEvents) },
+  { key: "cut", label: "①カット", modeLabel: "分業", rateKey: "cutRate", projectRateKey: "cutUnitPay", roleGetter: r => r.cutEditorId || "", test: r => r.workMode !== "solo" && !!r.cutDone, monthOf: (r, calendarEvents) => stageMonthFromSchedule(r, "cut", calendarEvents) },
+  { key: "telop", label: "②テロップ", modeLabel: "分業", rateKey: "telopRate", projectRateKey: "telopUnitPay", roleGetter: r => r.telopEditorId || "", test: r => r.workMode !== "solo" && !!r.telopDone, monthOf: (r, calendarEvents) => stageMonthFromSchedule(r, "telop", calendarEvents) },
+  { key: "animation", label: "③アニメーション・演出", modeLabel: "分業", rateKey: "animationRate", projectRateKey: "animationUnitPay", roleGetter: r => r.animationEditorId || "", test: r => r.workMode !== "solo" && !!r.animationDone, monthOf: (r, calendarEvents) => stageMonthFromSchedule(r, "animation", calendarEvents) },
+  { key: "sfx", label: "④効果音・BGM", modeLabel: "分業", rateKey: "sfxRate", projectRateKey: "sfxUnitPay", roleGetter: r => r.sfxEditorId || "", test: r => r.workMode !== "solo" && !!r.sfxDone, monthOf: (r, calendarEvents) => stageMonthFromSchedule(r, "sfx", calendarEvents) },
   { key: "check", label: "⑤最終チェック", modeLabel: "", rateKey: "checkRate", roleGetter: r => r.editorSecondaryId || "", test: r => !!r.checkSubmitted, monthOf: (r, calendarEvents) => stageMonthFromSchedule(r, "check", calendarEvents) },
   { key: "caption", label: "⑥完成動画・キャプション作成", modeLabel: "", rateKey: "captionRate", roleGetter: r => r.captionAssigneeId || "", test: r => !!r.captionDone, monthOf: (r) => (r.captionDoneAt ? r.captionDoneAt.slice(0, 7) : (r.yearMonth || "")) },
   { key: "post", label: "⑦投稿", modeLabel: "", rateKey: "postRate", roleGetter: r => r.postAssigneeId || "", test: r => r.completedStages >= 5, monthOf: (r) => (r.postedDate ? r.postedDate.slice(0, 7) : (r.yearMonth || "")) },
@@ -180,10 +180,18 @@ function computeStaffSummaries(reels, clients, users, rate, stagesToShow, staffF
       if (!u) return;
       const summary = ensure(u);
       if (!summary.byStage[stage.key]) summary.byStage[stage.key] = { label: stage.label, hasRate: !!stage.rateKey, count: 0, amount: 0, items: [] };
-      const amount = stage.rateKey ? (parseFloat(rate[stage.rateKey]) || 0) : 0;
+      // この案件専用に単価が指定されていれば（統括管理者が経理管理ページで案件ごとに個別設定）それを優先し、
+      // 未入力の場合はその月に設定された単価をそのまま使う（動画編集①〜④・一括編集のみ案件別の単価指定に対応）
+      const projectRaw = stage.projectRateKey ? r[stage.projectRateKey] : "";
+      const hasProjectOverride = projectRaw !== undefined && projectRaw !== null && String(projectRaw).trim() !== "";
+      const amount = hasProjectOverride ? (parseFloat(projectRaw) || 0) : (stage.rateKey ? (parseFloat(rate[stage.rateKey]) || 0) : 0);
       summary.byStage[stage.key].count += 1;
       summary.byStage[stage.key].amount += amount;
-      summary.byStage[stage.key].items.push({ client: c?.companyName || "（クライアント不明）", theme: r.theme || "テーマ未設定", stageLabel: stage.label, amount });
+      summary.byStage[stage.key].items.push({
+        reelId: r.id, projectRateKey: stage.projectRateKey || null,
+        client: c?.companyName || "（クライアント不明）", theme: r.theme || "テーマ未設定", stageLabel: stage.label,
+        amount, unitPayRaw: hasProjectOverride ? String(projectRaw) : "", hasOverride: hasProjectOverride,
+      });
       summary.totalAmount += amount;
     });
   });
@@ -622,6 +630,7 @@ const emptyChecklist = () => ({ c1: false, c2: false, c3: false, c4: false, c5: 
 const emptyReel = (clientId, ym) => ({
   id: uid("reel"), clientId, yearMonth: ym,
   assignedStaffId: "", shootHours: "", shootUnitPay: "",
+  soloUnitPay: "", cutUnitPay: "", telopUnitPay: "", animationUnitPay: "", sfxUnitPay: "",
   requiredRoles: ["cutEditorId", "telopEditorId", "animationEditorId", "sfxEditorId"], rush: false,
   workMode: "team", revisionHistory: [], revisionMemo: "", revisionVideoUrl: "", resubmitComment: "",
   cutEditorId: "", telopEditorId: "", animationEditorId: "", sfxEditorId: "", editorSecondaryId: "",
@@ -6319,6 +6328,35 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
     setEditorLogs(prev => prev.filter(l => l.id !== id));
   };
 
+  // 動画編集（①〜④・一括編集）の案件別単価：この案件専用の単価を直接上書き編集する（未入力ならその月の単価設定が適用される）
+  const updateEditUnitPay = (reelId, projectRateKey, value) => {
+    if (!projectRateKey) return;
+    setReels(prev => prev.map(r => r.id === reelId ? { ...r, [projectRateKey]: value } : r));
+  };
+  // 複数の案件をチェックボックスでまとめて選択し、一括で単価を設定するための選択状態（キーは「案件ID:単価項目名」）
+  const [selectedEditItems, setSelectedEditItems] = useState(new Set());
+  const [bulkEditPrice, setBulkEditPrice] = useState("");
+  const toggleEditItem = (itemKey) => {
+    setSelectedEditItems(prev => {
+      const next = new Set(prev);
+      if (next.has(itemKey)) next.delete(itemKey); else next.add(itemKey);
+      return next;
+    });
+  };
+  const applyBulkEditPrice = () => {
+    if (selectedEditItems.size === 0 || bulkEditPrice === "") return;
+    const patchesByReel = {};
+    selectedEditItems.forEach(itemKey => {
+      const sepIdx = itemKey.indexOf(":");
+      const reelId = itemKey.slice(0, sepIdx);
+      const projectRateKey = itemKey.slice(sepIdx + 1);
+      patchesByReel[reelId] = { ...(patchesByReel[reelId] || {}), [projectRateKey]: bulkEditPrice };
+    });
+    setReels(prev => prev.map(r => patchesByReel[r.id] ? { ...r, ...patchesByReel[r.id] } : r));
+    setSelectedEditItems(new Set());
+    setBulkEditPrice("");
+  };
+
   // ============ ディレクター実績（⑤最終チェック＋⑥をディレクターが担当した分の自動集計、＋手入力の時給×稼働時間、＋その他案件の手入力） ============
   const directorStaffRows = computeStaffSummaries(reels, clients, directorUsers, rate, DIRECTOR_STAGES, directorFilter, calendarEvents, effectiveMonth);
   const allDirectorStaffRows = computeStaffSummaries(reels, clients, directorUsers, rate, DIRECTOR_STAGES, "", calendarEvents, effectiveMonth);
@@ -6595,7 +6633,7 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
 
       <div className="rounded-2xl p-5 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
         <p className="font-bold mb-1 flex items-center gap-1.5"><Scissors size={16} color="#0E90B8" /> 動画編集者実績集計</p>
-        <p className="text-[11px] mb-3" style={{ color: "#A9A79C" }}>①〜④の各工程を1件完了するごとに、下で設定した単価をそのまま加算して金額を計算します（⑤最終チェックの実績はディレクターの項目に計上されます）。加えて、動画制作管理に登録の無いその他案件（案件×単価）と、日付・時給×稼働時間・内訳の手入力実績を登録できます（自分の実績ページから本人が入力することもできます）。</p>
+        <p className="text-[11px] mb-3" style={{ color: "#A9A79C" }}>①〜④の各工程を1件完了するごとに、下で設定した単価をそのまま加算して金額を計算します（⑤最終チェックの実績はディレクターの項目に計上されます）。案件ごとの一覧では、個別の案件だけ単価を上書き指定することもでき、複数の案件をチェックボックスで選択してまとめて単価を設定することもできます（未入力の案件には、その月の単価設定がそのまま適用されます）。加えて、動画制作管理に登録の無いその他案件（案件×単価）と、日付・時給×稼働時間・内訳の手入力実績を登録できます（自分の実績ページから本人が入力することもできます）。</p>
         <div className="flex items-center gap-2 flex-wrap mb-3">
           <select value={editorFilter} onChange={e => setEditorFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 160 }}>
             <option value="">編集者（全員）</option>
@@ -6620,6 +6658,15 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
           <Field label="④効果音・BGM単価（分業）">
             <TextInput type="number" value={rate.sfxRate} onChange={e => upsertRate({ sfxRate: e.target.value })} placeholder="円" />
           </Field>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap mb-3 p-2.5 rounded-xl" style={{ background: "#F4F2EA" }}>
+          <CheckSquare size={14} color="#8B897F" />
+          <span className="text-[11px] font-semibold" style={{ color: "#8B897F" }}>案件ごとの単価をまとめて設定：{selectedEditItems.size}件選択中</span>
+          <span style={{ color: "#8B897F" }}>¥</span>
+          <TextInput type="number" value={bulkEditPrice} onChange={e => setBulkEditPrice(e.target.value)} placeholder="単価" style={{ width: 100 }} />
+          <button type="button" disabled={selectedEditItems.size === 0 || bulkEditPrice === ""} onClick={applyBulkEditPrice} className="text-xs font-semibold px-3 py-1.5 rounded-lg border disabled:opacity-40" style={{ borderColor: "#DEDACD" }}>選択した案件にまとめて設定</button>
+          {selectedEditItems.size > 0 && <button type="button" onClick={() => setSelectedEditItems(new Set())} className="text-xs px-2 py-1.5" style={{ color: "#8B897F" }}>選択解除</button>}
         </div>
 
         {editorUsers.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>動画編集者の役割を持つスタッフが登録されていません。</p>}
@@ -6648,6 +6695,24 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
                     );
                   })}
                 </div>
+                {EDITOR_STAGES.some(stage => row.byStage[stage.key]) && (
+                  <div className="mb-2">
+                    <p className="text-[11px] font-semibold mb-1" style={{ color: "#8B897F" }}>案件別単価（未入力は月の単価設定が適用されます）</p>
+                    <div className="space-y-1">
+                      {EDITOR_STAGES.flatMap(stage => row.byStage[stage.key]?.items || []).map((it, i) => {
+                        const itemKey = `${it.reelId}:${it.projectRateKey}`;
+                        return (
+                          <div key={itemKey + "_" + i} className="flex items-center gap-2 text-xs px-2 py-1.5 rounded-lg" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
+                            <input type="checkbox" checked={selectedEditItems.has(itemKey)} onChange={() => toggleEditItem(itemKey)} />
+                            <span className="truncate flex-1">{it.client}／{it.theme}（{it.stageLabel}）</span>
+                            <span style={{ color: "#8B897F" }}>¥</span>
+                            <TextInput type="number" value={it.unitPayRaw} onChange={e => updateEditUnitPay(it.reelId, it.projectRateKey, e.target.value)} placeholder={String(Math.round(it.amount))} style={{ width: 90 }} />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 <ManualProjectLogEditor
                   items={projectSummary.items} total={projectSummary.total} editable
                   onAdd={() => addManualProjectLog(u.id, "editor")}
