@@ -6317,6 +6317,8 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
   const editorProjectSummaries = computeManualProjectSummaries(editorUsers, manualProjectLogs, "editor", effectiveMonth, editorFilter);
   const allEditorProjectSummaries = computeManualProjectSummaries(editorUsers, manualProjectLogs, "editor", effectiveMonth, "");
   const editorExpenseTotal = allEditorRows.reduce((sum, s) => sum + s.totalAmount, 0) + allEditorLogSummaries.reduce((sum, s) => sum + s.total, 0) + allEditorProjectSummaries.reduce((sum, s) => sum + s.total, 0);
+  // 案件別単価設定：スタッフごとの一覧とは別に、対象月の編集案件をまとめて選択できる一覧（担当編集者に関わらず全件をここに集約する）
+  const allEditItems = allEditorRows.flatMap(row => EDITOR_STAGES.flatMap(stage => (row.byStage[stage.key]?.items || []).map(it => ({ ...it, userName: row.user.name }))));
 
   const addEditorLog = (staffId) => {
     setEditorLogs(prev => [...prev, emptyEditorLog(staffId, effectiveMonth)]);
@@ -6667,6 +6669,25 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
           <TextInput type="number" value={bulkEditPrice} onChange={e => setBulkEditPrice(e.target.value)} placeholder="単価" style={{ width: 100 }} />
           <button type="button" disabled={selectedEditItems.size === 0 || bulkEditPrice === ""} onClick={applyBulkEditPrice} className="text-xs font-semibold px-3 py-1.5 rounded-lg border disabled:opacity-40" style={{ borderColor: "#DEDACD" }}>選択した案件にまとめて設定</button>
           {selectedEditItems.size > 0 && <button type="button" onClick={() => setSelectedEditItems(new Set())} className="text-xs px-2 py-1.5" style={{ color: "#8B897F" }}>選択解除</button>}
+        </div>
+
+        <div className="mb-4">
+          <p className="text-[11px] font-semibold mb-1" style={{ color: "#8B897F" }}>登録済みの案件から選択（担当者を問わず{monthLabel(effectiveMonth)}の対象案件をまとめて表示・{allEditItems.length}件）</p>
+          <div className="rounded-xl p-2 space-y-1" style={{ background: "#FAF8F3", border: "1px solid #EFEDE4", maxHeight: 220, overflowY: "auto" }}>
+            {allEditItems.length === 0 && <p className="text-[11px] px-1 py-2" style={{ color: "#A9A79C" }}>{monthLabel(effectiveMonth)}に対象となる編集案件はありません。</p>}
+            {allEditItems.map((it, i) => {
+              const itemKey = `${it.reelId}:${it.projectRateKey}`;
+              return (
+                <div key={itemKey + "_all_" + i} className="flex items-center gap-2 text-xs px-2 py-1.5 rounded-lg" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
+                  <input type="checkbox" checked={selectedEditItems.has(itemKey)} onChange={() => toggleEditItem(itemKey)} />
+                  <span className="shrink-0 px-1.5 py-0.5 rounded" style={{ background: "#F0EEE7", color: "#8B897F", fontSize: 10 }}>{it.userName}</span>
+                  <span className="truncate flex-1">{it.client}／{it.theme}（{it.stageLabel}）</span>
+                  <span style={{ color: "#8B897F" }}>¥</span>
+                  <TextInput type="number" value={it.unitPayRaw} onChange={e => updateEditUnitPay(it.reelId, it.projectRateKey, e.target.value)} placeholder={String(Math.round(it.amount))} style={{ width: 90 }} />
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {editorUsers.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>動画編集者の役割を持つスタッフが登録されていません。</p>}
