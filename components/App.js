@@ -7723,15 +7723,29 @@ function AppInner() {
 
   // 各テーブルの変更をSupabaseへ同期（一括upsert＋削除分の反映）
   const [syncError, setSyncError] = useState("");
+  // クライアントを新規作成した際など、関連する複数のテーブル（例：clients と finance）が同じタイミングで
+  // 保存される場合、それぞれ独立に（別々のタイミングで）Supabaseへ送信されるため、参照先（例：finance の
+  // client_id）がまだ保存し終わっていないタイミングで外部キー制約違反のエラーになることがある。
+  // この種の一時的なタイミングのズレは、少し待ってからもう一度送り直せば解消することがほとんどなので、
+  // 保存に失敗した場合は1回だけ自動的に再試行してから、それでも失敗した場合にのみエラー表示する。
+  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
   const makeSync = (table, idField, idKey) => {
+    const attemptSync = async (rows, currentIdSet, prevIdSet) => {
+      if (rows.length) await bulkUpsert(table, rows, idField);
+      for (const id of prevIdSet) {
+        if (!currentIdSet.has(id)) await deleteRow(table, id, idField);
+      }
+    };
     return async (rows) => {
       if (!dataLoaded) return;
       const currentIdSet = new Set(rows.map(r => r[idKey]));
       const prevIdSet = prevIds.current[table] || new Set();
       try {
-        if (rows.length) await bulkUpsert(table, rows, idField);
-        for (const id of prevIdSet) {
-          if (!currentIdSet.has(id)) await deleteRow(table, id, idField);
+        try {
+          await attemptSync(rows, currentIdSet, prevIdSet);
+        } catch (firstErr) {
+          await sleep(1200);
+          await attemptSync(rows, currentIdSet, prevIdSet);
         }
         setSyncError("");
       } catch (e) {
