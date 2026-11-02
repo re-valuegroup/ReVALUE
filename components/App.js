@@ -7264,6 +7264,7 @@ function RateSettingsPage({ clients, users, reels, setReels, payRates, setPayRat
   const [monthFilter, setMonthFilter] = useState(monthOptions[0] || currentYearMonth());
   const [clientFilter, setClientFilter] = useState("");
   const [staffFilter, setStaffFilter] = useState("");
+  const [stageFilter, setStageFilter] = useState("");
   const [selectedItems, setSelectedItems] = useState(new Set());
   const [bulkPrice, setBulkPrice] = useState("");
 
@@ -7282,7 +7283,8 @@ function RateSettingsPage({ clients, users, reels, setReels, payRates, setPayRat
   const filteredItems = allItems.filter(it =>
     (!monthFilter || it.yearMonth === monthFilter) &&
     (!clientFilter || it.clientId === clientFilter) &&
-    (!staffFilter || it.userId === staffFilter)
+    (!staffFilter || it.userId === staffFilter) &&
+    (!stageFilter || it.stageKey === stageFilter)
   );
   const clientOptions = [...new Map(allItems.map(it => [it.clientId, it.client])).entries()]
     .filter(([id]) => id)
@@ -7353,6 +7355,10 @@ function RateSettingsPage({ clients, users, reels, setReels, payRates, setPayRat
           <select value={staffFilter} onChange={e => setStaffFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 150 }}>
             <option value="">担当者（全て）</option>
             {staffOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+          </select>
+          <select value={stageFilter} onChange={e => setStageFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 170 }}>
+            <option value="">工程（全て）</option>
+            {RATE_SETTING_STAGES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
           </select>
         </div>
       </div>
