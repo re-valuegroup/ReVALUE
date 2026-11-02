@@ -7263,10 +7263,18 @@ function RateSettingsPage({ clients, users, reels, setReels, payRates, setPayRat
   const monthOptions = collectPerformanceMonthOptions(reels, calendarEvents, []);
   const [monthFilter, setMonthFilter] = useState(monthOptions[0] || currentYearMonth());
   const [clientFilter, setClientFilter] = useState("");
-  const [staffFilter, setStaffFilter] = useState("");
+  // 担当者は複数選択できるようにする（例：一括編集の担当Aさんと、最終チェックの担当Bさんを同時に絞り込みたい、という使い方のため）
+  const [staffFilters, setStaffFilters] = useState(new Set());
   const [stageFilter, setStageFilter] = useState("");
   const [selectedItems, setSelectedItems] = useState(new Set());
   const [bulkPrice, setBulkPrice] = useState("");
+  const toggleStaffFilter = (id) => {
+    setStaffFilters(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
 
   // monthFilterが「すべての月」（空文字）の間は、基本単価がどの月のものか決まらないため編集欄を表示しない
   const rate = monthFilter ? (payRates.find(p => p.yearMonth === monthFilter) || emptyPayRate(monthFilter)) : null;
@@ -7283,7 +7291,7 @@ function RateSettingsPage({ clients, users, reels, setReels, payRates, setPayRat
   const filteredItems = allItems.filter(it =>
     (!monthFilter || it.yearMonth === monthFilter) &&
     (!clientFilter || it.clientId === clientFilter) &&
-    (!staffFilter || it.userId === staffFilter) &&
+    (staffFilters.size === 0 || staffFilters.has(it.userId)) &&
     (!stageFilter || it.stageKey === stageFilter)
   );
   const clientOptions = [...new Map(allItems.map(it => [it.clientId, it.client])).entries()]
@@ -7343,7 +7351,7 @@ function RateSettingsPage({ clients, users, reels, setReels, payRates, setPayRat
 
       <div className="rounded-2xl p-4 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
         <p className="text-xs font-semibold mb-2" style={{ color: "#8B897F" }}>絞り込み</p>
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap mb-2">
           <select value={monthFilter} onChange={e => setMonthFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 150 }}>
             <option value="">すべての月</option>
             {monthOptions.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
@@ -7352,14 +7360,29 @@ function RateSettingsPage({ clients, users, reels, setReels, payRates, setPayRat
             <option value="">クライアント（全て）</option>
             {clientOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
           </select>
-          <select value={staffFilter} onChange={e => setStaffFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 150 }}>
-            <option value="">担当者（全て）</option>
-            {staffOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-          </select>
           <select value={stageFilter} onChange={e => setStageFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 170 }}>
             <option value="">工程（全て）</option>
             {RATE_SETTING_STAGES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
           </select>
+        </div>
+        <div>
+          <p className="text-[11px] font-semibold mb-1" style={{ color: "#8B897F" }}>
+            担当者（複数選択可・例：一括編集の担当Aさんと最終チェックの担当Bさんを同時に絞り込めます）
+          </p>
+          <div className="rounded-lg border p-1.5 flex flex-wrap items-center gap-x-3 gap-y-1" style={{ borderColor: "#DEDACD", background: "#FAF8F3", maxHeight: 84, overflowY: "auto" }}>
+            {staffOptions.length === 0 && <span className="text-[11px] px-1" style={{ color: "#A9A79C" }}>担当者がいません</span>}
+            {staffOptions.map(([id, name]) => (
+              <label key={id} className="flex items-center gap-1 text-[11px] cursor-pointer shrink-0">
+                <input type="checkbox" checked={staffFilters.has(id)} onChange={() => toggleStaffFilter(id)} />
+                <span>{name}</span>
+              </label>
+            ))}
+            {staffFilters.size > 0 && (
+              <button type="button" onClick={() => setStaffFilters(new Set())} className="text-[11px] font-semibold shrink-0" style={{ color: "#854F0B" }}>
+                絞り込みをクリア
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
