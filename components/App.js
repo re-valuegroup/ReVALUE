@@ -7267,6 +7267,8 @@ function RateSettingsPage({ clients, users, reels, setReels, payRates, setPayRat
   // 工程（一括編集／①カット／②テロップ／③アニメーション・演出／④効果音・BGM／⑤最終チェック）ごとに、それぞれ専用の
   // 担当者絞り込み欄（常に表示・複数選択可）を用意する。stageStaffFiltersは { [工程キー]: Set<担当者ID> } の形。
   const [stageStaffFilters, setStageStaffFilters] = useState({});
+  // 工程ごとの絞り込みに加えて、絞り込まれた一覧そのものを担当者名でさらに検索できるようにする
+  const [staffSearch, setStaffSearch] = useState("");
   const [selectedItems, setSelectedItems] = useState(new Set());
   const [bulkPrice, setBulkPrice] = useState("");
   const toggleStageStaffFilter = (stageKey, userId) => {
@@ -7301,6 +7303,11 @@ function RateSettingsPage({ clients, users, reels, setReels, payRates, setPayRat
     if (sel && sel.size > 0 && !sel.has(it.userId)) return false;
     return true;
   });
+  // 工程ごとの絞り込み結果に対して、さらに担当者名でテキスト検索して絞り込む
+  const staffSearchKeyword = staffSearch.trim().toLowerCase();
+  const visibleItems = staffSearchKeyword
+    ? filteredItems.filter(it => (it.userName || "").toLowerCase().includes(staffSearchKeyword))
+    : filteredItems;
   const clientOptions = [...new Map(allItems.map(it => [it.clientId, it.client])).entries()]
     .filter(([id]) => id)
     .sort((a, b) => (a[1] || "").localeCompare(b[1] || "", "ja"));
@@ -7323,7 +7330,7 @@ function RateSettingsPage({ clients, users, reels, setReels, payRates, setPayRat
       return next;
     });
   };
-  const allFilteredKeys = filteredItems.map(it => `${it.reelId}:${it.projectRateKey}`);
+  const allFilteredKeys = visibleItems.map(it => `${it.reelId}:${it.projectRateKey}`);
   const allFilteredSelected = allFilteredKeys.length > 0 && allFilteredKeys.every(k => selectedItems.has(k));
   const toggleSelectAllFiltered = () => {
     setSelectedItems(prev => {
@@ -7446,15 +7453,18 @@ function RateSettingsPage({ clients, users, reels, setReels, payRates, setPayRat
       </div>
 
       <div className="rounded-2xl p-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
+        <div className="mb-2">
+          <TextInput value={staffSearch} onChange={e => setStaffSearch(e.target.value)} placeholder="担当者名でさらに絞り込む（例：屋宜）" style={{ width: 240 }} />
+        </div>
         <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
           <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer" style={{ color: "#8B897F" }}>
-            <input type="checkbox" checked={allFilteredSelected} onChange={toggleSelectAllFiltered} disabled={filteredItems.length === 0} />
-            絞り込んだ{filteredItems.length}件をすべて選択
+            <input type="checkbox" checked={allFilteredSelected} onChange={toggleSelectAllFiltered} disabled={visibleItems.length === 0} />
+            絞り込んだ{visibleItems.length}件をすべて選択
           </label>
         </div>
         <div className="rounded-xl p-2 space-y-1" style={{ background: "#FAF8F3", border: "1px solid #EFEDE4", maxHeight: 420, overflowY: "auto" }}>
-          {filteredItems.length === 0 && <p className="text-[11px] px-1 py-2" style={{ color: "#A9A79C" }}>条件に一致する案件はありません。</p>}
-          {filteredItems.map((it, i) => {
+          {visibleItems.length === 0 && <p className="text-[11px] px-1 py-2" style={{ color: "#A9A79C" }}>条件に一致する案件はありません。</p>}
+          {visibleItems.map((it, i) => {
             const itemKey = `${it.reelId}:${it.projectRateKey}`;
             return (
               <div key={itemKey + "_" + i} className="flex items-center gap-2 text-xs px-2 py-1.5 rounded-lg" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
