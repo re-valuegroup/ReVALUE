@@ -127,6 +127,10 @@ const STAFF_TASK_STAGES = [
 const EDITOR_STAGES = STAFF_TASK_STAGES.filter(s => ["solo", "cut", "telop", "animation", "sfx"].includes(s.key));
 const DIRECTOR_STAGES = STAFF_TASK_STAGES.filter(s => ["check", "caption"].includes(s.key));
 const SNS_STAGES = STAFF_TASK_STAGES.filter(s => ["caption", "post"].includes(s.key));
+// 経理管理の報酬集計で実際に使う工程（報酬が発生するのは撮影・動画編集・⑤最終チェックのみで、
+// ⑥完成動画・キャプション作成／⑦投稿には報酬が発生しないため、経理管理の自動集計・PDF出力からは除外する）
+const PAID_DIRECTOR_STAGES = DIRECTOR_STAGES.filter(s => s.key !== "caption");
+const PAID_SNS_STAGES = [];
 const emptyPayRate = (ym) => ({
   yearMonth: ym,
   soloRate: "", cutRate: "", telopRate: "", animationRate: "", sfxRate: "",
@@ -198,47 +202,8 @@ function computeStaffSummaries(reels, clients, users, rate, stagesToShow, staffF
   return Object.values(staffSummaries).sort((a, b) => (a.user.name || "").localeCompare(b.user.name || "", "ja"));
 }
 
-// 経理管理「動画編集者実績集計」の「登録済みの案件から選択」欄で使う一覧。
-// computeStaffSummariesとは違い、①〜④・一括編集の各工程が完了しているかどうかに関わらず、
-// その月に動画制作管理へ登録された（year_monthが一致する）案件をすべて対象に含める
-// （編集がまだ終わっていない案件にも、登録された時点で単価を設定できるようにするため）。
-function buildEditPriceItems(reels, clients, users, rate, effectiveMonth) {
-  const items = [];
-  (reels || []).filter(r => (r.yearMonth || "") === effectiveMonth).forEach(r => {
-    const c = clients.find(x => x.id === r.clientId);
-    EDITOR_STAGES.forEach(stage => {
-      let applicable = false;
-      let staffId = "";
-      let done = false;
-      if (stage.key === "solo") {
-        applicable = (r.workMode || "team") === "solo";
-        staffId = EDIT_ROLE_FIELDS.map(f => r[f.key]).find(Boolean) || "";
-        done = editRolesForReel(r).length > 0 && editRolesForReel(r).every(f => r[DONE_KEY_FOR_ROLE[f.key]]);
-      } else {
-        const roleFieldKey = ROLE_KEY_FOR_STAGE[stage.key];
-        applicable = (r.workMode || "team") !== "solo" && editRolesForReel(r).some(f => f.key === roleFieldKey);
-        staffId = r[roleFieldKey] || "";
-        done = !!r[DONE_KEY_FOR_ROLE[roleFieldKey]];
-      }
-      if (!applicable) return;
-      const u = users.find(x => x.id === staffId);
-      const raw = r[stage.projectRateKey];
-      const hasOverride = raw !== undefined && raw !== null && String(raw).trim() !== "";
-      items.push({
-        reelId: r.id, projectRateKey: stage.projectRateKey, clientId: r.clientId || "",
-        client: c?.companyName || "（クライアント不明）", theme: r.theme || "テーマ未設定", stageLabel: stage.label,
-        userId: staffId, userName: u ? u.name : "未アサイン",
-        unitPayRaw: hasOverride ? String(raw) : "",
-        amount: hasOverride ? (parseFloat(raw) || 0) : (parseFloat(rate[stage.rateKey]) || 0),
-        done,
-      });
-    });
-  });
-  return items;
-}
-
-// 経理管理の新しい「報酬単価設定」ページで使う一覧。動画編集（①〜④・一括編集）に加えて、⑤最終チェックも対象に含める。
-// buildEditPriceItemsとは違い、特定の月だけに絞らず、動画制作管理に登録されている全案件を対象にする
+// 経理管理の「報酬単価設定」ページで使う一覧。動画編集（①〜④・一括編集）に加えて、⑤最終チェックも対象に含める。
+// 特定の月だけに絞らず、動画制作管理に登録されている全案件を対象にする
 // （ページ側で月・クライアント・担当者で自由に絞り込めるようにするため）。各案件の「登録月」に対応する
 // payRatesの設定を、単価未入力時の既定値として参照する。
 const RATE_SETTING_STAGES = [...EDITOR_STAGES, STAFF_TASK_STAGES.find(s => s.key === "check")];
@@ -2332,7 +2297,7 @@ function ReelCard({ reel, client, users, calendarEvents, setCalendarEvents, onCh
                   })}
                 </div>
               )}
-              <p className="text-[10px] mt-1" style={{ color: "#A9A79C" }}>未入力の場合は、経理管理ページの「動画編集者実績集計」で設定した単価がそのまま適用されます（経理管理ページでも、この案件専用の単価を後から設定・変更できます）。</p>
+              <p className="text-[10px] mt-1" style={{ color: "#A9A79C" }}>未入力の場合は、経理管理の「報酬単価設定」ページで設定した単価がそのまま適用されます（報酬単価設定ページでも、この案件専用の単価を後から設定・変更できます）。</p>
             </Field>
             <Field label="保存先URL">
               <TextInput value={draft.driveUrl} onChange={e => set({ driveUrl: e.target.value })} placeholder="https://drive.google.com/..." disabled={!canEdit} />
@@ -3490,7 +3455,7 @@ function NewReelModal({ clients, initialClientId, ym, users, allReels, onCreate,
                   })}
                 </div>
               )}
-              <p className="text-[10px] mt-1" style={{ color: "#A9A79C" }}>未入力の場合は、経理管理ページの「動画編集者実績集計」で設定した単価がそのまま適用されます（経理管理ページでも、この案件専用の単価を後から設定・変更できます）。</p>
+              <p className="text-[10px] mt-1" style={{ color: "#A9A79C" }}>未入力の場合は、経理管理の「報酬単価設定」ページで設定した単価がそのまま適用されます（報酬単価設定ページでも、この案件専用の単価を後から設定・変更できます）。</p>
             </Field>
             <Field label="編集指示">
               <TextArea rows={3} value={form.editInstructions} onChange={e => setForm(f => ({ ...f, editInstructions: e.target.value }))} placeholder="テロップの雰囲気、使う素材、尺の目安など" disabled={instructionsSubmitted} />
@@ -6456,19 +6421,8 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
   const editorProjectSummaries = computeManualProjectSummaries(editorUsers, manualProjectLogs, "editor", effectiveMonth, editorFilter);
   const allEditorProjectSummaries = computeManualProjectSummaries(editorUsers, manualProjectLogs, "editor", effectiveMonth, "");
   const editorExpenseTotal = allEditorRows.reduce((sum, s) => sum + s.totalAmount, 0) + allEditorLogSummaries.reduce((sum, s) => sum + s.total, 0) + allEditorProjectSummaries.reduce((sum, s) => sum + s.total, 0);
-  // 案件別単価設定：スタッフごとの一覧とは別に、対象月の編集案件をまとめて選択できる一覧（担当編集者に関わらず全件をここに集約する）
-  // 編集が完了しているかどうかに関わらず、その月に登録された案件をすべて対象にする（スタッフごとの一覧＝上のeditorRows等とは別の集計）
-  const allEditItems = buildEditPriceItems(reels, clients, users, rate, effectiveMonth);
-  // この一覧専用の絞り込み（クライアント・スタッフ）。未選択なら全件表示する
-  const [editItemClientFilter, setEditItemClientFilter] = useState("");
-  const [editItemStaffFilter, setEditItemStaffFilter] = useState("");
-  const filteredEditItems = allEditItems.filter(it =>
-    (!editItemClientFilter || it.clientId === editItemClientFilter) &&
-    (!editItemStaffFilter || it.userId === editItemStaffFilter)
-  );
-  const editItemClientOptions = [...new Map(allEditItems.map(it => [it.clientId, it.client])).entries()]
-    .filter(([id]) => id)
-    .sort((a, b) => (a[1] || "").localeCompare(b[1] || "", "ja"));
+  // 単価設定・案件ごとの個別単価編集は「報酬単価設定」ページ（RateSettingsPage）に一本化したため、
+  // この経理管理ページでは編集用の案件一覧・一括設定UIは持たない
 
   const addEditorLog = (staffId) => {
     setEditorLogs(prev => [...prev, emptyEditorLog(staffId, effectiveMonth)]);
@@ -6480,38 +6434,10 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
     setEditorLogs(prev => prev.filter(l => l.id !== id));
   };
 
-  // 動画編集（①〜④・一括編集）の案件別単価：この案件専用の単価を直接上書き編集する（未入力ならその月の単価設定が適用される）
-  const updateEditUnitPay = (reelId, projectRateKey, value) => {
-    if (!projectRateKey) return;
-    setReels(prev => prev.map(r => r.id === reelId ? { ...r, [projectRateKey]: value } : r));
-  };
-  // 複数の案件をチェックボックスでまとめて選択し、一括で単価を設定するための選択状態（キーは「案件ID:単価項目名」）
-  const [selectedEditItems, setSelectedEditItems] = useState(new Set());
-  const [bulkEditPrice, setBulkEditPrice] = useState("");
-  const toggleEditItem = (itemKey) => {
-    setSelectedEditItems(prev => {
-      const next = new Set(prev);
-      if (next.has(itemKey)) next.delete(itemKey); else next.add(itemKey);
-      return next;
-    });
-  };
-  const applyBulkEditPrice = () => {
-    if (selectedEditItems.size === 0 || bulkEditPrice === "") return;
-    const patchesByReel = {};
-    selectedEditItems.forEach(itemKey => {
-      const sepIdx = itemKey.indexOf(":");
-      const reelId = itemKey.slice(0, sepIdx);
-      const projectRateKey = itemKey.slice(sepIdx + 1);
-      patchesByReel[reelId] = { ...(patchesByReel[reelId] || {}), [projectRateKey]: bulkEditPrice };
-    });
-    setReels(prev => prev.map(r => patchesByReel[r.id] ? { ...r, ...patchesByReel[r.id] } : r));
-    setSelectedEditItems(new Set());
-    setBulkEditPrice("");
-  };
-
-  // ============ ディレクター実績（⑤最終チェック＋⑥をディレクターが担当した分の自動集計、＋手入力の時給×稼働時間、＋その他案件の手入力） ============
-  const directorStaffRows = computeStaffSummaries(reels, clients, directorUsers, rate, DIRECTOR_STAGES, directorFilter, calendarEvents, effectiveMonth);
-  const allDirectorStaffRows = computeStaffSummaries(reels, clients, directorUsers, rate, DIRECTOR_STAGES, "", calendarEvents, effectiveMonth);
+  // ============ ディレクター実績（⑤最終チェックの自動集計（報酬が発生するのはこれだけ）、＋手入力の時給×稼働時間、＋その他案件の手入力） ============
+  // ⑥完成動画・キャプション作成は報酬が発生しないため、経理管理の集計にはPAID_DIRECTOR_STAGES（⑤最終チェックのみ）を使う
+  const directorStaffRows = computeStaffSummaries(reels, clients, directorUsers, rate, PAID_DIRECTOR_STAGES, directorFilter, calendarEvents, effectiveMonth);
+  const allDirectorStaffRows = computeStaffSummaries(reels, clients, directorUsers, rate, PAID_DIRECTOR_STAGES, "", calendarEvents, effectiveMonth);
   const directorLogSummaries = computeLogSummaries(directorUsers, directorLogs, effectiveMonth, directorFilter, "workDate");
   const allDirectorLogSummaries = computeLogSummaries(directorUsers, directorLogs, effectiveMonth, "", "workDate");
   const directorProjectSummaries = computeManualProjectSummaries(directorUsers, manualProjectLogs, "director", effectiveMonth, directorFilter);
@@ -6551,9 +6477,11 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
     setShootLogs(prev => prev.filter(l => l.id !== id));
   };
 
-  // ============ SNS運用担当実績（⑥をSNS運用担当が担当した分＋⑦投稿の自動集計、＋手入力の時給×稼働時間、＋その他案件の手入力） ============
-  const snsRows = computeStaffSummaries(reels, clients, snsUsers, rate, SNS_STAGES, snsFilter, calendarEvents, effectiveMonth);
-  const allSnsRows = computeStaffSummaries(reels, clients, snsUsers, rate, SNS_STAGES, "", calendarEvents, effectiveMonth);
+  // ============ SNS運用担当実績（⑥キャプション作成・⑦投稿は報酬が発生しないため自動集計には含めない。手入力の時給×稼働時間、＋その他案件の手入力のみ） ============
+  // ⑥完成動画・キャプション作成／⑦投稿は報酬が発生しないため、経理管理の自動集計からは除外する（PAID_SNS_STAGESは空）。
+  // 手入力の時給ログ・その他案件ログ（実際に発生した別の作業の報酬）は、SNS運用担当であっても引き続き記録・集計できる
+  const snsRows = computeStaffSummaries(reels, clients, snsUsers, rate, PAID_SNS_STAGES, snsFilter, calendarEvents, effectiveMonth);
+  const allSnsRows = computeStaffSummaries(reels, clients, snsUsers, rate, PAID_SNS_STAGES, "", calendarEvents, effectiveMonth);
   const snsLogSummaries = computeLogSummaries(snsUsers, snsLogs, effectiveMonth, snsFilter, "workDate");
   const allSnsLogSummaries = computeLogSummaries(snsUsers, snsLogs, effectiveMonth, "", "workDate");
   const snsProjectSummaries = computeManualProjectSummaries(snsUsers, manualProjectLogs, "sns", effectiveMonth, snsFilter);
@@ -6663,7 +6591,7 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
       <div className="rounded-2xl p-4 mb-4 flex items-center justify-between flex-wrap gap-2" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
         <div>
           <p className="font-bold mb-1 flex items-center gap-1.5"><DollarSign size={16} color="#854F0B" /> 報酬単価設定</p>
-          <p className="text-[11px]" style={{ color: "#A9A79C" }}>動画編集（①〜④・一括編集）と⑤最終チェックの単価を、月・クライアント・担当者で絞り込みながら、案件ごとに個別または一括で設定できるページです。</p>
+          <p className="text-[11px]" style={{ color: "#A9A79C" }}>動画編集（①〜④・一括編集）・⑤最終チェックの単価（案件ごとの個別・一括設定を含む）と、撮影・ディレクター手入力実績の時給（既定値）を、まとめて設定できるページです。</p>
         </div>
         {onOpenRateSettings && (
           <button type="button" onClick={onOpenRateSettings} className="text-xs font-semibold px-3 py-2 rounded-lg text-white flex items-center gap-1.5 shrink-0" style={{ background: "#854F0B" }}>
@@ -6729,20 +6657,12 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
 
       <div className="rounded-2xl p-5 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
         <p className="font-bold mb-1 flex items-center gap-1.5"><UserCog size={16} color="#5B5FC7" /> ディレクター実績集計</p>
-        <p className="text-[11px] mb-3" style={{ color: "#A9A79C" }}>⑤最終チェック（＋⑥完成動画・キャプション作成をディレクターが担当した分）を1件完了するごとに、下の単価を加算します。加えて、動画制作管理に登録の無いその他案件（案件×単価）と、日付・時給×稼働時間・内訳の手入力実績を登録できます（自分の実績ページから本人が入力することもできます）。</p>
+        <p className="text-[11px] mb-3" style={{ color: "#A9A79C" }}>⑤最終チェックを1件完了するごとに、上部の「報酬単価設定」ページで設定した単価が加算されます（⑥完成動画・キャプション作成は報酬が発生しないため、ここには含まれません）。加えて、動画制作管理に登録の無いその他案件（案件×単価）と、日付・時給×稼働時間・内訳の手入力実績を登録できます（自分の実績ページから本人が入力することもできます）。</p>
         <div className="flex items-center gap-2 flex-wrap mb-3">
           <select value={directorFilter} onChange={e => setDirectorFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 160 }}>
             <option value="">ディレクター（全員）</option>
             {directorUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
-        </div>
-        <div className="grid sm:grid-cols-2 gap-2 mb-3">
-          <Field label={`${monthLabel(effectiveMonth)}の⑤最終チェック単価`}>
-            <TextInput type="number" value={rate.checkRate} onChange={e => upsertRate({ checkRate: e.target.value })} placeholder="円" />
-          </Field>
-          <Field label={`${monthLabel(effectiveMonth)}の手入力実績の時給（既定値）`}>
-            <TextInput type="number" value={rate.directorHourlyRate} onChange={e => upsertRate({ directorHourlyRate: e.target.value })} placeholder="円／時間" />
-          </Field>
         </div>
         <div className="space-y-3">
           {directorUsers.filter(u => !directorFilter || u.id === directorFilter).map(u => {
@@ -6797,72 +6717,12 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
 
       <div className="rounded-2xl p-5 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
         <p className="font-bold mb-1 flex items-center gap-1.5"><Scissors size={16} color="#0E90B8" /> 動画編集者実績集計</p>
-        <p className="text-[11px] mb-3" style={{ color: "#A9A79C" }}>①〜④の各工程を1件完了するごとに、下で設定した単価をそのまま加算して金額を計算します（⑤最終チェックの実績はディレクターの項目に計上されます）。案件ごとの一覧では、個別の案件だけ単価を上書き指定することもでき、複数の案件をチェックボックスで選択してまとめて単価を設定することもできます（未入力の案件には、その月の単価設定がそのまま適用されます）。加えて、動画制作管理に登録の無いその他案件（案件×単価）と、日付・時給×稼働時間・内訳の手入力実績を登録できます（自分の実績ページから本人が入力することもできます）。</p>
+        <p className="text-[11px] mb-3" style={{ color: "#A9A79C" }}>①〜④の各工程を1件完了するごとに、上部の「報酬単価設定」ページで設定した単価が加算されます（⑤最終チェックの実績はディレクターの項目に計上されます）。単価の設定・案件ごとの個別単価は「報酬単価設定」ページで行います。加えて、動画制作管理に登録の無いその他案件（案件×単価）と、日付・時給×稼働時間・内訳の手入力実績を登録できます（自分の実績ページから本人が入力することもできます）。</p>
         <div className="flex items-center gap-2 flex-wrap mb-3">
           <select value={editorFilter} onChange={e => setEditorFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 160 }}>
             <option value="">編集者（全員）</option>
             {editorUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
-        </div>
-
-        <p className="text-xs font-semibold mb-1.5" style={{ color: "#8B897F" }}>{monthLabel(effectiveMonth)}の単価設定（1件完了ごとの定額）</p>
-        <div className="grid sm:grid-cols-3 md:grid-cols-5 gap-2 mb-3">
-          <Field label="一括編集単価（①②③④まとめて）">
-            <TextInput type="number" value={rate.soloRate} onChange={e => upsertRate({ soloRate: e.target.value })} placeholder="円" />
-          </Field>
-          <Field label="①カット単価（分業）">
-            <TextInput type="number" value={rate.cutRate} onChange={e => upsertRate({ cutRate: e.target.value })} placeholder="円" />
-          </Field>
-          <Field label="②テロップ単価（分業）">
-            <TextInput type="number" value={rate.telopRate} onChange={e => upsertRate({ telopRate: e.target.value })} placeholder="円" />
-          </Field>
-          <Field label="③アニメーション・演出単価（分業）">
-            <TextInput type="number" value={rate.animationRate} onChange={e => upsertRate({ animationRate: e.target.value })} placeholder="円" />
-          </Field>
-          <Field label="④効果音・BGM単価（分業）">
-            <TextInput type="number" value={rate.sfxRate} onChange={e => upsertRate({ sfxRate: e.target.value })} placeholder="円" />
-          </Field>
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap mb-3 p-2.5 rounded-xl" style={{ background: "#F4F2EA" }}>
-          <CheckSquare size={14} color="#8B897F" />
-          <span className="text-[11px] font-semibold" style={{ color: "#8B897F" }}>案件ごとの単価をまとめて設定：{selectedEditItems.size}件選択中</span>
-          <span style={{ color: "#8B897F" }}>¥</span>
-          <TextInput type="number" value={bulkEditPrice} onChange={e => setBulkEditPrice(e.target.value)} placeholder="単価" style={{ width: 100 }} />
-          <button type="button" disabled={selectedEditItems.size === 0 || bulkEditPrice === ""} onClick={applyBulkEditPrice} className="text-xs font-semibold px-3 py-1.5 rounded-lg border disabled:opacity-40" style={{ borderColor: "#DEDACD" }}>選択した案件にまとめて設定</button>
-          {selectedEditItems.size > 0 && <button type="button" onClick={() => setSelectedEditItems(new Set())} className="text-xs px-2 py-1.5" style={{ color: "#8B897F" }}>選択解除</button>}
-        </div>
-
-        <div className="mb-4">
-          <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
-            <p className="text-[11px] font-semibold" style={{ color: "#8B897F" }}>登録済みの案件から選択（{monthLabel(effectiveMonth)}に登録された案件を、編集完了前後を問わずまとめて表示・{filteredEditItems.length}件）</p>
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <select value={editItemClientFilter} onChange={e => setEditItemClientFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 150 }}>
-                <option value="">クライアント（全て）</option>
-                {editItemClientOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-              </select>
-              <select value={editItemStaffFilter} onChange={e => setEditItemStaffFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 140 }}>
-                <option value="">スタッフ（全て）</option>
-                {editorUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="rounded-xl p-2 space-y-1" style={{ background: "#FAF8F3", border: "1px solid #EFEDE4", maxHeight: 220, overflowY: "auto" }}>
-            {filteredEditItems.length === 0 && <p className="text-[11px] px-1 py-2" style={{ color: "#A9A79C" }}>条件に一致する編集案件はありません。</p>}
-            {filteredEditItems.map((it, i) => {
-              const itemKey = `${it.reelId}:${it.projectRateKey}`;
-              return (
-                <div key={itemKey + "_all_" + i} className="flex items-center gap-2 text-xs px-2 py-1.5 rounded-lg" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
-                  <input type="checkbox" checked={selectedEditItems.has(itemKey)} onChange={() => toggleEditItem(itemKey)} />
-                  <span className="shrink-0 px-1.5 py-0.5 rounded" style={{ background: it.done ? "#E3F3EE" : "#F0EEE7", color: it.done ? "#0E8F6F" : "#8B897F", fontSize: 10 }}>{it.done ? "完了" : "未完了"}</span>
-                  <span className="shrink-0 px-1.5 py-0.5 rounded" style={{ background: "#F0EEE7", color: "#8B897F", fontSize: 10 }}>{it.userName}</span>
-                  <span className="truncate flex-1">{it.client}／{it.theme}（{it.stageLabel}）</span>
-                  <span style={{ color: "#8B897F" }}>¥</span>
-                  <TextInput type="number" value={it.unitPayRaw} onChange={e => updateEditUnitPay(it.reelId, it.projectRateKey, e.target.value)} placeholder={String(Math.round(it.amount))} style={{ width: 90 }} />
-                </div>
-              );
-            })}
-          </div>
         </div>
 
         {editorUsers.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>動画編集者の役割を持つスタッフが登録されていません。</p>}
@@ -6891,24 +6751,6 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
                     );
                   })}
                 </div>
-                {EDITOR_STAGES.some(stage => row.byStage[stage.key]) && (
-                  <div className="mb-2">
-                    <p className="text-[11px] font-semibold mb-1" style={{ color: "#8B897F" }}>案件別単価（未入力は月の単価設定が適用されます）</p>
-                    <div className="space-y-1">
-                      {EDITOR_STAGES.flatMap(stage => row.byStage[stage.key]?.items || []).map((it, i) => {
-                        const itemKey = `${it.reelId}:${it.projectRateKey}`;
-                        return (
-                          <div key={itemKey + "_" + i} className="flex items-center gap-2 text-xs px-2 py-1.5 rounded-lg" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
-                            <input type="checkbox" checked={selectedEditItems.has(itemKey)} onChange={() => toggleEditItem(itemKey)} />
-                            <span className="truncate flex-1">{it.client}／{it.theme}（{it.stageLabel}）</span>
-                            <span style={{ color: "#8B897F" }}>¥</span>
-                            <TextInput type="number" value={it.unitPayRaw} onChange={e => updateEditUnitPay(it.reelId, it.projectRateKey, e.target.value)} placeholder={String(Math.round(it.amount))} style={{ width: 90 }} />
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
                 <ManualProjectLogEditor
                   items={projectSummary.items} total={projectSummary.total} editable
                   onAdd={() => addManualProjectLog(u.id, "editor")}
@@ -6937,20 +6779,12 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
 
       <div className="rounded-2xl p-5 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
         <p className="font-bold mb-1 flex items-center gap-1.5"><Camera size={16} color="#854F0B" /> 撮影担当実績集計（手動編集可）</p>
-        <p className="text-[11px] mb-3" style={{ color: "#A9A79C" }}>撮影担当の報酬は、①案件別の1件あたりの報酬、②動画制作管理に登録の無いその他案件（案件×単価）、③撮影日別の時給×稼働時間、の3種類で管理します。①は撮影完了とした案件が自動的に一覧表示され、動画製作管理で撮影単価・撮影時間が入力されていればその金額が初期値になりますが、金額はここで自由に直接入力・上書きできます。②③はここで手動で登録します（②③は自分の実績ページから本人が入力することもできます）。</p>
+        <p className="text-[11px] mb-3" style={{ color: "#A9A79C" }}>撮影担当の報酬は、①案件別の1件あたりの報酬、②動画制作管理に登録の無いその他案件（案件×単価）、③撮影日別の時給×稼働時間、の3種類で管理します。①は撮影完了とした案件が自動的に一覧表示され、動画製作管理で撮影単価・撮影時間が入力されていればその金額が初期値になりますが、金額はここで自由に直接入力・上書きできます（基本の撮影単価は上部の「報酬単価設定」ページで設定します）。②③はここで手動で登録します（②③は自分の実績ページから本人が入力することもできます）。</p>
         <div className="flex items-center gap-2 flex-wrap mb-3">
           <select value={shootStaffFilter} onChange={e => setShootStaffFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 160 }}>
             <option value="">撮影（全員）</option>
             {shooterUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
-        </div>
-        <div className="grid sm:grid-cols-2 gap-3 mb-3">
-          <Field label={`${monthLabel(effectiveMonth)}の撮影単価（時給）`}>
-            <TextInput type="number" value={rate.shootRate} onChange={e => upsertRate({ shootRate: e.target.value })} placeholder="円／時間" />
-          </Field>
-          <Field label={`${monthLabel(effectiveMonth)}の撮影単価（1件あたり・時間未入力の案件の既定値）`}>
-            <TextInput type="number" value={rate.shootProjectRate} onChange={e => upsertRate({ shootProjectRate: e.target.value })} placeholder="円／件" />
-          </Field>
         </div>
         <div className="space-y-3">
           {shooterUsers.filter(u => !shootStaffFilter || u.id === shootStaffFilter).map(u => {
@@ -7008,47 +6842,25 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
 
       <div className="rounded-2xl p-5 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
         <p className="font-bold mb-1 flex items-center gap-1.5"><Send size={16} color="#D6248A" /> SNS運用担当実績集計</p>
-        <p className="text-[11px] mb-3" style={{ color: "#A9A79C" }}>⑥完成動画・キャプション作成（SNS運用担当が担当した分）、⑦投稿を1件完了するごとに、下で設定した単価をそのまま加算して金額を計算します。加えて、動画制作管理に登録の無いその他案件（案件×単価）と、日付・時給×稼働時間・内訳の手入力実績を登録できます（自分の実績ページから本人が入力することもできます）。</p>
+        <p className="text-[11px] mb-3" style={{ color: "#A9A79C" }}>⑥完成動画・キャプション作成・⑦投稿は報酬が発生しないため、この集計には含まれません。動画制作管理に登録の無いその他案件（案件×単価）と、日付・時給×稼働時間・内訳の手入力実績（実際に発生した別の報酬）のみ、ここで登録・管理できます（自分の実績ページから本人が入力することもできます）。</p>
         <div className="flex items-center gap-2 flex-wrap mb-3">
           <select value={snsFilter} onChange={e => setSnsFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 160 }}>
             <option value="">SNS運用担当（全員）</option>
             {snsUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
         </div>
-        <div className="grid sm:grid-cols-2 gap-2 mb-3">
-          <Field label="⑥完成動画・キャプション作成単価">
-            <TextInput type="number" value={rate.captionRate} onChange={e => upsertRate({ captionRate: e.target.value })} placeholder="円" />
-          </Field>
-          <Field label="⑦投稿単価">
-            <TextInput type="number" value={rate.postRate} onChange={e => upsertRate({ postRate: e.target.value })} placeholder="円" />
-          </Field>
-        </div>
 
         {snsUsers.length === 0 && <p className="text-xs" style={{ color: "#8B897F" }}>SNS運用担当の役割を持つスタッフが登録されていません。</p>}
         <div className="space-y-3">
           {snsUsers.filter(u => !snsFilter || u.id === snsFilter).map(u => {
-            const row = snsRows.find(x => x.user.id === u.id) || { byStage: {}, totalAmount: 0 };
             const logSummary = snsLogSummaries.find(x => x.user.id === u.id) || { items: [], total: 0 };
             const projectSummary = snsProjectSummaries.find(x => x.user.id === u.id) || { items: [], total: 0 };
-            const total = row.totalAmount + logSummary.total + projectSummary.total;
+            const total = logSummary.total + projectSummary.total;
             return (
               <div key={u.id} className="rounded-xl p-3" style={{ background: "#FAF8F3" }}>
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <p className="text-sm font-semibold">{u.name}</p>
                   {total > 0 && <Badge tone="teal">支払い見込み ¥{Math.round(total).toLocaleString()}</Badge>}
-                </div>
-                <div className="grid sm:grid-cols-2 gap-1.5 mt-2 mb-2">
-                  {SNS_STAGES.map(stage => {
-                    const d = row.byStage[stage.key];
-                    if (!d) return null;
-                    return (
-                      <div key={stage.key} className="rounded-lg p-2 text-center" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
-                        <p className="text-[10px]" style={{ color: "#8B897F" }}>{stage.label}</p>
-                        <p className="text-sm font-bold">{d.count}本</p>
-                        {d.hasRate && <p className="text-[10px]" style={{ color: "#8B897F" }}>¥{Math.round(d.amount).toLocaleString()}</p>}
-                      </div>
-                    );
-                  })}
                 </div>
                 <ManualProjectLogEditor
                   items={projectSummary.items} total={projectSummary.total} editable
@@ -7120,7 +6932,7 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
             <thead><tr><th>SNS経費合計</th></tr></thead>
             <tbody><tr><td>¥{Math.round(snsRows.reduce((sum, s) => sum + s.totalAmount, 0) + snsLogSummaries.reduce((sum, s) => sum + s.total, 0) + snsProjectSummaries.reduce((sum, s) => sum + s.total, 0)).toLocaleString()}</td></tr></tbody>
           </table>
-          <p className="staff-report-meta">⑥キャプション作成単価：¥{(parseFloat(rate.captionRate) || 0).toLocaleString()}／件　⑦投稿単価：¥{(parseFloat(rate.postRate) || 0).toLocaleString()}／件</p>
+          <p className="staff-report-meta">⑥完成動画・キャプション作成・⑦投稿は報酬が発生しないため、この明細には含まれません（その他案件・手入力実績のみ記載）。</p>
           {renderCategoryRowsForPdf(snsUsers.filter(u => !snsFilter || u.id === snsFilter), snsRows, snsLogSummaries, snsProjectSummaries)}
         </div>
       </PrintPortal>
@@ -7376,7 +7188,7 @@ function RateSettingsPage({ clients, users, reels, setReels, payRates, setPayRat
         <DollarSign size={20} />
         <h2 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700 }}>報酬単価設定（統括管理者専用）</h2>
       </div>
-      <p className="text-xs mb-4" style={{ color: "#8B897F" }}>動画編集（①〜④・一括編集）と⑤最終チェックの単価を、案件ごとに個別で設定できます。未入力の場合は、下の「基本単価」がその案件の登録月に応じて自動的に適用されます。</p>
+      <p className="text-xs mb-4" style={{ color: "#8B897F" }}>動画編集（①〜④・一括編集）と⑤最終チェックの単価を、案件ごとに個別で設定できます。未入力の場合は、下の「基本単価」がその案件の登録月に応じて自動的に適用されます。撮影・ディレクターの手入力実績の時給（既定値）もここで設定します。</p>
 
       <div className="rounded-2xl p-4 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
         <p className="text-xs font-semibold mb-2" style={{ color: "#8B897F" }}>絞り込み</p>
@@ -7443,6 +7255,18 @@ function RateSettingsPage({ clients, users, reels, setReels, payRates, setPayRat
             </Field>
             <Field label="⑤最終チェック単価">
               <TextInput type="number" value={rate.checkRate} onChange={e => upsertRate({ checkRate: e.target.value })} placeholder="円" />
+            </Field>
+          </div>
+          <p className="text-xs font-semibold mb-1.5 mt-4" style={{ color: "#8B897F" }}>{monthLabel(monthFilter)}の撮影・手入力実績の単価（既定値）</p>
+          <div className="grid sm:grid-cols-3 md:grid-cols-6 gap-2">
+            <Field label="撮影単価（時給）">
+              <TextInput type="number" value={rate.shootRate} onChange={e => upsertRate({ shootRate: e.target.value })} placeholder="円／時間" />
+            </Field>
+            <Field label="撮影単価（1件あたり・時間未入力の案件の既定値）">
+              <TextInput type="number" value={rate.shootProjectRate} onChange={e => upsertRate({ shootProjectRate: e.target.value })} placeholder="円／件" />
+            </Field>
+            <Field label="ディレクター手入力実績の時給（既定値）">
+              <TextInput type="number" value={rate.directorHourlyRate} onChange={e => upsertRate({ directorHourlyRate: e.target.value })} placeholder="円／時間" />
             </Field>
           </div>
         </div>
