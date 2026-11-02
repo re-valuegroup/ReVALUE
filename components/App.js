@@ -7263,13 +7263,22 @@ function RateSettingsPage({ clients, users, reels, setReels, payRates, setPayRat
   const monthOptions = collectPerformanceMonthOptions(reels, calendarEvents, []);
   const [monthFilter, setMonthFilter] = useState(monthOptions[0] || currentYearMonth());
   const [clientFilter, setClientFilter] = useState("");
-  // 担当者は複数選択できるようにする（例：一括編集の担当Aさんと、最終チェックの担当Bさんを同時に絞り込みたい、という使い方のため）
-  const [staffFilters, setStaffFilters] = useState(new Set());
+  // 担当者は複数選択できるようにする（例：一括編集の担当Aさんと、最終チェックの担当Bさんを同時に絞り込みたい、という使い方のため）。
+  // ⑤最終チェックは工程（全て）のドロップダウンには含めず、常に表示される専用の絞り込み欄（担当者だけを複数選択）として固定で用意する。
+  const [staffFilters, setStaffFilters] = useState(new Set()); // ①〜④・一括編集（動画編集）側の担当者絞り込み
+  const [checkStaffFilters, setCheckStaffFilters] = useState(new Set()); // ⑤最終チェック側の担当者絞り込み（固定欄）
   const [stageFilter, setStageFilter] = useState("");
   const [selectedItems, setSelectedItems] = useState(new Set());
   const [bulkPrice, setBulkPrice] = useState("");
   const toggleStaffFilter = (id) => {
     setStaffFilters(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const toggleCheckStaffFilter = (id) => {
+    setCheckStaffFilters(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
@@ -7288,16 +7297,23 @@ function RateSettingsPage({ clients, users, reels, setReels, payRates, setPayRat
   };
 
   const allItems = buildRateSettingItems(reels, clients, users, payRates);
-  const filteredItems = allItems.filter(it =>
-    (!monthFilter || it.yearMonth === monthFilter) &&
-    (!clientFilter || it.clientId === clientFilter) &&
-    (staffFilters.size === 0 || staffFilters.has(it.userId)) &&
-    (!stageFilter || it.stageKey === stageFilter)
-  );
+  // ⑤最終チェックは工程の絞り込みドロップダウンとは独立した固定の絞り込み（checkStaffFilters）で扱う。
+  // そのため、月・クライアントの絞り込みは全工程共通で適用しつつ、工程ドロップダウン＋担当者（staffFilters）は
+  // ①〜④・一括編集側にのみ適用し、⑤最終チェックは専用のcheckStaffFiltersだけで絞り込む。
+  const filteredItems = allItems.filter(it => {
+    if (!monthFilter || it.yearMonth === monthFilter) {} else return false;
+    if (!clientFilter || it.clientId === clientFilter) {} else return false;
+    if (it.stageKey === "check") {
+      return checkStaffFilters.size === 0 || checkStaffFilters.has(it.userId);
+    }
+    return (!stageFilter || it.stageKey === stageFilter) && (staffFilters.size === 0 || staffFilters.has(it.userId));
+  });
   const clientOptions = [...new Map(allItems.map(it => [it.clientId, it.client])).entries()]
     .filter(([id]) => id)
     .sort((a, b) => (a[1] || "").localeCompare(b[1] || "", "ja"));
-  const staffOptions = [...new Map(allItems.filter(it => it.userId).map(it => [it.userId, it.userName])).entries()]
+  const staffOptions = [...new Map(allItems.filter(it => it.userId && it.stageKey !== "check").map(it => [it.userId, it.userName])).entries()]
+    .sort((a, b) => (a[1] || "").localeCompare(b[1] || "", "ja"));
+  const checkStaffOptions = [...new Map(allItems.filter(it => it.userId && it.stageKey === "check").map(it => [it.userId, it.userName])).entries()]
     .sort((a, b) => (a[1] || "").localeCompare(b[1] || "", "ja"));
 
   const updateUnitPay = (reelId, projectRateKey, value) => {
@@ -7361,13 +7377,13 @@ function RateSettingsPage({ clients, users, reels, setReels, payRates, setPayRat
             {clientOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
           </select>
           <select value={stageFilter} onChange={e => setStageFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 170 }}>
-            <option value="">工程（全て）</option>
-            {RATE_SETTING_STAGES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+            <option value="">工程（①〜④・一括編集）</option>
+            {EDITOR_STAGES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
           </select>
         </div>
-        <div>
+        <div className="mb-2">
           <p className="text-[11px] font-semibold mb-1" style={{ color: "#8B897F" }}>
-            担当者（複数選択可・例：一括編集の担当Aさんと最終チェックの担当Bさんを同時に絞り込めます）
+            担当者（①〜④・一括編集／複数選択可・例：一括編集の担当Aさんを絞り込めます）
           </p>
           <div className="rounded-lg border p-1.5 flex flex-wrap items-center gap-x-3 gap-y-1" style={{ borderColor: "#DEDACD", background: "#FAF8F3", maxHeight: 84, overflowY: "auto" }}>
             {staffOptions.length === 0 && <span className="text-[11px] px-1" style={{ color: "#A9A79C" }}>担当者がいません</span>}
@@ -7379,6 +7395,25 @@ function RateSettingsPage({ clients, users, reels, setReels, payRates, setPayRat
             ))}
             {staffFilters.size > 0 && (
               <button type="button" onClick={() => setStaffFilters(new Set())} className="text-[11px] font-semibold shrink-0" style={{ color: "#854F0B" }}>
+                絞り込みをクリア
+              </button>
+            )}
+          </div>
+        </div>
+        <div>
+          <p className="text-[11px] font-semibold mb-1" style={{ color: "#8B897F" }}>
+            ⑤最終チェック担当者（複数選択可・例：最終チェックの担当Bさんを同時に絞り込めます）
+          </p>
+          <div className="rounded-lg border p-1.5 flex flex-wrap items-center gap-x-3 gap-y-1" style={{ borderColor: "#DEDACD", background: "#FAF8F3", maxHeight: 84, overflowY: "auto" }}>
+            {checkStaffOptions.length === 0 && <span className="text-[11px] px-1" style={{ color: "#A9A79C" }}>担当者がいません</span>}
+            {checkStaffOptions.map(([id, name]) => (
+              <label key={id} className="flex items-center gap-1 text-[11px] cursor-pointer shrink-0">
+                <input type="checkbox" checked={checkStaffFilters.has(id)} onChange={() => toggleCheckStaffFilter(id)} />
+                <span>{name}</span>
+              </label>
+            ))}
+            {checkStaffFilters.size > 0 && (
+              <button type="button" onClick={() => setCheckStaffFilters(new Set())} className="text-[11px] font-semibold shrink-0" style={{ color: "#854F0B" }}>
                 絞り込みをクリア
               </button>
             )}
