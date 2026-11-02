@@ -7267,8 +7267,16 @@ function RateSettingsPage({ clients, users, reels, setReels, payRates, setPayRat
   // 工程（一括編集／①カット／②テロップ／③アニメーション・演出／④効果音・BGM／⑤最終チェック）ごとに、それぞれ専用の
   // 担当者絞り込み欄（常に表示・複数選択可）を用意する。stageStaffFiltersは { [工程キー]: Set<担当者ID> } の形。
   const [stageStaffFilters, setStageStaffFilters] = useState({});
-  // 工程ごとの絞り込みに加えて、絞り込まれた一覧そのものを担当者名でさらに検索できるようにする
-  const [staffSearch, setStaffSearch] = useState("");
+  // 工程ごとの絞り込みに加えて、絞り込まれた一覧そのものを担当者のチェックボックスでさらに絞り込めるようにする
+  // （検索ボックスではなく、現在の一覧に実際に出ている担当者の中からチェックで選ぶ方式）
+  const [resultStaffFilter, setResultStaffFilter] = useState(new Set());
+  const toggleResultStaffFilter = (userId) => {
+    setResultStaffFilter(prev => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId); else next.add(userId);
+      return next;
+    });
+  };
   const [selectedItems, setSelectedItems] = useState(new Set());
   const [bulkPrice, setBulkPrice] = useState("");
   const toggleStageStaffFilter = (stageKey, userId) => {
@@ -7303,11 +7311,13 @@ function RateSettingsPage({ clients, users, reels, setReels, payRates, setPayRat
     if (sel && sel.size > 0 && !sel.has(it.userId)) return false;
     return true;
   });
-  // 工程ごとの絞り込み結果に対して、さらに担当者名でテキスト検索して絞り込む
-  const staffSearchKeyword = staffSearch.trim().toLowerCase();
-  const visibleItems = staffSearchKeyword
-    ? filteredItems.filter(it => (it.userName || "").toLowerCase().includes(staffSearchKeyword))
-    : filteredItems;
+  // 工程ごとの絞り込み結果（filteredItems）に、実際に出ている担当者の一覧（重複なし）を作り、
+  // そこからチェックボックスで選んだ担当者だけに、一覧をさらに絞り込む
+  const resultStaffOptions = [...new Map(filteredItems.filter(it => it.userId).map(it => [it.userId, it.userName])).entries()]
+    .sort((a, b) => (a[1] || "").localeCompare(b[1] || "", "ja"));
+  const visibleItems = resultStaffFilter.size === 0
+    ? filteredItems
+    : filteredItems.filter(it => resultStaffFilter.has(it.userId));
   const clientOptions = [...new Map(allItems.map(it => [it.clientId, it.client])).entries()]
     .filter(([id]) => id)
     .sort((a, b) => (a[1] || "").localeCompare(b[1] || "", "ja"));
@@ -7454,7 +7464,23 @@ function RateSettingsPage({ clients, users, reels, setReels, payRates, setPayRat
 
       <div className="rounded-2xl p-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
         <div className="mb-2">
-          <TextInput value={staffSearch} onChange={e => setStaffSearch(e.target.value)} placeholder="担当者名でさらに絞り込む（例：屋宜）" style={{ width: 240 }} />
+          <div className="flex items-center justify-between mb-0.5">
+            <p className="text-[11px] font-semibold" style={{ color: "#8B897F" }}>一覧の担当者でさらに絞り込む（複数選択可）</p>
+            {resultStaffFilter.size > 0 && (
+              <button type="button" onClick={() => setResultStaffFilter(new Set())} className="text-[10px] font-semibold" style={{ color: "#854F0B" }}>
+                クリア
+              </button>
+            )}
+          </div>
+          <div className="rounded-lg border p-1.5 flex flex-wrap items-center gap-x-3 gap-y-1" style={{ borderColor: "#DEDACD", background: "#FAF8F3", maxHeight: 84, overflowY: "auto" }}>
+            {resultStaffOptions.length === 0 && <span className="text-[11px] px-1" style={{ color: "#A9A79C" }}>担当者がいません</span>}
+            {resultStaffOptions.map(([id, name]) => (
+              <label key={id} className="flex items-center gap-1 text-[11px] cursor-pointer shrink-0">
+                <input type="checkbox" checked={resultStaffFilter.has(id)} onChange={() => toggleResultStaffFilter(id)} />
+                <span>{name}</span>
+              </label>
+            ))}
+          </div>
         </div>
         <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
           <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer" style={{ color: "#8B897F" }}>
