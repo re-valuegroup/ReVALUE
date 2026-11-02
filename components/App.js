@@ -116,7 +116,7 @@ const STAFF_TASK_STAGES = [
   { key: "telop", label: "②テロップ", modeLabel: "分業", rateKey: "telopRate", projectRateKey: "telopUnitPay", roleGetter: r => r.telopEditorId || "", test: r => r.workMode !== "solo" && !!r.telopDone, monthOf: (r, calendarEvents) => stageMonthFromSchedule(r, "telop", calendarEvents) },
   { key: "animation", label: "③アニメーション・演出", modeLabel: "分業", rateKey: "animationRate", projectRateKey: "animationUnitPay", roleGetter: r => r.animationEditorId || "", test: r => r.workMode !== "solo" && !!r.animationDone, monthOf: (r, calendarEvents) => stageMonthFromSchedule(r, "animation", calendarEvents) },
   { key: "sfx", label: "④効果音・BGM", modeLabel: "分業", rateKey: "sfxRate", projectRateKey: "sfxUnitPay", roleGetter: r => r.sfxEditorId || "", test: r => r.workMode !== "solo" && !!r.sfxDone, monthOf: (r, calendarEvents) => stageMonthFromSchedule(r, "sfx", calendarEvents) },
-  { key: "check", label: "⑤最終チェック", modeLabel: "", rateKey: "checkRate", roleGetter: r => r.editorSecondaryId || "", test: r => !!r.checkSubmitted, monthOf: (r, calendarEvents) => stageMonthFromSchedule(r, "check", calendarEvents) },
+  { key: "check", label: "⑤最終チェック", modeLabel: "", rateKey: "checkRate", projectRateKey: "checkUnitPay", roleGetter: r => r.editorSecondaryId || "", test: r => !!r.checkSubmitted, monthOf: (r, calendarEvents) => stageMonthFromSchedule(r, "check", calendarEvents) },
   { key: "caption", label: "⑥完成動画・キャプション作成", modeLabel: "", rateKey: "captionRate", roleGetter: r => r.captionAssigneeId || "", test: r => !!r.captionDone, monthOf: (r) => (r.captionDoneAt ? r.captionDoneAt.slice(0, 7) : (r.yearMonth || "")) },
   { key: "post", label: "⑦投稿", modeLabel: "", rateKey: "postRate", roleGetter: r => r.postAssigneeId || "", test: r => r.completedStages >= 5, monthOf: (r) => (r.postedDate ? r.postedDate.slice(0, 7) : (r.yearMonth || "")) },
 ];
@@ -188,7 +188,7 @@ function computeStaffSummaries(reels, clients, users, rate, stagesToShow, staffF
       summary.byStage[stage.key].count += 1;
       summary.byStage[stage.key].amount += amount;
       summary.byStage[stage.key].items.push({
-        reelId: r.id, projectRateKey: stage.projectRateKey || null, clientId: r.clientId || "",
+        reelId: r.id, stageKey: stage.key, projectRateKey: stage.projectRateKey || null, clientId: r.clientId || "",
         client: c?.companyName || "（クライアント不明）", theme: r.theme || "テーマ未設定", stageLabel: stage.label,
         amount, unitPayRaw: hasProjectOverride ? String(projectRaw) : "", hasOverride: hasProjectOverride,
       });
@@ -226,6 +226,52 @@ function buildEditPriceItems(reels, clients, users, rate, effectiveMonth) {
       const hasOverride = raw !== undefined && raw !== null && String(raw).trim() !== "";
       items.push({
         reelId: r.id, projectRateKey: stage.projectRateKey, clientId: r.clientId || "",
+        client: c?.companyName || "（クライアント不明）", theme: r.theme || "テーマ未設定", stageLabel: stage.label,
+        userId: staffId, userName: u ? u.name : "未アサイン",
+        unitPayRaw: hasOverride ? String(raw) : "",
+        amount: hasOverride ? (parseFloat(raw) || 0) : (parseFloat(rate[stage.rateKey]) || 0),
+        done,
+      });
+    });
+  });
+  return items;
+}
+
+// 経理管理の新しい「報酬単価設定」ページで使う一覧。動画編集（①〜④・一括編集）に加えて、⑤最終チェックも対象に含める。
+// buildEditPriceItemsとは違い、特定の月だけに絞らず、動画制作管理に登録されている全案件を対象にする
+// （ページ側で月・クライアント・担当者で自由に絞り込めるようにするため）。各案件の「登録月」に対応する
+// payRatesの設定を、単価未入力時の既定値として参照する。
+const RATE_SETTING_STAGES = [...EDITOR_STAGES, STAFF_TASK_STAGES.find(s => s.key === "check")];
+function buildRateSettingItems(reels, clients, users, payRates) {
+  const items = [];
+  (reels || []).forEach(r => {
+    const c = clients.find(x => x.id === r.clientId);
+    const ym = r.yearMonth || "";
+    const rate = payRates.find(p => p.yearMonth === ym) || emptyPayRate(ym);
+    RATE_SETTING_STAGES.forEach(stage => {
+      let applicable = false;
+      let staffId = "";
+      let done = false;
+      if (stage.key === "solo") {
+        applicable = (r.workMode || "team") === "solo";
+        staffId = EDIT_ROLE_FIELDS.map(f => r[f.key]).find(Boolean) || "";
+        done = editRolesForReel(r).length > 0 && editRolesForReel(r).every(f => r[DONE_KEY_FOR_ROLE[f.key]]);
+      } else if (stage.key === "check") {
+        applicable = true;
+        staffId = r.editorSecondaryId || "";
+        done = !!r.checkSubmitted;
+      } else {
+        const roleFieldKey = ROLE_KEY_FOR_STAGE[stage.key];
+        applicable = (r.workMode || "team") !== "solo" && editRolesForReel(r).some(f => f.key === roleFieldKey);
+        staffId = r[roleFieldKey] || "";
+        done = !!r[DONE_KEY_FOR_ROLE[roleFieldKey]];
+      }
+      if (!applicable) return;
+      const u = users.find(x => x.id === staffId);
+      const raw = r[stage.projectRateKey];
+      const hasOverride = raw !== undefined && raw !== null && String(raw).trim() !== "";
+      items.push({
+        reelId: r.id, yearMonth: ym, stageKey: stage.key, projectRateKey: stage.projectRateKey, clientId: r.clientId || "",
         client: c?.companyName || "（クライアント不明）", theme: r.theme || "テーマ未設定", stageLabel: stage.label,
         userId: staffId, userName: u ? u.name : "未アサイン",
         unitPayRaw: hasOverride ? String(raw) : "",
@@ -669,7 +715,7 @@ const emptyChecklist = () => ({ c1: false, c2: false, c3: false, c4: false, c5: 
 const emptyReel = (clientId, ym) => ({
   id: uid("reel"), clientId, yearMonth: ym,
   assignedStaffId: "", shootHours: "", shootUnitPay: "",
-  soloUnitPay: "", cutUnitPay: "", telopUnitPay: "", animationUnitPay: "", sfxUnitPay: "",
+  soloUnitPay: "", cutUnitPay: "", telopUnitPay: "", animationUnitPay: "", sfxUnitPay: "", checkUnitPay: "",
   requiredRoles: ["cutEditorId", "telopEditorId", "animationEditorId", "sfxEditorId"], rush: false,
   workMode: "team", revisionHistory: [], revisionMemo: "", revisionVideoUrl: "", resubmitComment: "",
   cutEditorId: "", telopEditorId: "", animationEditorId: "", sfxEditorId: "", editorSecondaryId: "",
@@ -5874,7 +5920,10 @@ function MyPerformancePage({ clients, payRates, reels, setReels, users, currentU
   };
 
   // 工程の内訳（グリッド＋明細一覧）の共通表示。経理管理の各区分カードと同じ見た目にする
-  const renderStageGrid = (stagesArr, row) => (
+  // selfEditableKeys：この一覧の中で、本人が単価を直接編集できる工程キーの一覧（省略時は編集不可・表示のみ）。
+  // ⑤最終チェックのcheckUnitPayは経理管理の新しい「報酬単価設定」ページで統括管理者が管理する想定のため、
+  // 自分の実績ページでは（動画編集①〜④・一括編集以外は）あえて編集不可のままにしている
+  const renderStageGrid = (stagesArr, row, selfEditableKeys) => (
     <>
       <div className="grid sm:grid-cols-4 gap-1.5 mt-2">
         {stagesArr.map(stage => {
@@ -5894,7 +5943,7 @@ function MyPerformancePage({ clients, payRates, reels, setReels, users, currentU
           {Object.values(row.byStage).flatMap(x => x.items).map((it, i) => (
             <div key={i} className="flex items-center justify-between gap-2 text-xs px-2 py-1.5 rounded-lg" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
               <span className="truncate">{it.client}／{it.theme}（{it.stageLabel}）</span>
-              {it.projectRateKey ? (
+              {it.projectRateKey && (selfEditableKeys || []).includes(it.stageKey) ? (
                 <div className="flex items-center gap-1 shrink-0">
                   <span style={{ color: "#8B897F" }}>¥</span>
                   <TextInput type="number" value={it.unitPayRaw} onChange={e => updateMyEditUnitPay(it.reelId, it.projectRateKey, e.target.value)} placeholder={String(Math.round(it.amount))} style={{ width: 90 }} />
@@ -6007,7 +6056,7 @@ function MyPerformancePage({ clients, payRates, reels, setReels, users, currentU
               {directorTotal > 0 && <Badge tone="teal">支払い見込み ¥{Math.round(directorTotal).toLocaleString()}</Badge>}
             </div>
             {!myDirectorRow && myDirectorLog.items.length === 0 && myDirectorProject.items.length === 0 && <p className="text-xs mt-1" style={{ color: "#8B897F" }}>{monthLabel(effectiveMonth)}の実績はまだありません。</p>}
-            {renderStageGrid(DIRECTOR_STAGES, myDirectorRow)}
+            {renderStageGrid(DIRECTOR_STAGES, myDirectorRow, [])}
           </div>
           <ManualProjectLogEditor
             items={myDirectorProject.items} total={myDirectorProject.total} editable
@@ -6041,7 +6090,7 @@ function MyPerformancePage({ clients, payRates, reels, setReels, users, currentU
               <p className="text-sm font-semibold">{monthLabel(effectiveMonth)}の実績</p>
               {editorTotal > 0 && <Badge tone="teal">支払い見込み ¥{Math.round(editorTotal).toLocaleString()}</Badge>}
             </div>
-            {renderStageGrid(EDITOR_STAGES, myEditorRow)}
+            {renderStageGrid(EDITOR_STAGES, myEditorRow, ["solo", "cut", "telop", "animation", "sfx"])}
           </div>
           <ManualProjectLogEditor
             items={myEditorProject.items} total={myEditorProject.total} editable
@@ -6139,7 +6188,7 @@ function MyPerformancePage({ clients, payRates, reels, setReels, users, currentU
               <p className="text-sm font-semibold">{monthLabel(effectiveMonth)}の実績</p>
               {snsTotal > 0 && <Badge tone="teal">支払い見込み ¥{Math.round(snsTotal).toLocaleString()}</Badge>}
             </div>
-            {renderStageGrid(SNS_STAGES, mySnsRow)}
+            {renderStageGrid(SNS_STAGES, mySnsRow, [])}
           </div>
           <ManualProjectLogEditor
             items={mySnsProject.items} total={mySnsProject.total} editable
@@ -6324,7 +6373,7 @@ function MyPerformancePage({ clients, payRates, reels, setReels, users, currentU
   );
 }
 
-function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reels, setReels, users, shootLogs, setShootLogs, directorLogs, setDirectorLogs, editorLogs, setEditorLogs, snsLogs, setSnsLogs, manualProjectLogs, setManualProjectLogs, notificationSettings, setNotificationSettings, calendarEvents }) {
+function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reels, setReels, users, shootLogs, setShootLogs, directorLogs, setDirectorLogs, editorLogs, setEditorLogs, snsLogs, setSnsLogs, manualProjectLogs, setManualProjectLogs, notificationSettings, setNotificationSettings, calendarEvents, onOpenRateSettings }) {
   const upsert = (clientId, patch) => {
     setFinance(prev => {
       const exists = prev.some(f => f.clientId === clientId);
@@ -6610,6 +6659,18 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
         <h2 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700 }}>経理管理（統括管理者専用）</h2>
       </div>
       <p className="text-xs mb-4" style={{ color: "#8B897F" }}>契約・請求・入金状況を管理します。この情報は統括管理者のみが閲覧できます。</p>
+
+      <div className="rounded-2xl p-4 mb-4 flex items-center justify-between flex-wrap gap-2" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
+        <div>
+          <p className="font-bold mb-1 flex items-center gap-1.5"><DollarSign size={16} color="#854F0B" /> 報酬単価設定</p>
+          <p className="text-[11px]" style={{ color: "#A9A79C" }}>動画編集（①〜④・一括編集）と⑤最終チェックの単価を、月・クライアント・担当者で絞り込みながら、案件ごとに個別または一括で設定できるページです。</p>
+        </div>
+        {onOpenRateSettings && (
+          <button type="button" onClick={onOpenRateSettings} className="text-xs font-semibold px-3 py-2 rounded-lg text-white flex items-center gap-1.5 shrink-0" style={{ background: "#854F0B" }}>
+            <DollarSign size={14} /> 報酬単価設定ページを開く
+          </button>
+        )}
+      </div>
 
       <div className="rounded-2xl p-4 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
         <p className="font-bold mb-1 flex items-center gap-1.5"><Mail size={16} color="#0E90B8" /> ⑤最終チェック通知メール</p>
@@ -7195,6 +7256,176 @@ function FinancePage({ clients, finance, setFinance, payRates, setPayRates, reel
   );
 }
 
+// 経理管理「報酬単価設定」専用ページ。動画編集（①〜④・一括編集）と⑤最終チェックの単価を、
+// 月・クライアント・担当者で絞り込みながら、個別または複数選択してまとめて設定できる。
+// 未入力の案件には、その案件の登録月に対応する「基本単価（月ごとの既定値）」がそのまま適用される。
+function RateSettingsPage({ clients, users, reels, setReels, payRates, setPayRates, calendarEvents, onBack }) {
+  const monthOptions = collectPerformanceMonthOptions(reels, calendarEvents, []);
+  const [monthFilter, setMonthFilter] = useState(monthOptions[0] || currentYearMonth());
+  const [clientFilter, setClientFilter] = useState("");
+  const [staffFilter, setStaffFilter] = useState("");
+  const [selectedItems, setSelectedItems] = useState(new Set());
+  const [bulkPrice, setBulkPrice] = useState("");
+
+  // monthFilterが「すべての月」（空文字）の間は、基本単価がどの月のものか決まらないため編集欄を表示しない
+  const rate = monthFilter ? (payRates.find(p => p.yearMonth === monthFilter) || emptyPayRate(monthFilter)) : null;
+  const upsertRate = (patch) => {
+    if (!monthFilter) return;
+    setPayRates(prev => {
+      const exists = prev.some(p => p.yearMonth === monthFilter);
+      if (exists) return prev.map(p => p.yearMonth === monthFilter ? { ...p, ...patch } : p);
+      return [...prev, { ...emptyPayRate(monthFilter), ...patch }];
+    });
+  };
+
+  const allItems = buildRateSettingItems(reels, clients, users, payRates);
+  const filteredItems = allItems.filter(it =>
+    (!monthFilter || it.yearMonth === monthFilter) &&
+    (!clientFilter || it.clientId === clientFilter) &&
+    (!staffFilter || it.userId === staffFilter)
+  );
+  const clientOptions = [...new Map(allItems.map(it => [it.clientId, it.client])).entries()]
+    .filter(([id]) => id)
+    .sort((a, b) => (a[1] || "").localeCompare(b[1] || "", "ja"));
+  const staffOptions = [...new Map(allItems.filter(it => it.userId).map(it => [it.userId, it.userName])).entries()]
+    .sort((a, b) => (a[1] || "").localeCompare(b[1] || "", "ja"));
+
+  const updateUnitPay = (reelId, projectRateKey, value) => {
+    if (!projectRateKey) return;
+    setReels(prev => prev.map(r => r.id === reelId ? { ...r, [projectRateKey]: value } : r));
+  };
+  const toggleItem = (itemKey) => {
+    setSelectedItems(prev => {
+      const next = new Set(prev);
+      if (next.has(itemKey)) next.delete(itemKey); else next.add(itemKey);
+      return next;
+    });
+  };
+  const allFilteredKeys = filteredItems.map(it => `${it.reelId}:${it.projectRateKey}`);
+  const allFilteredSelected = allFilteredKeys.length > 0 && allFilteredKeys.every(k => selectedItems.has(k));
+  const toggleSelectAllFiltered = () => {
+    setSelectedItems(prev => {
+      const next = new Set(prev);
+      if (allFilteredSelected) {
+        allFilteredKeys.forEach(k => next.delete(k));
+      } else {
+        allFilteredKeys.forEach(k => next.add(k));
+      }
+      return next;
+    });
+  };
+  const applyBulkPrice = () => {
+    if (selectedItems.size === 0 || bulkPrice === "") return;
+    const patchesByReel = {};
+    selectedItems.forEach(itemKey => {
+      const sepIdx = itemKey.indexOf(":");
+      const reelId = itemKey.slice(0, sepIdx);
+      const projectRateKey = itemKey.slice(sepIdx + 1);
+      patchesByReel[reelId] = { ...(patchesByReel[reelId] || {}), [projectRateKey]: bulkPrice };
+    });
+    setReels(prev => prev.map(r => patchesByReel[r.id] ? { ...r, ...patchesByReel[r.id] } : r));
+    setSelectedItems(new Set());
+    setBulkPrice("");
+  };
+
+  return (
+    <div>
+      <button type="button" onClick={onBack} className="flex items-center gap-1.5 text-xs font-semibold mb-3" style={{ color: "#8B897F" }}>
+        <ArrowLeft size={14} /> 経理管理に戻る
+      </button>
+      <div className="flex items-center gap-2 mb-4">
+        <DollarSign size={20} />
+        <h2 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700 }}>報酬単価設定（統括管理者専用）</h2>
+      </div>
+      <p className="text-xs mb-4" style={{ color: "#8B897F" }}>動画編集（①〜④・一括編集）と⑤最終チェックの単価を、案件ごとに個別で設定できます。未入力の場合は、下の「基本単価」がその案件の登録月に応じて自動的に適用されます。</p>
+
+      <div className="rounded-2xl p-4 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
+        <p className="text-xs font-semibold mb-2" style={{ color: "#8B897F" }}>絞り込み</p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <select value={monthFilter} onChange={e => setMonthFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 150 }}>
+            <option value="">すべての月</option>
+            {monthOptions.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
+          </select>
+          <select value={clientFilter} onChange={e => setClientFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 170 }}>
+            <option value="">クライアント（全て）</option>
+            {clientOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+          </select>
+          <select value={staffFilter} onChange={e => setStaffFilter(e.target.value)} className={inputCls} style={{ ...inputStyle, width: 150 }}>
+            <option value="">担当者（全て）</option>
+            {staffOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {rate && (
+        <div className="rounded-2xl p-5 mb-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
+          <p className="text-xs font-semibold mb-1.5" style={{ color: "#8B897F" }}>{monthLabel(monthFilter)}の基本単価（1件完了ごとの定額・未入力の案件に適用される既定値）</p>
+          <div className="grid sm:grid-cols-3 md:grid-cols-6 gap-2">
+            <Field label="一括編集単価（①②③④まとめて）">
+              <TextInput type="number" value={rate.soloRate} onChange={e => upsertRate({ soloRate: e.target.value })} placeholder="円" />
+            </Field>
+            <Field label="①カット単価（分業）">
+              <TextInput type="number" value={rate.cutRate} onChange={e => upsertRate({ cutRate: e.target.value })} placeholder="円" />
+            </Field>
+            <Field label="②テロップ単価（分業）">
+              <TextInput type="number" value={rate.telopRate} onChange={e => upsertRate({ telopRate: e.target.value })} placeholder="円" />
+            </Field>
+            <Field label="③アニメーション・演出単価（分業）">
+              <TextInput type="number" value={rate.animationRate} onChange={e => upsertRate({ animationRate: e.target.value })} placeholder="円" />
+            </Field>
+            <Field label="④効果音・BGM単価（分業）">
+              <TextInput type="number" value={rate.sfxRate} onChange={e => upsertRate({ sfxRate: e.target.value })} placeholder="円" />
+            </Field>
+            <Field label="⑤最終チェック単価">
+              <TextInput type="number" value={rate.checkRate} onChange={e => upsertRate({ checkRate: e.target.value })} placeholder="円" />
+            </Field>
+          </div>
+        </div>
+      )}
+      {!rate && (
+        <p className="text-xs mb-4" style={{ color: "#A9A79C" }}>「すべての月」が選択されている間は基本単価を編集できません。特定の月を選ぶと、その月の基本単価を編集できます。</p>
+      )}
+
+      <div className="rounded-2xl p-4 mb-4" style={{ background: "#F4F2EA" }}>
+        <div className="flex items-center gap-2 flex-wrap">
+          <CheckSquare size={14} color="#8B897F" />
+          <span className="text-[11px] font-semibold" style={{ color: "#8B897F" }}>{selectedItems.size}件選択中</span>
+          <span style={{ color: "#8B897F" }}>¥</span>
+          <TextInput type="number" value={bulkPrice} onChange={e => setBulkPrice(e.target.value)} placeholder="単価" style={{ width: 100 }} />
+          <button type="button" disabled={selectedItems.size === 0 || bulkPrice === ""} onClick={applyBulkPrice} className="text-xs font-semibold px-3 py-1.5 rounded-lg border disabled:opacity-40" style={{ borderColor: "#DEDACD" }}>選択した案件にまとめて設定</button>
+          {selectedItems.size > 0 && <button type="button" onClick={() => setSelectedItems(new Set())} className="text-xs px-2 py-1.5" style={{ color: "#8B897F" }}>選択解除</button>}
+        </div>
+      </div>
+
+      <div className="rounded-2xl p-4" style={{ background: "#fff", border: "1px solid #DEDACD" }}>
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+          <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer" style={{ color: "#8B897F" }}>
+            <input type="checkbox" checked={allFilteredSelected} onChange={toggleSelectAllFiltered} disabled={filteredItems.length === 0} />
+            絞り込んだ{filteredItems.length}件をすべて選択
+          </label>
+        </div>
+        <div className="rounded-xl p-2 space-y-1" style={{ background: "#FAF8F3", border: "1px solid #EFEDE4", maxHeight: 420, overflowY: "auto" }}>
+          {filteredItems.length === 0 && <p className="text-[11px] px-1 py-2" style={{ color: "#A9A79C" }}>条件に一致する案件はありません。</p>}
+          {filteredItems.map((it, i) => {
+            const itemKey = `${it.reelId}:${it.projectRateKey}`;
+            return (
+              <div key={itemKey + "_" + i} className="flex items-center gap-2 text-xs px-2 py-1.5 rounded-lg" style={{ background: "#fff", border: "1px solid #EFEDE4" }}>
+                <input type="checkbox" checked={selectedItems.has(itemKey)} onChange={() => toggleItem(itemKey)} />
+                <span className="shrink-0 px-1.5 py-0.5 rounded" style={{ background: it.done ? "#E3F3EE" : "#F0EEE7", color: it.done ? "#0E8F6F" : "#8B897F", fontSize: 10 }}>{it.done ? "完了" : "未完了"}</span>
+                <span className="shrink-0 px-1.5 py-0.5 rounded" style={{ background: "#F0EEE7", color: "#8B897F", fontSize: 10 }}>{monthLabel(it.yearMonth)}</span>
+                <span className="shrink-0 px-1.5 py-0.5 rounded" style={{ background: "#F0EEE7", color: "#8B897F", fontSize: 10 }}>{it.userName}</span>
+                <span className="truncate flex-1">{it.client}／{it.theme}（{it.stageLabel}）</span>
+                <span style={{ color: "#8B897F" }}>¥</span>
+                <TextInput type="number" value={it.unitPayRaw} onChange={e => updateUnitPay(it.reelId, it.projectRateKey, e.target.value)} placeholder={String(Math.round(it.amount))} style={{ width: 90 }} />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function StaffForm({ user, onSave, onCancel }) {
   const [u, setU] = useState({ ...emptyUser(), ...user });
   const set = (key, val) => setU(prev => ({ ...prev, [key]: val }));
@@ -7751,7 +7982,8 @@ function AppInner() {
       case "tasks": return <TasksPage clients={clients} reels={reels} setReels={setReels} users={activeUsers} onGoReels={goReels} onGoReelDetail={goReelDetail} onGoClient={goClientDetail} section={taskSection} />;
       case "myperformance": return <MyPerformancePage clients={clients} payRates={payRates} reels={reels} setReels={setReels} users={users} currentUser={currentUser} shootLogs={shootLogs} setShootLogs={setShootLogs} directorLogs={directorLogs} setDirectorLogs={setDirectorLogs} editorLogs={editorLogs} setEditorLogs={setEditorLogs} snsLogs={snsLogs} setSnsLogs={setSnsLogs} manualProjectLogs={manualProjectLogs} setManualProjectLogs={setManualProjectLogs} calendarEvents={calendarEvents} />;
       case "analytics": return <AnalyticsPage clients={clients} reels={reels} users={users} />;
-      case "finance": return (currentUser.roles || []).includes("admin") ? <FinancePage clients={clients} finance={finance} setFinance={setFinance} payRates={payRates} setPayRates={setPayRates} reels={reels} setReels={setReels} users={users} shootLogs={shootLogs} setShootLogs={setShootLogs} directorLogs={directorLogs} setDirectorLogs={setDirectorLogs} editorLogs={editorLogs} setEditorLogs={setEditorLogs} snsLogs={snsLogs} setSnsLogs={setSnsLogs} manualProjectLogs={manualProjectLogs} setManualProjectLogs={setManualProjectLogs} notificationSettings={notificationSettings} setNotificationSettings={setNotificationSettings} calendarEvents={calendarEvents} /> : null;
+      case "finance": return (currentUser.roles || []).includes("admin") ? <FinancePage clients={clients} finance={finance} setFinance={setFinance} payRates={payRates} setPayRates={setPayRates} reels={reels} setReels={setReels} users={users} shootLogs={shootLogs} setShootLogs={setShootLogs} directorLogs={directorLogs} setDirectorLogs={setDirectorLogs} editorLogs={editorLogs} setEditorLogs={setEditorLogs} snsLogs={snsLogs} setSnsLogs={setSnsLogs} manualProjectLogs={manualProjectLogs} setManualProjectLogs={setManualProjectLogs} notificationSettings={notificationSettings} setNotificationSettings={setNotificationSettings} calendarEvents={calendarEvents} onOpenRateSettings={() => navigateTo("financerates")} /> : null;
+      case "financerates": return (currentUser.roles || []).includes("admin") ? <RateSettingsPage clients={clients} users={users} reels={reels} setReels={setReels} payRates={payRates} setPayRates={setPayRates} calendarEvents={calendarEvents} onBack={() => navigateTo("finance")} /> : null;
       case "users": return (currentUser.roles || []).includes("admin") ? <UsersPage users={users} setUsers={setUsers} currentUser={currentUser} /> : null;
       default: return null;
     }
