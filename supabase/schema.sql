@@ -69,6 +69,10 @@ create table if not exists clients (
   business text,
   appeal text,
   cast_info text,
+  latest_info text,
+  campaign_info text,
+  reading_notes text,
+  ng_expressions text,
   contract_status text default 'active',
   plan text,
   monthly_count int default 4,
@@ -88,6 +92,12 @@ create table if not exists reels (
   assigned_staff_id uuid references profiles(id) on delete set null,
   shoot_hours numeric,
   shoot_unit_pay numeric,
+  solo_unit_pay numeric,
+  cut_unit_pay numeric,
+  telop_unit_pay numeric,
+  animation_unit_pay numeric,
+  sfx_unit_pay numeric,
+  check_unit_pay numeric,
   cut_editor_id uuid references profiles(id) on delete set null,
   telop_editor_id uuid references profiles(id) on delete set null,
   animation_editor_id uuid references profiles(id) on delete set null,
@@ -499,6 +509,11 @@ create policy "notification_settings_admin_delete" on notification_settings for 
 -- alter table clients add column if not exists hashtag1 text;
 -- alter table clients add column if not exists hashtag2 text;
 -- alter table clients add column if not exists hashtag3 text;
+-- v128（2026-11-07）クライアント情報に4つの欄を追加
+-- alter table clients add column if not exists latest_info text;
+-- alter table clients add column if not exists campaign_info text;
+-- alter table clients add column if not exists reading_notes text;
+-- alter table clients add column if not exists ng_expressions text;
 -- alter table reels add column if not exists cut_checker_id uuid references profiles(id) on delete set null;
 -- alter table reels add column if not exists telop_checker_id uuid references profiles(id) on delete set null;
 -- alter table reels add column if not exists animation_checker_id uuid references profiles(id) on delete set null;
@@ -725,3 +740,18 @@ create policy "notification_settings_admin_delete" on notification_settings for 
 --   with check (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
 -- create policy "notification_settings_admin_delete" on notification_settings for delete
 --   using (exists (select 1 from profiles p where p.auth_user_id = auth.uid() and 'admin' = any(p.roles)));
+
+-- ============ 以下は「動画編集の案件別単価設定」機能で使う新規カラムです。まだ追加していない場合は、SQL Editorで実行してください。
+--   動画編集（一括編集①②③④・分業①カット・②テロップ・③アニメーション・演出・④効果音・BGM）の報酬を、
+--   案件（動画）ごとに個別の単価で上書きできるようにするためのカラムです。未入力の場合は経理管理ページで設定した
+--   月ごとの単価がそのまま適用されます（既存のshoot_unit_payと同じ考え方です）。 ============
+-- alter table reels add column if not exists solo_unit_pay numeric;
+-- alter table reels add column if not exists cut_unit_pay numeric;
+-- alter table reels add column if not exists telop_unit_pay numeric;
+-- alter table reels add column if not exists animation_unit_pay numeric;
+-- alter table reels add column if not exists sfx_unit_pay numeric;
+
+-- ============ 以下は「報酬単価設定」ページ（⑤最終チェックの案件別単価）で使う新規カラムです。まだ追加していない場合は、SQL Editorで実行してください。
+--   動画編集（soloUnitPay等）と同じ考え方で、⑤最終チェックの報酬も案件ごとに個別の単価で上書きできるようにするためのカラムです。
+--   未入力の場合は、経理管理ページで設定した月ごとの⑤最終チェック単価（check_rate）がそのまま適用されます。 ============
+-- alter table reels add column if not exists check_unit_pay numeric;
